@@ -1,0 +1,10 @@
+# Shared ruff config for backend/ and scripts/.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["backend/app/agents/prompts", "frontend"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[lint.isort]
+known-first-party = ["app"]

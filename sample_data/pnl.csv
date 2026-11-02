@@ -1,0 +1,361 @@
+month,account,category,amount
+2024-11,Subscription revenue,Revenue,98834.53
+2024-11,Professional services,Revenue,2500.00
+2024-11,Hosting & infrastructure,COGS,10575.43
+2024-11,Third-party data & APIs,COGS,2965.04
+2024-11,Customer Success payroll,COGS,23958.33
+2024-11,Engineering payroll,Operating expense,104650.01
+2024-11,Sales payroll,Operating expense,32583.34
+2024-11,Marketing payroll,Operating expense,20220.83
+2024-11,G&A payroll,Operating expense,27408.33
+2024-11,Marketing programs,Operating expense,36700.00
+2024-11,Sales commissions,Operating expense,3953.38
+2024-11,Rent & office,Operating expense,14000.00
+2024-11,Software & tools,Operating expense,2880.00
+2024-11,Professional fees,Operating expense,4963.37
+2024-11,Travel,Operating expense,2987.70
+2024-12,Subscription revenue,Revenue,103374.53
+2024-12,Professional services,Revenue,2500.00
+2024-12,Hosting & infrastructure,COGS,11202.63
+2024-12,Third-party data & APIs,COGS,3101.24
+2024-12,Customer Success payroll,COGS,23958.33
+2024-12,Engineering payroll,Operating expense,104650.01
+2024-12,Sales payroll,Operating expense,32583.34
+2024-12,Marketing payroll,Operating expense,28654.16
+2024-12,G&A payroll,Operating expense,27408.33
+2024-12,Marketing programs,Operating expense,36440.00
+2024-12,Sales commissions,Operating expense,4134.98
+2024-12,Rent & office,Operating expense,14000.00
+2024-12,Software & tools,Operating expense,3040.00
+2024-12,Professional fees,Operating expense,6845.46
+2024-12,Travel,Operating expense,5341.57
+2025-01,Subscription revenue,Revenue,105171.47
+2025-01,Professional services,Revenue,2500.00
+2025-01,Hosting & infrastructure,COGS,12440.03
+2025-01,Third-party data & APIs,COGS,3155.14
+2025-01,Customer Success payroll,COGS,23958.33
+2025-01,Engineering payroll,Operating expense,104650.01
+2025-01,Sales payroll,Operating expense,32583.34
+2025-01,Marketing payroll,Operating expense,28654.16
+2025-01,G&A payroll,Operating expense,27408.33
+2025-01,Marketing programs,Operating expense,38140.00
+2025-01,Sales commissions,Operating expense,4206.86
+2025-01,Rent & office,Operating expense,14000.00
+2025-01,Software & tools,Operating expense,3040.00
+2025-01,Professional fees,Operating expense,6171.10
+2025-01,Travel,Operating expense,4754.66
+2025-02,Subscription revenue,Revenue,109772.96
+2025-02,Professional services,Revenue,0.00
+2025-02,Hosting & infrastructure,COGS,12161.88
+2025-02,Third-party data & APIs,COGS,3293.19
+2025-02,Customer Success payroll,COGS,23958.33
+2025-02,Engineering payroll,Operating expense,104650.01
+2025-02,Sales payroll,Operating expense,32583.34
+2025-02,Marketing payroll,Operating expense,28654.16
+2025-02,G&A payroll,Operating expense,27408.33
+2025-02,Marketing programs,Operating expense,38340.00
+2025-02,Sales commissions,Operating expense,4390.92
+2025-02,Rent & office,Operating expense,14000.00
+2025-02,Software & tools,Operating expense,3040.00
+2025-02,Professional fees,Operating expense,6072.45
+2025-02,Travel,Operating expense,5528.73
+2025-03,Subscription revenue,Revenue,113682.96
+2025-03,Professional services,Revenue,2500.00
+2025-03,Hosting & infrastructure,COGS,11665.62
+2025-03,Third-party data & APIs,COGS,3410.49
+2025-03,Customer Success payroll,COGS,23958.33
+2025-03,Engineering payroll,Operating expense,104650.01
+2025-03,Sales payroll,Operating expense,32583.34
+2025-03,Marketing payroll,Operating expense,18879.16
+2025-03,G&A payroll,Operating expense,27408.33
+2025-03,Marketing programs,Operating expense,37350.00
+2025-03,Sales commissions,Operating expense,4547.32
+2025-03,Rent & office,Operating expense,14000.00
+2025-03,Software & tools,Operating expense,2880.00
+2025-03,Professional fees,Operating expense,6773.54
+2025-03,Travel,Operating expense,2119.98
+2025-04,Subscription revenue,Revenue,118753.81
+2025-04,Professional services,Revenue,2500.00
+2025-04,Hosting & infrastructure,COGS,12799.26
+2025-04,Third-party data & APIs,COGS,3562.61
+2025-04,Customer Success payroll,COGS,23958.33
+2025-04,Engineering payroll,Operating expense,104650.01
+2025-04,Sales payroll,Operating expense,32583.34
+2025-04,Marketing payroll,Operating expense,29045.16
+2025-04,G&A payroll,Operating expense,27408.33
+2025-04,Marketing programs,Operating expense,39420.00
+2025-04,Sales commissions,Operating expense,4750.15
+2025-04,Rent & office,Operating expense,14000.00
+2025-04,Software & tools,Operating expense,3040.00
+2025-04,Professional fees,Operating expense,4379.08
+2025-04,Travel,Operating expense,5949.46
+2025-05,Subscription revenue,Revenue,129476.93
+2025-05,Professional services,Revenue,6000.00
+2025-05,Hosting & infrastructure,COGS,13443.29
+2025-05,Third-party data & APIs,COGS,3884.31
+2025-05,Customer Success payroll,COGS,23958.33
+2025-05,Engineering payroll,Operating expense,134741.68
+2025-05,Sales payroll,Operating expense,32583.34
+2025-05,Marketing payroll,Operating expense,29045.16
+2025-05,G&A payroll,Operating expense,27408.33
+2025-05,Marketing programs,Operating expense,41890.00
+2025-05,Sales commissions,Operating expense,5179.08
+2025-05,Rent & office,Operating expense,14000.00
+2025-05,Software & tools,Operating expense,3360.00
+2025-05,Professional fees,Operating expense,5169.28
+2025-05,Travel,Operating expense,5575.72
+2025-06,Subscription revenue,Revenue,128350.37
+2025-06,Professional services,Revenue,4000.00
+2025-06,Hosting & infrastructure,COGS,13971.05
+2025-06,Third-party data & APIs,COGS,3850.51
+2025-06,Customer Success payroll,COGS,23958.33
+2025-06,Engineering payroll,Operating expense,134741.68
+2025-06,Sales payroll,Operating expense,22041.67
+2025-06,Marketing payroll,Operating expense,29045.16
+2025-06,G&A payroll,Operating expense,27408.33
+2025-06,Marketing programs,Operating expense,41890.00
+2025-06,Sales commissions,Operating expense,5134.01
+2025-06,Rent & office,Operating expense,14000.00
+2025-06,Software & tools,Operating expense,3200.00
+2025-06,Professional fees,Operating expense,5373.66
+2025-06,Travel,Operating expense,5689.45
+2025-07,Subscription revenue,Revenue,135750.37
+2025-07,Professional services,Revenue,6000.00
+2025-07,Hosting & infrastructure,COGS,14939.21
+2025-07,Third-party data & APIs,COGS,4072.51
+2025-07,Customer Success payroll,COGS,23958.33
+2025-07,Engineering payroll,Operating expense,134741.68
+2025-07,Sales payroll,Operating expense,33005.00
+2025-07,Marketing payroll,Operating expense,29045.16
+2025-07,G&A payroll,Operating expense,27408.33
+2025-07,Marketing programs,Operating expense,41140.00
+2025-07,Sales commissions,Operating expense,5430.01
+2025-07,Rent & office,Operating expense,14000.00
+2025-07,Software & tools,Operating expense,3360.00
+2025-07,Professional fees,Operating expense,6906.66
+2025-07,Travel,Operating expense,3093.76
+2025-08,Subscription revenue,Revenue,157262.60
+2025-08,Professional services,Revenue,2500.00
+2025-08,Hosting & infrastructure,COGS,16842.07
+2025-08,Third-party data & APIs,COGS,4717.88
+2025-08,Customer Success payroll,COGS,23958.33
+2025-08,Engineering payroll,Operating expense,134741.68
+2025-08,Sales payroll,Operating expense,33005.00
+2025-08,Marketing payroll,Operating expense,29045.16
+2025-08,G&A payroll,Operating expense,27408.33
+2025-08,Marketing programs,Operating expense,39450.00
+2025-08,Sales commissions,Operating expense,6290.50
+2025-08,Rent & office,Operating expense,14000.00
+2025-08,Software & tools,Operating expense,3360.00
+2025-08,Professional fees,Operating expense,5424.92
+2025-08,Travel,Operating expense,3613.11
+2025-09,Subscription revenue,Revenue,177527.21
+2025-09,Professional services,Revenue,2500.00
+2025-09,Hosting & infrastructure,COGS,19950.40
+2025-09,Third-party data & APIs,COGS,5325.82
+2025-09,Customer Success payroll,COGS,23958.33
+2025-09,Engineering payroll,Operating expense,134741.68
+2025-09,Sales payroll,Operating expense,33005.00
+2025-09,Marketing payroll,Operating expense,29045.16
+2025-09,G&A payroll,Operating expense,27408.33
+2025-09,Marketing programs,Operating expense,42680.00
+2025-09,Sales commissions,Operating expense,7101.09
+2025-09,Rent & office,Operating expense,14000.00
+2025-09,Software & tools,Operating expense,3360.00
+2025-09,Professional fees,Operating expense,5013.46
+2025-09,Travel,Operating expense,3580.29
+2025-10,Subscription revenue,Revenue,181411.74
+2025-10,Professional services,Revenue,2500.00
+2025-10,Hosting & infrastructure,COGS,18350.73
+2025-10,Third-party data & APIs,COGS,5442.35
+2025-10,Customer Success payroll,COGS,23958.33
+2025-10,Engineering payroll,Operating expense,134741.68
+2025-10,Sales payroll,Operating expense,33005.00
+2025-10,Marketing payroll,Operating expense,29045.16
+2025-10,G&A payroll,Operating expense,27408.33
+2025-10,Marketing programs,Operating expense,41190.00
+2025-10,Sales commissions,Operating expense,7256.47
+2025-10,Rent & office,Operating expense,14000.00
+2025-10,Software & tools,Operating expense,3360.00
+2025-10,Professional fees,Operating expense,3958.97
+2025-10,Travel,Operating expense,4046.02
+2025-11,Subscription revenue,Revenue,202957.87
+2025-11,Professional services,Revenue,6000.00
+2025-11,Hosting & infrastructure,COGS,22913.64
+2025-11,Third-party data & APIs,COGS,6088.74
+2025-11,Customer Success payroll,COGS,23958.33
+2025-11,Engineering payroll,Operating expense,134741.68
+2025-11,Sales payroll,Operating expense,33005.00
+2025-11,Marketing payroll,Operating expense,29045.16
+2025-11,G&A payroll,Operating expense,27408.33
+2025-11,Marketing programs,Operating expense,41990.00
+2025-11,Sales commissions,Operating expense,8118.31
+2025-11,Rent & office,Operating expense,18500.00
+2025-11,Software & tools,Operating expense,3360.00
+2025-11,Professional fees,Operating expense,6314.79
+2025-11,Travel,Operating expense,3559.74
+2025-12,Subscription revenue,Revenue,203130.36
+2025-12,Professional services,Revenue,4000.00
+2025-12,Hosting & infrastructure,COGS,23572.12
+2025-12,Third-party data & APIs,COGS,6093.91
+2025-12,Customer Success payroll,COGS,23958.33
+2025-12,Engineering payroll,Operating expense,134741.68
+2025-12,Sales payroll,Operating expense,44600.83
+2025-12,Marketing payroll,Operating expense,29045.16
+2025-12,G&A payroll,Operating expense,27408.33
+2025-12,Marketing programs,Operating expense,45560.00
+2025-12,Sales commissions,Operating expense,8125.21
+2025-12,Rent & office,Operating expense,18500.00
+2025-12,Software & tools,Operating expense,3520.00
+2025-12,Professional fees,Operating expense,6809.21
+2025-12,Travel,Operating expense,2661.60
+2026-01,Subscription revenue,Revenue,206089.58
+2026-01,Professional services,Revenue,0.00
+2026-01,Hosting & infrastructure,COGS,21837.95
+2026-01,Third-party data & APIs,COGS,6182.69
+2026-01,Customer Success payroll,COGS,23958.33
+2026-01,Engineering payroll,Operating expense,134741.68
+2026-01,Sales payroll,Operating expense,44600.83
+2026-01,Marketing payroll,Operating expense,29045.16
+2026-01,G&A payroll,Operating expense,27408.33
+2026-01,Marketing programs,Operating expense,45010.00
+2026-01,Sales commissions,Operating expense,8243.58
+2026-01,Rent & office,Operating expense,18500.00
+2026-01,Software & tools,Operating expense,3520.00
+2026-01,Professional fees,Operating expense,6499.46
+2026-01,Travel,Operating expense,3433.31
+2026-02,Subscription revenue,Revenue,212073.83
+2026-02,Professional services,Revenue,6000.00
+2026-02,Hosting & infrastructure,COGS,22928.15
+2026-02,Third-party data & APIs,COGS,6362.21
+2026-02,Customer Success payroll,COGS,23958.33
+2026-02,Engineering payroll,Operating expense,134741.68
+2026-02,Sales payroll,Operating expense,44600.83
+2026-02,Marketing payroll,Operating expense,29045.16
+2026-02,G&A payroll,Operating expense,27408.33
+2026-02,Marketing programs,Operating expense,46770.00
+2026-02,Sales commissions,Operating expense,8482.95
+2026-02,Rent & office,Operating expense,18500.00
+2026-02,Software & tools,Operating expense,3520.00
+2026-02,Professional fees,Operating expense,4319.91
+2026-02,Travel,Operating expense,5986.98
+2026-03,Subscription revenue,Revenue,213756.85
+2026-03,Professional services,Revenue,0.00
+2026-03,Hosting & infrastructure,COGS,24882.36
+2026-03,Third-party data & APIs,COGS,6412.71
+2026-03,Customer Success payroll,COGS,23958.33
+2026-03,Engineering payroll,Operating expense,134741.68
+2026-03,Sales payroll,Operating expense,44600.83
+2026-03,Marketing payroll,Operating expense,29045.16
+2026-03,G&A payroll,Operating expense,41304.16
+2026-03,Marketing programs,Operating expense,46790.00
+2026-03,Sales commissions,Operating expense,8550.27
+2026-03,Rent & office,Operating expense,18500.00
+2026-03,Software & tools,Operating expense,3680.00
+2026-03,Professional fees,Operating expense,5744.12
+2026-03,Travel,Operating expense,3555.50
+2026-04,Subscription revenue,Revenue,216886.42
+2026-04,Professional services,Revenue,0.00
+2026-04,Hosting & infrastructure,COGS,23876.61
+2026-04,Third-party data & APIs,COGS,6506.59
+2026-04,Customer Success payroll,COGS,31912.50
+2026-04,Engineering payroll,Operating expense,134741.68
+2026-04,Sales payroll,Operating expense,44600.83
+2026-04,Marketing payroll,Operating expense,29045.16
+2026-04,G&A payroll,Operating expense,41304.16
+2026-04,Marketing programs,Operating expense,46930.00
+2026-04,Sales commissions,Operating expense,8675.46
+2026-04,Rent & office,Operating expense,18500.00
+2026-04,Software & tools,Operating expense,3840.00
+2026-04,Professional fees,Operating expense,3253.99
+2026-04,Travel,Operating expense,4084.45
+2026-05,Subscription revenue,Revenue,233997.69
+2026-05,Professional services,Revenue,0.00
+2026-05,Hosting & infrastructure,COGS,24380.58
+2026-05,Third-party data & APIs,COGS,7019.93
+2026-05,Customer Success payroll,COGS,31912.50
+2026-05,Engineering payroll,Operating expense,134741.68
+2026-05,Sales payroll,Operating expense,44600.83
+2026-05,Marketing payroll,Operating expense,29045.16
+2026-05,G&A payroll,Operating expense,41304.16
+2026-05,Marketing programs,Operating expense,43420.00
+2026-05,Sales commissions,Operating expense,9359.91
+2026-05,Rent & office,Operating expense,18500.00
+2026-05,Software & tools,Operating expense,3840.00
+2026-05,Professional fees,Operating expense,6471.13
+2026-05,Travel,Operating expense,3678.43
+2026-06,Subscription revenue,Revenue,238688.96
+2026-06,Professional services,Revenue,2500.00
+2026-06,Hosting & infrastructure,COGS,25691.34
+2026-06,Third-party data & APIs,COGS,7160.67
+2026-06,Customer Success payroll,COGS,31912.50
+2026-06,Engineering payroll,Operating expense,134741.68
+2026-06,Sales payroll,Operating expense,52938.33
+2026-06,Marketing payroll,Operating expense,29045.16
+2026-06,G&A payroll,Operating expense,41304.16
+2026-06,Marketing programs,Operating expense,48200.00
+2026-06,Sales commissions,Operating expense,9547.56
+2026-06,Rent & office,Operating expense,18500.00
+2026-06,Software & tools,Operating expense,4000.00
+2026-06,Professional fees,Operating expense,3002.77
+2026-06,Travel,Operating expense,3198.62
+2026-07,Subscription revenue,Revenue,241225.95
+2026-07,Professional services,Revenue,0.00
+2026-07,Hosting & infrastructure,COGS,25145.09
+2026-07,Third-party data & APIs,COGS,7236.78
+2026-07,Customer Success payroll,COGS,31912.50
+2026-07,Engineering payroll,Operating expense,134741.68
+2026-07,Sales payroll,Operating expense,52938.33
+2026-07,Marketing payroll,Operating expense,29045.16
+2026-07,G&A payroll,Operating expense,41304.16
+2026-07,Marketing programs,Operating expense,47450.00
+2026-07,Sales commissions,Operating expense,9649.04
+2026-07,Rent & office,Operating expense,18500.00
+2026-07,Software & tools,Operating expense,4000.00
+2026-07,Professional fees,Operating expense,4609.44
+2026-07,Travel,Operating expense,3765.18
+2026-08,Subscription revenue,Revenue,247682.58
+2026-08,Professional services,Revenue,4000.00
+2026-08,Hosting & infrastructure,COGS,26899.88
+2026-08,Third-party data & APIs,COGS,7430.48
+2026-08,Customer Success payroll,COGS,38429.17
+2026-08,Engineering payroll,Operating expense,134741.68
+2026-08,Sales payroll,Operating expense,52938.33
+2026-08,Marketing payroll,Operating expense,29045.16
+2026-08,G&A payroll,Operating expense,41304.16
+2026-08,Marketing programs,Operating expense,48290.00
+2026-08,Sales commissions,Operating expense,9907.30
+2026-08,Rent & office,Operating expense,18500.00
+2026-08,Software & tools,Operating expense,4160.00
+2026-08,Professional fees,Operating expense,6656.02
+2026-08,Travel,Operating expense,2490.10
+2026-09,Subscription revenue,Revenue,259469.16
+2026-09,Professional services,Revenue,0.00
+2026-09,Hosting & infrastructure,COGS,28157.74
+2026-09,Third-party data & APIs,COGS,7784.07
+2026-09,Customer Success payroll,COGS,38429.17
+2026-09,Engineering payroll,Operating expense,146720.85
+2026-09,Sales payroll,Operating expense,52938.33
+2026-09,Marketing payroll,Operating expense,29045.16
+2026-09,G&A payroll,Operating expense,41304.16
+2026-09,Marketing programs,Operating expense,47140.00
+2026-09,Sales commissions,Operating expense,10378.77
+2026-09,Rent & office,Operating expense,18500.00
+2026-09,Software & tools,Operating expense,4320.00
+2026-09,Professional fees,Operating expense,3745.05
+2026-09,Travel,Operating expense,2463.17
+2026-10,Subscription revenue,Revenue,255344.27
+2026-10,Professional services,Revenue,2500.00
+2026-10,Hosting & infrastructure,COGS,25760.56
+2026-10,Third-party data & APIs,COGS,7660.33
+2026-10,Customer Success payroll,COGS,38429.17
+2026-10,Engineering payroll,Operating expense,146720.85
+2026-10,Sales payroll,Operating expense,52938.33
+2026-10,Marketing payroll,Operating expense,29045.16
+2026-10,G&A payroll,Operating expense,41304.16
+2026-10,Marketing programs,Operating expense,48300.00
+2026-10,Sales commissions,Operating expense,10213.77
+2026-10,Rent & office,Operating expense,18500.00
+2026-10,Software & tools,Operating expense,4320.00
+2026-10,Professional fees,Operating expense,6018.24
+2026-10,Travel,Operating expense,4908.10
