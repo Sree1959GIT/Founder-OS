@@ -22,7 +22,7 @@ PROTOCOL (follow strictly):
 
 1. ORIENT, before writing any code
    - Read CLAUDE.md, then HANDOVER.md (all of it, including "Founder feedback"), then docs/PRD.md.
-   - Run `git status`, `git log --oneline -15`. Confirm you are on the development branch named in HANDOVER.md; pull it.
+   - Run `git status`, `git log --oneline -15`. Make sure your session branch starts from the latest `origin/main` (`git fetch origin main`, then rebase onto it if needed).
    - Run `date -u` and record the session start time in HANDOVER.md under "Current session".
    - Find the target: the first milestone not marked DONE. If it is marked IN PROGRESS, resume from its "Next steps" list.
    - Act on any founder feedback first (bugs found on Windows take priority over new features).
@@ -34,7 +34,7 @@ PROTOCOL (follow strictly):
    - Follow the key rules in PRD §3: deterministic math with lineage, privacy routing, never crash on missing services, voice never blocks the canvas.
    - Every external dependency (Ollama, Gemini, Claude, Qdrant, Whisper, Kokoro, VAD) goes behind an interface with a fake used in tests. This container has no GPU, Ollama, Docker or Windows, so never let a test depend on them.
    - Write tests as you go. Run the relevant tests after each meaningful change.
-   - Commit small and often, with clear messages. Push at least every ~30–45 minutes (`git push -u origin <branch>`).
+   - Commit small and often, with clear messages. Push at least every ~30–45 minutes (`git push -u origin <your session branch>`).
    - Update HANDOVER.md "Progress log" at each commit-worthy step (1–2 lines each), so a crash loses nothing.
 
 3. TIME-BOX
@@ -51,12 +51,19 @@ PROTOCOL (follow strictly):
        * "Decisions made this session" (also append significant ones to PRD §12).
        * "Open questions for founder".
    - Commit and push. Confirm the push succeeded.
+   - Open a pull request from your session branch into `main`, titled "M<n>: <milestone name>" (or "M<n> (partial): …"). Use the HANDOVER summary and the Windows checklist as its body. Do NOT merge it; the founder merges.
    - Give a final message of 10 lines or fewer: what was done, the test status, what the founder should check, and what comes next. Then STOP and don't start further work.
 
-NEVER: push to any branch other than the one in HANDOVER.md; commit secrets or .env; rewrite git history; skip or disable tests to get green; change the agreed stack or scope (PRD §12) without recording it as an open question.
+NEVER: push to `main` or merge your own PR; commit secrets or .env; rewrite git history; skip or disable tests to get green; change the agreed stack or scope (PRD §12) without recording it as an open question.
 ```
 
 ---
+
+## Short version (same behaviour, easier to paste)
+
+```text
+/goal Complete the next unfinished FounderOS milestone in HANDOVER.md (or stop at a clean checkpoint after about 2 hours), following the full PROTOCOL in docs/GOAL_PROMPT.md exactly. Done means: tests and lint pass, the work is pushed, HANDOVER.md is updated with a Windows checklist, a PR into main is open (not merged), and you have stopped.
+```
 
 ## Optional variants
 

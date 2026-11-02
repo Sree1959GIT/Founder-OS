@@ -4,7 +4,7 @@
 > Spec: `docs/PRD.md` · Session protocol: `docs/GOAL_PROMPT.md` · Repo rules: `CLAUDE.md`
 
 ## Quick status
-- **Development branch:** `claude/bold-keller-b7aput` (push only here; the founder merges to `main`)
+- **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** **M0: Scaffold & foundations**
 - **Last updated:** 2026-11-02 (planning session, no code yet)
 

@@ -3,7 +3,7 @@
 ## Start of every session (mandatory)
 1. Read **`HANDOVER.md` first**: it holds the current state, the next steps and founder feedback.
 2. Then read `docs/PRD.md` (the agreed spec) and, if you are running a milestone, `docs/GOAL_PROMPT.md` (the session protocol).
-3. Work only on the branch named in `HANDOVER.md`.
+3. `main` is the stable branch, which the founder merges into. Work on the branch this session was assigned, created from the latest `main`. At wrap-up, open a pull request into `main`. Never push to `main` directly.
 
 ## Session limits
 - One milestone per session, or about 2 hours, whichever comes first. Then wrap up and **stop**. The founder is managing credits.
