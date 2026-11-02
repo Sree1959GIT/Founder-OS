@@ -52,7 +52,7 @@
 | Milestone | PR | Tier | Status |
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
-| M0 Scaffold | PR pending | Light | AWAITING FOUNDER |
+| M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | AWAITING FOUNDER |
 
 ## Current session
 - Started (UTC): 2026-11-02 15:47
