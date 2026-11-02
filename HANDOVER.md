@@ -12,7 +12,7 @@
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
-| M0 | Scaffold & foundations | NOT STARTED | |
+| M0 | Scaffold & foundations | IN PROGRESS | session started 2026-11-02 15:47 UTC |
 | M1 | Financial spine (DuckDB) | NOT STARTED | |
 | M2 | Vault & hybrid RAG | NOT STARTED | |
 | M3a | LLM layer, agent framework & core agents | NOT STARTED | |
@@ -54,9 +54,16 @@
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
 
 ## Current session
-- Started (UTC): n/a
-- Target: n/a
-- Plan: n/a
+- Started (UTC): 2026-11-02 15:47
+- Target: **M0: Scaffold & foundations** (gate tier: Light)
+- Plan:
+  - [ ] Backend package (`pyproject.toml`, `app/main.py`, `config.py`, `deps.py`, `/api/health` with dependency probes + tests)
+  - [ ] `.env.example`, `docker-compose.yml` (Qdrant only)
+  - [ ] `scripts/generate_demo_data.py` (Northwind, seeded) + `sample_data/` + tests
+  - [ ] Frontend shell (Vite + React + TS + Tailwind + shadcn/ui, design tokens, health badge via proxy)
+  - [ ] `setup.bat`/`run.bat` + `setup.sh`/`run.sh`
+  - [ ] GitHub Actions CI (pytest, ruff, frontend lint/tsc/build, windows-latest backend)
+  - [ ] Minimal README; wrap-up, self-review, PR
 
 ## Current state
 Only planning documents exist: PRD v2, the `/goal` prompt, CLAUDE.md and this file. The original blueprint is kept in
