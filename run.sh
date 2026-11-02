@@ -12,7 +12,7 @@ if command -v docker >/dev/null 2>&1; then
   docker compose up -d qdrant >/dev/null 2>&1 || echo "[WARN] Qdrant did not start (BM25-only search)."
 fi
 
-(cd backend && exec "$ROOT/.venv/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port 8000) &
+(cd backend && exec "$ROOT/.venv/bin/python" -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8000) &
 BACKEND_PID=$!
 (cd frontend && exec npm run dev) &
 FRONTEND_PID=$!

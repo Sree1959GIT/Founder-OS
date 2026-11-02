@@ -13,6 +13,7 @@ from app.probes import (
     GpuProbe,
     OllamaProbe,
     QdrantProbe,
+    StorageProbe,
     run_probes,
 )
 
@@ -144,3 +145,21 @@ async def test_run_probes_never_raises() -> None:
     assert [r.state for r in results] == [DependencyState.UNAVAILABLE, DependencyState.UNAVAILABLE]
     assert "timed out" in results[0].detail and results[0].required is False
     assert "RuntimeError" in results[1].detail and results[1].required is True
+
+
+@pytest.mark.parametrize("body", [["not", "an", "object"], {"models": ["x", 3]}, {"models": None}])
+async def test_ollama_tolerates_unexpected_json(settings: Settings, body: object) -> None:
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json=body))
+    async with client_for(transport) as client:
+        status = await OllamaProbe(settings, client).check()
+    assert status.state in (DependencyState.UNAVAILABLE, DependencyState.DEGRADED)
+
+
+async def test_storage_probe(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    s = Settings(_env_file=None, data_dir=tmp_path / "data", vault_path=tmp_path / "vault")
+    missing = await StorageProbe(s).check()
+    s.workspace_data_dir().mkdir(parents=True)
+    s.workspace_vault_dir().mkdir(parents=True)
+    ok = await StorageProbe(s).check()
+    assert missing.state is DependencyState.UNAVAILABLE and missing.required is True
+    assert ok.state is DependencyState.OK

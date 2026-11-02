@@ -2,7 +2,7 @@ import type { DependencyState, DependencyStatus } from "@/lib/api";
 import type { HealthState } from "@/hooks/useHealth";
 import { cn } from "@/lib/utils";
 
-const LABELS: Record<string, string> = { ollama: "Ollama", qdrant: "Qdrant", cloud: "Cloud", gpu: "GPU" };
+const LABELS: Record<string, string> = { ollama: "Ollama", qdrant: "Qdrant", cloud: "Cloud", gpu: "GPU", storage: "Storage" };
 
 // Status is never shown by colour alone: every dot has a text label and a state word.
 const STATE_TEXT: Record<DependencyState, string> = {

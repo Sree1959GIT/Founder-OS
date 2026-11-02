@@ -173,3 +173,10 @@ def test_rejects_bad_options(tmp_path: Path, kwargs: dict[str, object], message:
     options: dict[str, object] = {"seed": 1, "currency": "USD", "start": "2024-11", "months": 24} | kwargs
     with pytest.raises(ValueError, match=message):
         gen.write_outputs(tmp_path, **options)
+
+
+def test_tables_is_idempotent() -> None:
+    g = gen.Generator(seed=42, currency="USD", start="2024-11", months=24)
+    first = g.tables()
+    assert g.tables() is first
+    assert len(first["customers"][1]) == len({c["customer_id"] for c in first["customers"][1]})

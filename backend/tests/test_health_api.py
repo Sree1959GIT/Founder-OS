@@ -63,3 +63,29 @@ def test_real_probes_do_not_crash_without_services(settings) -> None:  # type: i
     assert states["ollama"] == "unavailable"
     assert states["qdrant"] == "unavailable"
     assert states["cloud"] == "not_configured"
+
+
+def test_startup_survives_unwritable_storage(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A DATA_DIR that cannot be created must not crash the app; health reports it instead (PRD R3)."""
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+
+    blocker = tmp_path / "a-file"
+    blocker.write_text("not a folder", encoding="utf-8")
+    settings = Settings(_env_file=None, data_dir=blocker / "data", vault_path=tmp_path / "vault")
+    settings.ollama_base_url = "http://127.0.0.1:1"
+    settings.qdrant_port = 1
+    settings.health_probe_timeout_s = 0.5
+    with TestClient(create_app(settings)) as client:
+        body = client.get("/api/health").json()
+    storage = next(d for d in body["dependencies"] if d["name"] == "storage")
+    assert storage["state"] == "unavailable"
+    assert body["status"] == "degraded"
+
+
+def test_importing_main_does_not_build_an_app() -> None:
+    import app.main
+
+    assert not hasattr(app.main, "app")

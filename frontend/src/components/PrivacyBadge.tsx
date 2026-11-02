@@ -5,7 +5,11 @@ import type { HealthState } from "@/hooks/useHealth";
 
 /** "Local only" unless Settings allow cloud for deep-work agents (PRD R2). */
 export function PrivacyBadge({ health }: { health: HealthState }) {
-  const cloud = health.kind === "ready" ? health.data.dependencies.find((d) => d.name === "cloud") : undefined;
+  if (health.kind !== "ready") {
+    // Never claim a privacy state we have not confirmed with the backend.
+    return <Badge variant="muted">Privacy status unknown</Badge>;
+  }
+  const cloud = health.data.dependencies.find((d) => d.name === "cloud");
   const cloudAllowed = cloud?.info["cloud_allowed"] === true;
   if (!cloudAllowed) {
     return (

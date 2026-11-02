@@ -159,6 +159,7 @@ class Generator:
         self.marketing: list[dict[str, Any]] = []
         self.pipeline: list[dict[str, Any]] = []
         self._used_names: set[str] = set()
+        self._tables: dict[str, tuple[list[str], list[dict[str, Any]], set[str]]] | None = None
 
     # -- helpers ---------------------------------------------------------
     def units(self, usd: float) -> int:
@@ -394,7 +395,9 @@ class Generator:
 
     # -- output ------------------------------------------------------------
     def tables(self) -> dict[str, tuple[list[str], list[dict[str, Any]], set[str]]]:
-        """table name -> (columns, rows, money columns)."""
+        """table name -> (columns, rows, money columns). Simulates once; later calls reuse the result."""
+        if self._tables is not None:
+            return self._tables
         won = self.simulate_marketing_and_pipeline()
         self.simulate_customers(won)
         self.simulate_headcount()
@@ -454,7 +457,7 @@ class Generator:
             ({k: o.get(k, "") for k in pipeline_columns} for o in self.pipeline),
             key=lambda o: o["opportunity_id"],
         )
-        return {
+        self._tables = {
             "customers": (list(customers[0]), customers, set()),
             "subscriptions": (["month", "customer_id", "mrr"], subscriptions, {"mrr"}),
             "pipeline": (pipeline_columns, pipeline, {"annual_value"}),
@@ -475,6 +478,7 @@ class Generator:
                 },
             ),
         }
+        return self._tables
 
 
 def _shift(first: date, months: int) -> str:

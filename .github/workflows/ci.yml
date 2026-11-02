@@ -41,7 +41,9 @@ jobs:
         working-directory: .
         run: |
           python scripts/generate_demo_data.py
-          git diff --exit-code -- sample_data
+          # CSV/JSON must match byte for byte. The XLSX is compared by content in the tests, because deflate
+          # output can differ between zlib builds.
+          git diff --exit-code -- 'sample_data/*.csv' 'sample_data/*.json'
 
   frontend:
     name: Frontend (lint + tsc + test + build)

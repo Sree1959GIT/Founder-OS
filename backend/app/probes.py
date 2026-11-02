@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import os
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -56,8 +57,9 @@ class OllamaProbe:
         try:
             response = await self._client.get(url, timeout=self._settings.health_probe_timeout_s)
             response.raise_for_status()
-            models = {m.get("name", "") for m in response.json().get("models", [])}
-        except (httpx.HTTPError, ValueError) as exc:
+            payload = response.json()
+            models = {str(m.get("name", "")) for m in payload.get("models", []) if isinstance(m, dict)}
+        except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:
             return DependencyStatus(
                 name=self.name,
                 required=self.required,
@@ -218,6 +220,29 @@ class GpuProbe:
             required=self.required,
             info={"device": name, "vram_used_gb": used_gb, "vram_total_gb": total_gb},
         )
+
+
+class StorageProbe:
+    """Checks the workspace data and vault folders exist and are writable."""
+
+    name = "storage"
+    required = True
+
+    def __init__(self, settings: Settings) -> None:
+        self._dirs = {"data": settings.workspace_data_dir(), "vault": settings.workspace_vault_dir()}
+
+    async def check(self) -> DependencyStatus:
+        problems = [
+            f"{label} folder {path} is missing or not writable"
+            for label, path in self._dirs.items()
+            if not (path.is_dir() and os.access(path, os.W_OK))
+        ]
+        info = {label: str(path) for label, path in self._dirs.items()}
+        if problems:
+            return DependencyStatus(
+                name=self.name, state=DependencyState.UNAVAILABLE, detail="; ".join(problems), info=info
+            )
+        return DependencyStatus(name=self.name, state=DependencyState.OK, detail="Workspace folders OK", info=info)
 
 
 async def run_probes(probes: list[DependencyProbe], timeout_s: float) -> list[DependencyStatus]:

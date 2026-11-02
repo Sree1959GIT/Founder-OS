@@ -59,3 +59,12 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("Backend offline")).toBeInTheDocument());
   });
 });
+
+describe("PrivacyBadge", () => {
+  it("does not claim local-only while the backend is unknown", async () => {
+    const { PrivacyBadge } = await import("@/components/PrivacyBadge");
+    render(<PrivacyBadge health={{ kind: "offline", message: "down" }} />);
+    expect(screen.getByText("Privacy status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Local only")).not.toBeInTheDocument();
+  });
+});

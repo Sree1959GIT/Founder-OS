@@ -25,7 +25,7 @@ if errorlevel 1 (
 rem --- Node 20+ ----------------------------------------------------------------
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] Node.js 22 LTS (or 20.19+) not found. Install it from https://nodejs.org/ and re-run.
+  echo [ERROR] Node.js 22 LTS ^(or 20.19+^) not found. Install it from https://nodejs.org/ and re-run.
   exit /b 1
 )
 

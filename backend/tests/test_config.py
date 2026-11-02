@@ -76,3 +76,19 @@ def test_ollama_url_trailing_slash_is_stripped() -> None:
 def test_currency_must_be_iso_code() -> None:
     with pytest.raises(ValidationError):
         make(currency="rupees")
+
+
+def test_explicit_workspace_id_is_validated() -> None:
+    s = make()
+    with pytest.raises(ValueError, match="invalid workspace id"):
+        s.workspace_data_dir("../../etc")
+    with pytest.raises(ValueError, match="invalid workspace id"):
+        s.workspace_vault_dir("a/b")
+    assert s.workspace_data_dir("acme").name == "acme"
+
+
+def test_log_level_is_a_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "debug")
+    assert make().log_level == "debug"
+    with pytest.raises(ValidationError):
+        make(log_level="LOUD")

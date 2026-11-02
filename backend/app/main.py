@@ -1,4 +1,8 @@
-"""FastAPI application factory. Run with `uvicorn app.main:app --port 8000` from `backend/`."""
+"""FastAPI application factory.
+
+Run from `backend/` with `uvicorn --factory app.main:create_app --port 8000`. There is deliberately no module-level
+app, so importing this module never reads `.env` or the environment.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +27,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        configure_logging()
+        configure_logging(settings.log_level)
         for directory in (settings.workspace_data_dir(), settings.workspace_vault_dir()):
-            directory.mkdir(parents=True, exist_ok=True)
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:  # PRD R3: keep serving; /api/health reports the storage problem.
+                logger.error("Cannot create {}: {}", directory, exc)
         app.state.http_client = httpx.AsyncClient()
         logger.info(
             "FounderOS backend {} started (workspace={}, data={})",
@@ -50,6 +57,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.dependency_overrides[get_settings] = lambda: settings
     app.include_router(health.router, prefix="/api")
     return app
-
-
-app = create_app()

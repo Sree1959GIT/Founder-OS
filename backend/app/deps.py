@@ -8,7 +8,7 @@ import httpx
 from fastapi import Depends, Request
 
 from app.config import Settings, get_settings
-from app.probes import CloudProvidersProbe, DependencyProbe, GpuProbe, OllamaProbe, QdrantProbe
+from app.probes import CloudProvidersProbe, DependencyProbe, GpuProbe, OllamaProbe, QdrantProbe, StorageProbe
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -27,6 +27,7 @@ def get_probes(
         QdrantProbe(settings, client),
         CloudProvidersProbe(settings),
         GpuProbe(),
+        StorageProbe(settings),
     ]
 
 

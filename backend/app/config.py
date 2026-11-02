@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -60,6 +61,9 @@ class Settings(BaseSettings):
     # Display
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
 
+    # Logging
+    log_level: str = Field(default="INFO", pattern=r"^(?i:TRACE|DEBUG|INFO|SUCCESS|WARNING|ERROR|CRITICAL)$")
+
     # HTTP
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     health_probe_timeout_s: float = Field(default=2.0, gt=0, le=30)
@@ -77,16 +81,23 @@ class Settings(BaseSettings):
     def _strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
 
+    def _workspace(self, workspace_id: str | None) -> str:
+        if workspace_id is None:
+            return self.workspace_id
+        if not re.fullmatch(WORKSPACE_ID_PATTERN, workspace_id):
+            raise ValueError(f"invalid workspace id: {workspace_id!r}")
+        return workspace_id
+
     def _resolve(self, path: Path) -> Path:
         return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
 
     def workspace_data_dir(self, workspace_id: str | None = None) -> Path:
         """`<DATA_DIR>/<workspace_id>`: DuckDB file, mappings and logs for one workspace."""
-        return self._resolve(self.data_dir) / (workspace_id or self.workspace_id)
+        return self._resolve(self.data_dir) / self._workspace(workspace_id)
 
     def workspace_vault_dir(self, workspace_id: str | None = None) -> Path:
         """`<VAULT_PATH>/<workspace_id>`: the Markdown vault for one workspace."""
-        return self._resolve(self.vault_path) / (workspace_id or self.workspace_id)
+        return self._resolve(self.vault_path) / self._workspace(workspace_id)
 
     def provider_configured(self, provider: DeepProvider) -> bool:
         """Whether the credentials needed by `provider` are present (no network call)."""

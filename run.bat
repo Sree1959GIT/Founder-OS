@@ -19,7 +19,7 @@ if errorlevel 1 (
   docker compose up -d qdrant >nul 2>nul || echo [WARN] Qdrant did not start. Is Docker Desktop running?
 )
 
-start "FounderOS backend" /d "%~dp0backend" cmd /k ""%~dp0.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+start "FounderOS backend" /d "%~dp0backend" cmd /k ""%~dp0.venv\Scripts\python.exe" -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8000"
 start "FounderOS frontend" /d "%~dp0frontend" cmd /k "npm run dev"
 
 rem Give the dev servers a few seconds, then open the browser.
