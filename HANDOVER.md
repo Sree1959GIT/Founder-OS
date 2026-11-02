@@ -165,7 +165,9 @@ Second planning round (2026-11-02):
 - 2026-11-02: Added the agent design (F3, F4b), decision models (F7) and decision-science routines to the PRD; split M3; started the UI mock-ups in Claude Design.
 - 2026-11-02 (M0 session, 15:47 to ~16:15 UTC): backend scaffold with config and the `/api/health` probes; Northwind
   generator and `sample_data/`; frontend shell with design tokens and the live health badge; setup/run scripts; CI;
-  README. Self-review found 9 issues, all fixed with regression tests. 54 backend tests and 5 frontend tests pass.
+  README. Self-review found 9 issues, all fixed with regression tests. The first CI run caught a Windows-only bug
+  (`meta.json` written with CRLF); it was fixed by forcing LF, with a test. 55 backend tests and 5 frontend tests pass, and CI is
+  green on ubuntu and windows-latest.
 
 ## Decisions made (M0 session)
 - Python venv at the repo root (`.venv`); backend installed editable from `backend/pyproject.toml` (extras: `dev`, `gpu`).
