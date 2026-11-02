@@ -180,3 +180,10 @@ def test_tables_is_idempotent() -> None:
     first = g.tables()
     assert g.tables() is first
     assert len(first["customers"][1]) == len({c["customer_id"] for c in first["customers"][1]})
+
+
+def test_outputs_use_lf_line_endings(out: Path) -> None:
+    """Windows text mode would write CRLF; outputs must be byte-identical on every OS."""
+    for path in out.iterdir():
+        if path.suffix in (".csv", ".json"):
+            assert b"\r\n" not in path.read_bytes(), path.name

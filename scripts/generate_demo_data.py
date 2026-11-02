@@ -511,7 +511,7 @@ def write_outputs(out_dir: Path, seed: int, currency: str, start: str, months: i
         "months": months,
         "rows": {name: len(rows) for name, (_, rows, _) in tables.items()},
     }
-    (out_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8", newline="\n")
     return meta
 
 
