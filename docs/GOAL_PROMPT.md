@@ -25,6 +25,7 @@ PROTOCOL (follow strictly):
    - Run `git status`, `git log --oneline -15`. Make sure your session branch starts from the latest `origin/main` (`git fetch origin main`, then rebase onto it if needed).
    - Run `date -u` and record the session start time in HANDOVER.md under "Current session".
    - Find the target: the first milestone not marked DONE. If it is marked IN PROGRESS, resume from its "Next steps" list.
+   - GATE CHECK: if the previous milestone is a **Major** gate (see "Review gates" in HANDOVER.md) and its row in the Gate log does not say ACCEPTED, do NOT start the next milestone. Work only on founder feedback and fixes for that milestone, then wrap up.
    - Act on any founder feedback first (bugs found on Windows take priority over new features).
    - Write a short plan for this session as a checklist in HANDOVER.md, then commit it.
 
@@ -50,8 +51,11 @@ PROTOCOL (follow strictly):
        * "Windows verification checklist": numbered commands and expected results for the founder to run on the PC for this milestone.
        * "Decisions made this session" (also append significant ones to PRD §12).
        * "Open questions for founder".
+   - GATE 2 (self-review): review your own full diff against `main` for bugs, security issues (SQL guard, secrets, path handling) and scope creep. Use `/code-review` if it is available. Fix every high-severity finding and list any you leave open in the PR.
    - Commit and push. Confirm the push succeeded.
-   - Open a pull request from your session branch into `main`, titled "M<n>: <milestone name>" (or "M<n> (partial): …"). Use the HANDOVER summary and the Windows checklist as its body. Do NOT merge it; the founder merges.
+   - Open a pull request from your session branch into `main`, titled "M<n>: <milestone name>" (or "M<n> (partial): …"). Fill in EVERY section of `.github/pull_request_template.md`, including the gate tier for this milestone from HANDOVER.md "Review gates". Do NOT merge it; the founder merges.
+   - GATE 1 (CI): once CI exists (from M0), wait for the PR's CI checks. If any are red, fix and push until green, or document precisely why they can't pass. Never disable a check.
+   - Add a row to the HANDOVER.md Gate log (milestone, PR link, tier, status "AWAITING FOUNDER") and push that too.
    - Give a final message of 10 lines or fewer: what was done, the test status, what the founder should check, and what comes next. Then STOP and don't start further work.
 
 NEVER: push to `main` or merge your own PR; commit secrets or .env; rewrite git history; skip or disable tests to get green; change the agreed stack or scope (PRD §12) without recording it as an open question.
@@ -62,7 +66,7 @@ NEVER: push to `main` or merge your own PR; commit secrets or .env; rewrite git 
 ## Short version (same behaviour, easier to paste)
 
 ```text
-/goal Complete the next unfinished FounderOS milestone in HANDOVER.md (or stop at a clean checkpoint after about 2 hours), following the full PROTOCOL in docs/GOAL_PROMPT.md exactly. Done means: tests and lint pass, the work is pushed, HANDOVER.md is updated with a Windows checklist, a PR into main is open (not merged), and you have stopped.
+/goal Complete the next unfinished FounderOS milestone in HANDOVER.md (or stop at a clean checkpoint after about 2 hours), following the full PROTOCOL in docs/GOAL_PROMPT.md exactly. Done means: tests and lint pass, the self-review gate is done, the work is pushed, HANDOVER.md is updated with a Windows checklist and Gate log row, a PR into main is open (not merged) with the template fully filled and CI green, and you have stopped.
 ```
 
 ## Optional variants

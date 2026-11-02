@@ -6,6 +6,7 @@
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** **M0: Scaffold & foundations**
+- **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-02 (planning session, no code yet)
 
 ## Milestones
@@ -20,6 +21,37 @@
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
+
+## Review gates (every PR passes all four)
+| # | Gate | Who | Pass condition |
+|---|---|---|---|
+| 1 | **CI** | GitHub Actions (from M0) | Backend tests, ruff, frontend lint/tsc/build, and the Windows backend job are all green |
+| 2 | **Self-review** | The session | Own diff reviewed; no open high-severity findings; scope = this milestone only |
+| 3 | **PR checklist** | The session, checked by the founder | Every section of the PR template is filled: DoD items, tests added, HANDOVER updated, no secrets |
+| 4 | **Founder review** | Founder | Depends on the tier below. Merge the PR to pass |
+
+**Tiers for gate 4:**
+- **Light** (about 5 min): read the summary, run the short Windows checklist, merge.
+- **Medium** (about 15 min): run the checklist and try the new feature by hand.
+- **Major** (about 30 min): a full checklist and acceptance test on the Windows PC. Then write `ACCEPTED` (or the issues found) in the Gate log. **The next milestone cannot start until a Major gate is ACCEPTED.**
+
+| Milestone | Tier |
+|---|---|
+| M0 Scaffold | Light |
+| M1 Financial engine | **Major** (are the numbers right?) |
+| M2 Vault & search | Light |
+| M3a Agent framework | Medium (first run with real Ollama) |
+| M3b Specialist agents | Medium |
+| M3c Laya / Jev | Light |
+| M4 Canvas UI | **Major** (first full demo) |
+| M5 Voice | **Major** (latency and barge-in on the GPU) |
+| M6 Packaging | **Major** (fresh install with `run.bat`) |
+| Partial-milestone PRs and bug-fix PRs | Light |
+
+### Gate log
+| Milestone | PR | Tier | Status |
+|---|---|---|---|
+| Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
 
 ## Current session
 - Started (UTC): n/a
