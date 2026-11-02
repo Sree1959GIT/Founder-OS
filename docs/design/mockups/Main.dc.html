@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FounderOS Decision Workspace</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0E1116}
+a{color:#7FB2F5}a:hover{color:#A9CBF8}
+input[type=range]{accent-color:#F2A93B;width:100%}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #0E1116; color: #E6E8EC; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid #232833; background: #11151B">
+<div style="display: flex; align-items: center; gap: 10px">
+<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="7" fill="none" stroke="#F2A93B" stroke-width="2"></rect><path d="M8 17 L12 9 L15 14 L18 11" fill="none" stroke="#F2A93B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span style="font-weight: 700; font-size: 16px; letter-spacing: -0.01em">FounderOS</span>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid #2A303B; border-radius: 8px; background: #161A21">
+<span style="color: #9AA3B2; font-size: 12px">Workspace</span>
+<span style="font-weight: 600">Northwind Analytics</span>
+</div>
+<div style="display: flex; align-items: center; gap: 6px; color: #9AA3B2; font-size: 12px">
+<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="#9AA3B2" stroke-width="2"></ellipse><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" fill="none" stroke="#9AA3B2" stroke-width="2"></path></svg>
+6 sources · synced 2 min ago
+</div>
+<div style="flex: 1"></div>
+<div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: #10261F; border: 1px solid #1F5A45; font-size: 12px; color: #7FDCB8">
+<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="none" stroke="#7FDCB8" stroke-width="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="#7FDCB8" stroke-width="2"></path></svg>
+Local · cloud on approval
+</div>
+<div style="display: flex; gap: 10px; font-size: 12px; color: #9AA3B2">
+<span style="display: flex; align-items: center; gap: 5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7FDCB8"></span>Ollama</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7FDCB8"></span>Qdrant</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7FDCB8"></span>GPU 7.9/12 GB</span>
+</div>
+<button aria-label="Settings" style="width: 40px; height: 40px; border-radius: 8px; border: 1px solid #2A303B; background: #161A21; color: #E6E8EC; display: flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="#C9CED6" stroke-width="2"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="#C9CED6" stroke-width="2" stroke-linecap="round"></path></svg>
+</button>
+</header>
+
+<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: stretch">
+
+<aside style="flex: 1 1 340px; max-width: 380px; min-width: 0; border-right: 1px solid #232833; background: #11151B; display: flex; flex-direction: column">
+<div style="padding: 16px 20px 8px; display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA3B2">Executive Advisor</span>
+<span style="font-size: 12px; color: #9AA3B2">Socratic mode</span>
+</div>
+<div style="flex: 1; padding: 8px 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="align-self: flex-end; max-width: 85%; background: #1F2A3A; border-radius: 12px 12px 4px 12px; padding: 10px 14px; line-height: 1.5">I want to open a sales office in Dubai next quarter.</div>
+<div style="max-width: 92%; display: flex; flex-direction: column; gap: 6px">
+<div style="background: #161A21; border: 1px solid #262B35; border-radius: 12px 12px 12px 4px; padding: 10px 14px; line-height: 1.55">Before we size it, who closes the first five deals there, and how sure are you they will? Five agents are already working. Watch the <span style="color: #F2A93B; font-weight: 600">amber band</span> on the runway chart.</div>
+<span style="font-size: 11px; color: #8C95A4">Advisor · 0.8 s · local</span>
+</div>
+<div style="align-self: flex-end; max-width: 85%; background: #1F2A3A; border-radius: 12px 12px 4px 12px; padding: 10px 14px; line-height: 1.5">Probably me for the first quarter, then a hire.</div>
+<div style="max-width: 92%; display: flex; flex-direction: column; gap: 6px">
+<div style="background: #161A21; border: 1px solid #262B35; border-radius: 12px 12px 12px 4px; padding: 10px 14px; line-height: 1.55">That makes you the key-person risk. Assume it is month six and Dubai has failed. What is the most likely reason?</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid #3A3220; color: #F2C77A">Pre-mortem started</span>
+<span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid #2A303B; color: #9AA3B2">Cites: [[Hiring plan 2027]]</span>
+</div>
+</div>
+</div>
+
+<div style="margin: 12px 16px 16px; padding: 14px; border: 1px solid #2A303B; border-radius: 14px; background: #161A21; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #7FDCB8; font-weight: 600"><span style="width: 8px; height: 8px; border-radius: 50%; background: #7FDCB8"></span>{{voiceState}}</span>
+<div role="group" aria-label="Voice mode" style="display: flex; border: 1px solid #2A303B; border-radius: 8px; overflow: hidden">
+<button onClick="{{setPtt}}" style="{{pttStyle}}">Push-to-talk</button>
+<button onClick="{{setDuplex}}" style="{{duplexStyle}}">Full duplex</button>
+</div>
+</div>
+<div aria-hidden="true" style="height: 40px; display: flex; align-items: center; gap: 3px">
+<sc-for list="{{bars}}" as="b" hint-placeholder-count="40">
+<span style="{{b.style}}"></span>
+</sc-for>
+</div>
+<div style="display: flex; gap: 8px; align-items: center">
+<label for="ask" style="position: absolute; left: -9999px">Type a question</label>
+<input id="ask" type="text" placeholder="Type, or just speak..." style="flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #2A303B; background: #0E1116; color: #E6E8EC; font-size: 14px; font-family: inherit">
+<button aria-label="Microphone" onClick="{{toggleMic}}" style="{{micStyle}}">
+<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="#0E1116" stroke-width="2"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="#0E1116" stroke-width="2" stroke-linecap="round"></path></svg>
+</button>
+</div>
+</div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; color: #9AA3B2">Open decision</span>
+<h1 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em">Open a Dubai sales office in Q1</h1>
+</div>
+<div style="flex: 1"></div>
+<span style="font-size: 12px; padding: 5px 10px; border-radius: 999px; background: #2B2213; color: #F2C77A; border: 1px solid #4A3A1C">One-way door · full analysis</span>
+<span style="font-size: 12px; padding: 5px 10px; border-radius: 999px; background: #161A21; color: #C9CED6; border: 1px solid #2A303B">Review on 2 Dec 2026</span>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<sc-for list="{{kpis}}" as="k" hint-placeholder-count="4">
+<div style="background: #161A21; border: 1px solid #262B35; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 12px; color: #9AA3B2">{{k.label}}</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 500; letter-spacing: -0.02em">{{k.value}}</span>
+<span style="font-size: 12px; color: {{k.deltaColor}}">{{k.delta}}</span>
+<button style="align-self: flex-start; margin-top: 2px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #7FB2F5; background: transparent; border: 1px dashed #2E4A6E; border-radius: 6px; padding: 3px 7px; cursor: pointer">{{k.lineage}}</button>
+</div>
+</sc-for>
+</div>
+
+<section style="background: #161A21; border: 1px solid #262B35; border-radius: 14px; padding: 18px 20px; display: flex; flex-wrap: wrap; gap: 24px">
+<div style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600">Cash runway · base vs Dubai scenario</h2>
+<span style="font-size: 12px; color: #9AA3B2">18-month projection · DuckDB</span>
+</div>
+<svg viewBox="0 0 640 230" style="width: 100%; height: auto" role="img" aria-label="{{chartLabel}}">
+<rect x="40" y="{{bandY}}" width="580" height="{{bandH}}" fill="#F2A93B" fill-opacity="0.14"></rect>
+<line x1="40" y1="200" x2="620" y2="200" stroke="#2A303B"></line>
+<line x1="40" y1="105" x2="620" y2="105" stroke="#1D222B" stroke-dasharray="3 4"></line>
+<line x1="40" y1="10" x2="620" y2="10" stroke="#1D222B" stroke-dasharray="3 4"></line>
+<text x="34" y="204" fill="#8C95A4" font-size="10" text-anchor="end" font-family="JetBrains Mono, monospace">$0</text>
+<text x="34" y="109" fill="#8C95A4" font-size="10" text-anchor="end" font-family="JetBrains Mono, monospace">$1.3M</text>
+<text x="34" y="14" fill="#8C95A4" font-size="10" text-anchor="end" font-family="JetBrains Mono, monospace">$2.6M</text>
+<text x="40" y="222" fill="#8C95A4" font-size="10" font-family="JetBrains Mono, monospace">Nov 26</text>
+<text x="330" y="222" fill="#8C95A4" font-size="10" text-anchor="middle" font-family="JetBrains Mono, monospace">Aug 27</text>
+<text x="620" y="222" fill="#8C95A4" font-size="10" text-anchor="end" font-family="JetBrains Mono, monospace">May 28</text>
+<text x="616" y="{{bandLabelY}}" fill="#F2C77A" font-size="10" text-anchor="end">Under 3 months of cash</text>
+<polyline points="{{basePoints}}" fill="none" stroke="#7FB2F5" stroke-width="2.5" stroke-linejoin="round"></polyline>
+<polyline points="{{scenPoints}}" fill="none" stroke="#F2A93B" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round"></polyline>
+<line x1="{{zeroX}}" y1="10" x2="{{zeroX}}" y2="200" stroke="#F2A93B" stroke-opacity="0.6"></line>
+<circle cx="{{zeroX}}" cy="200" r="4.5" fill="#F2A93B"></circle>
+</svg>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #C9CED6">
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 18px; height: 3px; background: #7FB2F5"></span>Base plan · runway {{baseRunway}}</span>
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 18px; height: 0; border-top: 3px dashed #F2A93B"></span>Dubai scenario · runway {{scenRunway}}</span>
+</div>
+</div>
+<div style="flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA3B2">Scenario levers</span>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between"><label for="price">Price change</label><span style="font-family: 'JetBrains Mono', monospace; color: #F2C77A">{{priceLabel}}</span></div>
+<input id="price" type="range" min="-10" max="25" step="1" value="{{price}}" onChange="{{onPrice}}">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between"><label for="churn">Monthly churn change</label><span style="font-family: 'JetBrains Mono', monospace; color: #F2C77A">{{churnLabel}}</span></div>
+<input id="churn" type="range" min="-2" max="4" step="0.5" value="{{churn}}" onChange="{{onChurn}}">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between"><label for="hires">Dubai hires</label><span style="font-family: 'JetBrains Mono', monospace; color: #F2C77A">{{hires}}</span></div>
+<input id="hires" type="range" min="0" max="6" step="1" value="{{hires}}" onChange="{{onHires}}">
+</div>
+<div style="border-top: 1px solid #262B35; padding-top: 14px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; color: #9AA3B2">Monte Carlo · 1,000 runs</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 18px">{{mcLabel}}</span>
+<span style="font-size: 12px; color: #9AA3B2">P10 to P90 runway range</span>
+</div>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<section style="background: #161A21; border: 1px solid #262B35; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 15px; font-weight: 600">Pre-mortem · top risks</h2><span style="font-size: 11px; color: #9AA3B2">Devil's Advocate</span></div>
+<sc-for list="{{risks}}" as="r" hint-placeholder-count="3">
+<div style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid #1F242D">
+<span style="{{r.badgeStyle}}">{{r.level}}</span>
+<span style="line-height: 1.45; color: #D5D9E0">{{r.text}}</span>
+</div>
+</sc-for>
+</section>
+<section style="background: #161A21; border: 1px solid #262B35; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 15px; font-weight: 600">Market Scout · UAE B2B analytics</h2><span style="font-size: 11px; color: #F2C77A">Cloud · approved</span></div>
+<p style="margin: 0; line-height: 1.55; color: #D5D9E0">[SCOUT FINDING: market size and growth for UAE mid-market analytics, with sources]</p>
+<p style="margin: 0; line-height: 1.55; color: #D5D9E0">[SCOUT FINDING: two named competitors and their local pricing]</p>
+<div style="display: flex; gap: 6px; flex-wrap: wrap"><span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid #2A303B; color: #9AA3B2">3 citations</span><span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid #1F5A45; color: #7FDCB8">Verified</span></div>
+</section>
+</div>
+</main>
+
+<aside style="flex: 1 1 280px; max-width: 320px; min-width: 0; border-left: 1px solid #232833; background: #11151B; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #9AA3B2">Agents</span>
+<a href="AgentActivity.dc.html" style="font-size: 12px">Open activity</a>
+</div>
+<div style="display: flex; gap: 8px; font-size: 12px; color: #9AA3B2"><span>2/2 local</span><span>·</span><span>2/6 cloud</span><span>·</span><span>1 queued</span></div>
+<sc-for list="{{agents}}" as="a" hint-placeholder-count="7">
+<div style="background: #161A21; border: 1px solid #262B35; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="{{a.dotStyle}}"></span>
+<span style="font-weight: 600; font-size: 13px; flex: 1; min-width: 0">{{a.name}}</span>
+<span style="font-size: 11px; color: #8C95A4">{{a.where}}</span>
+</div>
+<span style="font-size: 12px; color: #B4BBC6; line-height: 1.4">{{a.step}}</span>
+<span style="font-size: 11px; color: {{a.statusColor}}; font-family: 'JetBrains Mono', monospace">{{a.status}}</span>
+</div>
+</sc-for>
+</aside>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { price: 5, churn: 0.5, hires: 3, mode: 'duplex', mic: true };
+  }
+  path(burn) {
+    var pts = [];
+    for (var m = 0; m <= 18; m++) {
+      var cash = Math.max(0, 2410 - burn * m);
+      var x = 40 + m * (580 / 18);
+      var y = 200 - (cash / 2600) * 190;
+      pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+    }
+    return pts.join(' ');
+  }
+  renderVals() {
+    var s = this.state;
+    var baseBurn = 186;
+    var scenBurn = baseBurn + 14 + s.hires * 16 - s.price * 4.2 + s.churn * 9;
+    if (scenBurn < 20) scenBurn = 20;
+    var baseRun = 2410 / baseBurn;
+    var scenRun = 2410 / scenBurn;
+    var zeroM = Math.min(18, scenRun);
+    var bandTopCash = scenBurn * 3;
+    var bandY = 200 - (Math.min(bandTopCash, 2600) / 2600) * 190;
+    var lo = (scenRun * 0.78).toFixed(1);
+    var hi = (scenRun * 1.17).toFixed(1);
+    var bars = [];
+    for (var i = 0; i < 40; i++) {
+      var h = s.mic ? 6 + Math.round(26 * Math.abs(Math.sin(i * 0.55) * Math.cos(i * 0.21))) : 4;
+      bars.push({ style: 'flex: 1; height: ' + h + 'px; border-radius: 2px; background: ' + (s.mic ? '#7FDCB8' : '#2A303B') });
+    }
+    var seg = function (active) {
+      return 'height: 32px; padding: 0 10px; border: 0; font-size: 12px; cursor: pointer; ' + (active ? 'background: #2A303B; color: #E6E8EC' : 'background: transparent; color: #9AA3B2');
+    };
+    var self = this;
+    var dot = function (c) { return 'width: 8px; height: 8px; border-radius: 50%; background: ' + c; };
+    var badge = function (c, bg) { return 'flex: none; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; color: ' + c + '; background: ' + bg; };
+    return {
+      price: s.price, churn: s.churn, hires: s.hires,
+      priceLabel: (s.price >= 0 ? '+' : '') + s.price + '%',
+      churnLabel: (s.churn >= 0 ? '+' : '') + s.churn + ' pts',
+      onPrice: function (e) { self.setState({ price: Number(e.target.value) }); },
+      onChurn: function (e) { self.setState({ churn: Number(e.target.value) }); },
+      onHires: function (e) { self.setState({ hires: Number(e.target.value) }); },
+      basePoints: this.path(baseBurn),
+      scenPoints: this.path(scenBurn),
+      zeroX: (40 + zeroM * (580 / 18)).toFixed(1),
+      bandY: bandY.toFixed(1),
+      bandH: (200 - bandY).toFixed(1),
+      bandLabelY: (bandY + 14).toFixed(1),
+      baseRunway: baseRun.toFixed(1) + ' mo',
+      scenRunway: scenRun.toFixed(1) + ' mo',
+      mcLabel: lo + ' to ' + hi + ' mo',
+      chartLabel: 'Cash projection. Base runway ' + baseRun.toFixed(1) + ' months, Dubai scenario ' + scenRun.toFixed(1) + ' months.',
+      voiceState: s.mic ? (s.mode === 'duplex' ? 'Listening · you can interrupt anytime' : 'Hold the mic button to talk') : 'Microphone off',
+      pttStyle: seg(s.mode === 'ptt'),
+      duplexStyle: seg(s.mode === 'duplex'),
+      setPtt: function () { self.setState({ mode: 'ptt' }); },
+      setDuplex: function () { self.setState({ mode: 'duplex' }); },
+      toggleMic: function () { self.setState({ mic: !s.mic }); },
+      micStyle: 'width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; background: ' + (s.mic ? '#7FDCB8' : '#5B6472'),
+      bars: bars,
+      kpis: [
+        { label: 'Cash in bank', value: '$2.41M', delta: 'as of 31 Oct 2026', deltaColor: '#9AA3B2', lineage: 'bank.csv · r24' },
+        { label: 'Net burn / month', value: '$186K', delta: '+8% vs 3-mo avg', deltaColor: '#F2C77A', lineage: 'burn() · pnl.csv' },
+        { label: 'Runway', value: baseRun.toFixed(1) + ' mo', delta: 'zero cash Dec 2027', deltaColor: '#9AA3B2', lineage: 'runway() · 2 srcs' },
+        { label: 'Gross margin', value: '71.4%', delta: '+1.2 pts QoQ', deltaColor: '#7FDCB8', lineage: 'gm() · pnl.csv' }
+      ],
+      risks: [
+        { level: 'High', badgeStyle: badge('#1A1206', '#F2A93B'), text: 'Founder is the only closer for 2 quarters: home-market pipeline coverage drops.' },
+        { level: 'High', badgeStyle: badge('#1A1206', '#F2A93B'), text: 'Sales cycle in a new region may be twice as long, pushing first revenue past runway comfort.' },
+        { level: 'Med', badgeStyle: badge('#E6E8EC', '#3A4150'), text: 'Free-zone licensing and entity setup lead time not yet confirmed.' }
+      ],
+      agents: [
+        { name: 'Planner', where: 'local', step: 'Team of 7 planned · one-way door', status: 'done · 1.1 s', statusColor: '#7FDCB8', dotStyle: dot('#7FDCB8') },
+        { name: 'Financial Analyst', where: 'local', step: 'running scenario_projection(hires=' + s.hires + ')', status: 'querying data', statusColor: '#F2C77A', dotStyle: dot('#F2A93B') },
+        { name: 'Librarian', where: 'local', step: 'Found 4 notes · [[Hiring plan 2027]]', status: 'done · 0.4 s', statusColor: '#7FDCB8', dotStyle: dot('#7FDCB8') },
+        { name: "Devil's Advocate", where: 'cloud', step: 'Drafting pre-mortem, 3 of 5 causes', status: 'thinking · 14 s', statusColor: '#F2C77A', dotStyle: dot('#F2A93B') },
+        { name: 'Market Scout · UAE', where: 'cloud', step: 'Sources verified', status: 'done · 22 s', statusColor: '#7FDCB8', dotStyle: dot('#7FDCB8') },
+        { name: 'Regulatory & Tax', where: 'cloud', step: 'Waiting for a cloud slot', status: 'queued', statusColor: '#9AA3B2', dotStyle: dot('#5B6472') },
+        { name: 'Verifier', where: 'local', step: 'Checked 9 numbers, all have lineage', status: 'verifying', statusColor: '#F2C77A', dotStyle: dot('#F2A93B') }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

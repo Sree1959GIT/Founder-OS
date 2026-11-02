@@ -14,7 +14,9 @@
 | M0 | Scaffold & foundations | NOT STARTED | |
 | M1 | Financial spine (DuckDB) | NOT STARTED | |
 | M2 | Vault & hybrid RAG | NOT STARTED | |
-| M3 | LLM layer & agents (text) | NOT STARTED | |
+| M3a | LLM layer, agent framework & core agents | NOT STARTED | |
+| M3b | Specialist agents | NOT STARTED | |
+| M3c | Decision models (Laya / Jev) | NOT STARTED | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
@@ -33,7 +35,7 @@ Only planning documents exist: PRD v2, the `/goal` prompt, CLAUDE.md and this fi
 2. Write `.env.example` with these keys: `WORKSPACE_ID`, `DATA_DIR`, `VAULT_PATH`, `OLLAMA_BASE_URL`, `OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, `QDRANT_HOST`, `QDRANT_PORT`, `DEEP_PROVIDER`, `CLOUD_ALLOWED`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `CURRENCY`.
 3. Add `docker-compose.yml` with Qdrant only.
 4. Write `scripts/generate_demo_data.py`: seeded "Northwind Analytics" B2B SaaS covering 24 months of P&L, bank balance, customers/subscriptions, pipeline, marketing spend by channel and headcount. Output to `sample_data/` as CSV plus one XLSX.
-5. Set up the frontend: Vite + React + TS + Tailwind + shadcn/ui shell with a dark theme, a placeholder layout (conversation left, canvas right) and a health badge that calls `/api/health` through the Vite proxy (port 3000 → 8000).
+5. Set up the frontend: Vite + React + TS + Tailwind + shadcn/ui shell. Take the **design tokens (colours, type, spacing, radius) and the overall layout from the Claude Design mock-ups** linked in `docs/design/README.md`, and put them in Tailwind config and CSS variables. Include a health badge that calls `/api/health` through the Vite proxy (port 3000 → 8000).
 6. Draft `setup.bat`/`run.bat` and `setup.sh`/`run.sh`.
 7. Add GitHub Actions CI with jobs for pytest, ruff, frontend lint/tsc/build, and one `windows-latest` backend test job.
 8. Write a minimal README (it is expanded fully in M6).
@@ -55,5 +57,13 @@ See PRD §12 (Decision log). Summary of the planning session on 2026-11-02:
 - Runs natively on Windows; Docker only for Qdrant.
 - Stack: LangGraph, Kokoro, Qdrant, shadcn/ui + Recharts. Synthetic demo data. Tests use mocks; the founder verifies on the PC.
 
+Second planning round (2026-11-02):
+- Agents: fixed types (5 core and 8 specialist) with instances spawned dynamically by the Planner, in parallel. The founder approves teams that include cloud agents. Custom agent types come after v1.
+- Agent Activity panel on the dashboard.
+- Decision-model layer: LLM, then Laya (local, fine-tuned), with Jev as an optional paid add-on. Monte Carlo, weighted scoring, EV and calibration were added to the engine.
+- M3 is split into M3a/M3b/M3c.
+- The UI is being designed in Claude Design first (see `docs/design/README.md`).
+
 ## Progress log
 - 2026-11-02: Planning session. Agreed scope with the founder and wrote PRD v2, GOAL_PROMPT, CLAUDE.md and HANDOVER.md.
+- 2026-11-02: Added the agent design (F3, F4b), decision models (F7) and decision-science routines to the PRD; split M3; started the UI mock-ups in Claude Design.

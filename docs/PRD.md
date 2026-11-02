@@ -107,6 +107,13 @@ One interface: `async complete(messages, tools=None, json_schema=None, stream=Fa
 - **Scenario engine:** inputs (price Δ%, churn Δ, CAC Δ, new hires, spend change, start month) → recomputed
   12-month projection via DuckDB in **< 200 ms** for slider use. Base vs scenario series + delta.
 - Sensitivity table (2 variables × 5 steps) for the financial agent.
+- **Monte Carlo** (`engine/montecarlo.py`, NumPy, seeded): distributions on the scenario drivers (e.g. churn, price, CAC,
+  win-rate) → P10/P50/P90 cash path, runway range and probability that cash hits zero within 12 months. Must complete
+  1,000 runs in under 1 s.
+- **Decision-science routines** (deterministic code; the LLM only elicits the inputs): weighted scoring / MCDA
+  (founder-set weights → priority matrix), expected value and simple decision trees (including "pilot first"
+  staged options), kill criteria, and **calibration tracking** (memos store probabilistic predictions; the 30-day
+  review records outcomes; a Brier score is tracked per founder and per agent).
 - **Synthetic demo company** generator (`scripts/generate_demo_data.py`, seeded, deterministic): fictional
   B2B SaaS "Northwind Analytics", 24 months, ~₹/$ selectable currency, ~150 customers, pipeline, 3 channels,
   ~25 staff. Ships in `sample_data/` and is the basis of golden-number tests.
@@ -120,17 +127,53 @@ One interface: `async complete(messages, tools=None, json_schema=None, stream=Fa
 - Dense: Qdrant collection per workspace, `nomic-embed-text` (768-d). Sparse: `rank-bm25`. **RRF (k=60)** fusion,
   return parent chunks with citations `{path, heading, chunk_id}`.
 
-### F3 Agent swarm (`backend/agents/`, LangGraph)
-| Agent | Job | Output |
-|---|---|---|
-| Orchestrator | Socratic dialogue, intent classification, dispatch, ≤3-sentence replies, pre-mortems, never blindly agrees | spoken/text reply + dispatch plan |
-| Financial | maps question → metric routine / scenario / guarded SQL; builds sensitivity tables | `metric_card`, `scenario`, `table` artifacts w/ lineage |
-| Risk / Devil's advocate | downside scenarios, key-person dependency, execution blockers, pre-mortem | `risk_register` artifact |
-| Memory | RAG context for other agents; writes decision memos to `vault/<ws>/decisions/YYYY-MM-DD-<slug>.md` with context, options, rejected alternatives, assumptions, metrics (+lineage), review date (+30d) | `decision_memo` artifact |
-| Scout | market/web synthesis (Gemini w/ search grounding when available), structured chart JSON | `chart`, `insight` artifacts |
+### F3 Agent swarm (`backend/app/agents/`, LangGraph): fixed types, dynamic instances
 
-- Artifacts are typed (Pydantic) and streamed over SSE: `metric_card | scenario | priority_matrix | risk_register | decision_memo | chart | table | citation`.
-- Prompts live in `backend/agents/prompts/*.md` (editable without code changes).
+**Design principle.** Agent **types** are fixed in code. Each type has a vetted prompt, an allow-list of tools, a
+privacy class (local-only or cloud-allowed) and a cost class. For each decision, the **Planner** dynamically
+decides which types to run, how many **instances** of each, and the **brief** for each instance. Instances run in
+parallel through the LangGraph `Send` fan-out, limited by concurrency caps (default: 2 local and 6 cloud at once, set in
+Settings; any extra instances queue). Nothing is spawned that isn't a registered type, which keeps math
+deterministic, privacy routing enforceable and the system testable.
+
+**Core agents (always on):**
+| Agent | Job | Runs on |
+|---|---|---|
+| **Advisor** (voice/text persona) | Socratic dialogue in replies of 3 sentences or fewer. Never blindly agrees. Narrates what the swarm is doing ("Three analysts are on it; the runway chart is updating") | Local |
+| **Planner** | Classifies the decision (type, reversibility: one-way vs two-way door) and decomposes it into a task graph. Proposes the team: which agent types, how many instances, the briefs and dependencies | Local |
+| **Financial Analyst** | The **only** agent that can call metric routines, scenarios, Monte Carlo and guarded SQL. Its outputs carry `Lineage` | Local |
+| **Librarian** | Hybrid RAG over the vault and past decisions; supplies context packs to other agents | Local |
+| **Verifier** | Rejects any artifact containing a number without lineage or a claim without a citation, and sends it back to the agent once before flagging it | Local |
+
+**Specialist agents (spawned on demand, multiple instances allowed):**
+| Agent | Job | Runs on |
+|---|---|---|
+| **Devil's Advocate** | Pre-mortem ("it failed after 6 months; why?"), red-team, downside scenarios | Cloud allowed |
+| **Market Scout** | Market size, competitors, local conditions; one instance per market or competitor. Uses web search grounding when cloud is allowed | Cloud |
+| **Revenue & Customer** | Pricing, churn, pipeline, segment value (requests numbers from the Financial Analyst) | Local |
+| **People & Ops** | Hiring, capacity, key-person dependency, execution plan | Cloud allowed |
+| **Regulatory & Tax** | Flags compliance and tax considerations to verify. Not legal advice | Cloud |
+| **Prioritiser** | Runs the weighted-scoring routine (F1) for the 2×2 matrix. Weights are elicited from the founder | Local |
+| **Memo Writer** | Writes decision memos to `vault/<ws>/decisions/YYYY-MM-DD-<slug>.md`: context, options, rejected alternatives, assumptions, metrics (with lineage), predictions (for calibration), kill criteria, review date (+30d) | Cloud allowed |
+| **Perspective lens** (template) | One-off viewpoints the Planner can instantiate, e.g. "Investor", "Largest customer", "Competitor CEO". Prompt-only: **no data tools, no web access** | Cloud allowed |
+
+"Cloud allowed" agents run locally when cloud is disabled in Settings or no cloud provider is configured. Data
+sent to cloud agents is filtered by the privacy classifier (F7): raw financial rows are never sent, only
+summarised metrics with lineage IDs.
+
+**Team approval:** the Planner's proposed team is shown in the Agent Activity panel. If any instance would use a
+cloud provider, the founder must approve (approve / edit briefs / add / remove). Local-only teams start
+immediately. This is configurable in Settings: `always` / `cloud_only` (default) / `never`.
+
+**Agent event protocol** (SSE, typed Pydantic): `team.proposed`, `team.approved`, `agent.spawned`,
+`agent.status` (`queued | thinking | querying_data | searching_vault | searching_web | waiting_cloud | verifying | done | failed | cancelled`),
+`agent.step` (human-readable current action, e.g. "running runway_projection()"), `agent.tool_call`,
+`agent.artifact`, `agent.done` (elapsed ms, provider, tokens, est. cost). The dashboard can also send
+`agent.cancel` and `agent.rerun` (optionally with an edited brief).
+
+- Artifacts are typed (Pydantic) and streamed over SSE: `metric_card | scenario | monte_carlo | priority_matrix | risk_register | decision_memo | chart | table | citation | insight`.
+- Prompts live in `backend/app/agents/prompts/*.md` (editable without code changes). The agent registry lives in `agents/registry.py`.
+- **After v1:** user-defined permanent agent types (e.g. "My CA's view") created from a Settings screen, also limited to prompt-only plus approved tools.
 
 ### F4 Canvas UI (`frontend/`)
 - Layout: left = conversation (text input + voice controller + transcript); right = canvas grid of artifact cards; top = workspace/data status, Local/Cloud badge.
@@ -142,6 +185,13 @@ One interface: `async complete(messages, tools=None, json_schema=None, stream=Fa
 - Settings: deep provider, cloud allowed (on/off), voice mode (push-to-talk / full-duplex), voice choice.
 - Dark "executive" theme, keyboard accessible, works at 1280px+ (desktop app first).
 
+### F4b Agent Activity panel (dashboard)
+- One live card per agent instance, showing: type icon, instance name and brief, status chip, current step, elapsed
+  time, a local or cloud badge with provider, tokens/cost, and links to the artifacts it produced. Actions: cancel, re-run, and edit the brief.
+- Team proposal view with approve/edit controls, as set by the approval policy.
+- Timeline (Gantt-style) view of the run showing parallelism and dependencies.
+- Concurrency caps and the approval policy are set in Settings.
+
 ### F5 Voice advisor (`backend/voice/`) — built **last**
 - Browser captures 16 kHz mono PCM (AudioWorklet) → `/ws/voice`.
 - Silero VAD (ONNX), 30 ms frames; end-of-utterance after 400 ms silence (configurable).
@@ -150,6 +200,25 @@ One interface: `async complete(messages, tools=None, json_schema=None, stream=Fa
 - **Barge-in:** speech detected while TTS playing → server sends `interrupt`, cancels LLM+TTS tasks, client flushes audio buffer within 100 ms.
 - Modes: push-to-talk and full-duplex. Waveform visualiser + "listening / thinking / speaking / interrupted" states.
 - **Latency targets (honest):** first audio byte after end-of-speech p50 **≤ 900 ms**, stretch goal 500 ms. Metrics logged per turn and shown in a debug overlay.
+
+### F7 Decision-model layer ("System 1": fast typed choices) (`backend/app/decision/`)
+Many micro-decisions per turn are too slow for a 7B LLM (1–2 s each). These use a **decision model** that picks one
+of the given options and returns a probability, never free text.
+
+- Interface: `choose(state, question, options) -> Decision(choice, probability, provider, latency_ms)`, plus `score(...)` and `yes_no(...)`.
+- Implementations:
+  - `LLMDecisionProvider` (Ollama JSON-schema output): the **initial default**.
+  - `LayaProvider`: local, open-source Laya (~421M parameters, ~1 GB, Apache-2.0), on GPU or CPU. It becomes the default once it is fine-tuned on our logged examples and beats the LLM in the bake-off.
+  - `JevProvider`: TypeSafe AI's Jev, a paid cloud model. Optional. Receives only non-sensitive routing state, never financial rows.
+  - `FakeDecisionProvider`: for tests.
+- Uses: intent routing; Planner agent-type selection; metric-routine selection; barge-in vs backchannel
+  ("uh-huh") detection in voice; privacy classification (may this text go to the cloud?); decision reversibility
+  (one-way vs two-way door); Verifier yes/no checks.
+- **Not used for:** numbers, open-ended reasoning, memos, or 1–5 ordinal scoring.
+- **Confidence fallback:** if the probability is below `DECISION_MIN_CONFIDENCE` (default 0.75), escalate to the LLM, or ask the founder.
+- **Data flywheel:** every decision is logged (`data/<ws>/decision_log.jsonl`: state, options, choice, probability, and the eventual correction), which builds the fine-tuning set for Laya.
+- **Bake-off harness** (`scripts/eval_decision_models.py`): about 200 labelled routing examples from the Northwind demo, reporting accuracy, calibration and latency per provider. The results pick the default provider.
+- Status note: Jev and Laya were both released in autumn 2026, and their published performance figures are vendor-reported. The base Laya model performs near random zero-shot and **requires fine-tuning**. Re-verify APIs and licences when implementing.
 
 ### F6 Packaging & demo
 - `docker-compose.yml`: Qdrant only (6333/6334, volume `./data/qdrant`).
@@ -180,11 +249,13 @@ Each milestone ends with: all tests green, lint clean, commit + push, `HANDOVER.
 | # | Milestone | Definition of Done |
 |---|---|---|
 | **M0** | Scaffold & foundations | Repo tree, `pyproject`/requirements, FastAPI app with `/api/health`, config via pydantic-settings, Vite+React+TS+Tailwind+shadcn shell, docker-compose (Qdrant), `.env.example`, `setup.bat`/`run.bat` draft + `.sh` equivalents, GitHub Actions CI (pytest, ruff, tsc, build), synthetic data generator + `sample_data/`. |
-| **M1** | Financial spine | Ingestion + column mapping, all §F1 routines with Lineage, scenario engine (<200 ms), sensitivity, SQL guard, REST endpoints (`/api/data/*`, `/api/metrics/*`, `/api/scenario`), golden tests. |
+| **M1** | Financial spine | Ingestion + column mapping, all §F1 routines with Lineage, scenario engine (<200 ms), sensitivity, Monte Carlo, weighted scoring / EV / decision-tree routines, calibration store, SQL guard, REST endpoints (`/api/data/*`, `/api/metrics/*`, `/api/scenario`), golden tests. |
 | **M2** | Vault & hybrid RAG | Vault manager (frontmatter, wikilinks, backlinks, watcher), parsers, parent-child chunking, Qdrant + in-memory fallback, BM25, RRF, `/api/vault/*`, `/api/search`, tests with fake embeddings. |
-| **M3** | LLM layer & agents (text) | Provider interface + Ollama/Gemini/ClaudeAgentSDK/Anthropic/Fake, routing + fallback, LangGraph graph, 5 agents, prompts, artifacts over SSE, `/api/chat` (streaming), decision memo writing, tests with FakeProvider. |
-| **M4** | Canvas UI | Chat panel, artifact cards, Scenario Simulator, Prioritisation Matrix, Decision Memo (MD/PDF export), lineage popovers, data & vault panels, settings; Playwright smoke test against backend with FakeProvider. **First demoable build.** |
-| **M5** | Voice | WS audio pipeline, VAD, STT, Kokoro streaming TTS, barge-in, PTT/full-duplex, latency metrics; tests with WAV fixtures and fake STT/TTS; CPU fallback. |
+| **M3a** | LLM layer, agent framework & core agents | LLM provider interface (Ollama/Gemini/ClaudeAgentSDK/Anthropic/Fake), routing and fallback; decision-model interface with LLM and Fake providers plus decision logging; agent registry; LangGraph graph with Planner → `Send` fan-out → Verifier; concurrency caps; team-approval policy; agent event protocol over SSE; `/api/chat` (streaming); core agents Advisor, Planner, Financial Analyst, Librarian, Verifier; tests with fakes. |
+| **M3b** | Specialist agents | Devil's Advocate, Market Scout, Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Memo Writer (writes memos with predictions and review date), Perspective-lens template; cancel and re-run with edited brief; privacy filter on cloud payloads; tests. |
+| **M3c** | Decision models (Laya / Jev) | `LayaProvider`, `JevProvider`, bake-off harness and labelled set; Laya fine-tuning script (runs on founder's PC GPU); provider choice is driven by config and the bake-off results. |
+| **M4** | Canvas UI | Implements the **Claude Design mock-ups** (`docs/design/`): conversation panel, canvas artifact cards, **Agent Activity panel** (live cards, team approval, timeline), Scenario Simulator plus Monte Carlo fan chart, Prioritisation Matrix, Decision Memo (MD/PDF export), lineage popovers, data and vault panels, Settings; Playwright smoke test against the backend with fakes. **First demoable build.** |
+| **M5** | Voice | WS audio pipeline, VAD, STT, Kokoro streaming TTS, barge-in plus decision-model backchannel detection, PTT/full-duplex, latency metrics; tests with WAV fixtures and fake STT/TTS; CPU fallback. |
 | **M6** | Windows packaging, polish & demo | Final `setup.bat`/`run.bat`, model download script, README + demo script, VRAM/latency tuning notes, bug-fix pass from founder's PC feedback. |
 
 ---
@@ -205,16 +276,18 @@ Each milestone ends with: all tests green, lint clean, commit + push, `HANDOVER.
 founder-os/
 ├── CLAUDE.md  HANDOVER.md  README.md  .env.example  docker-compose.yml
 ├── setup.bat run.bat setup.sh run.sh
-├── docs/ PRD.md  GOAL_PROMPT.md  reference/
-├── scripts/ generate_demo_data.py  download_models.py
+├── docs/ PRD.md  GOAL_PROMPT.md  design/ (Claude Design link + exported mock-ups)  reference/
+├── scripts/ generate_demo_data.py  download_models.py  eval_decision_models.py  finetune_laya.py
 ├── sample_data/            # generated Northwind CSV/XLSX
 ├── backend/
 │   ├── pyproject.toml (or requirements.txt + requirements-dev.txt)
 │   ├── app/ main.py  config.py  deps.py  events.py (SSE bus)
 │   │   ├── api/   health.py data.py metrics.py scenario.py chat.py vault.py voice_ws.py
 │   │   ├── llm/   base.py ollama.py gemini.py claude_sdk.py anthropic_api.py fake.py router.py
-│   │   ├── agents/ graph.py orchestrator.py financial.py risk.py memory.py scout.py prompts/
-│   │   ├── engine/ duckdb_engine.py metrics.py scenario.py sql_guard.py lineage.py ingest.py hybrid_rag.py chunking.py
+│   │   ├── agents/ registry.py graph.py planner.py advisor.py financial.py librarian.py verifier.py
+│   │   │          specialists/ (devils_advocate, market_scout, revenue, people_ops, regulatory, prioritiser, memo_writer, lens) prompts/
+│   │   ├── decision/ base.py llm.py laya.py jev.py fake.py log.py
+│   │   ├── engine/ duckdb_engine.py metrics.py scenario.py montecarlo.py decision_science.py calibration.py sql_guard.py lineage.py ingest.py hybrid_rag.py chunking.py
 │   │   ├── vault/ manager.py links.py watcher.py
 │   │   └── voice/ vad.py stt.py tts.py session.py
 │   └── tests/ (unit + api, fixtures)
@@ -249,3 +322,10 @@ founder-os/
 | 2026-11-02 | Demo data: synthetic seeded company "Northwind Analytics". |
 | 2026-11-02 | Verification: mocks in cloud dev; founder runs a checklist on Windows at each milestone. |
 | 2026-11-02 | Sessions stop at each milestone or ~2 h, whichever first; state lives in `HANDOVER.md`. |
+| 2026-11-02 | Agent design: fixed agent **types** (5 core and 8 specialist, including the Perspective-lens template); the Planner spawns **instances** dynamically per decision and runs them in parallel with concurrency caps (2 local, 6 cloud). |
+| 2026-11-02 | Team approval policy default `cloud_only`: the founder approves before any cloud agent runs. |
+| 2026-11-02 | User-defined custom agent types deferred to after v1. |
+| 2026-11-02 | Agent Activity panel on the dashboard showing live status of every agent instance, with cancel and re-run. |
+| 2026-11-02 | Decision-model layer (F7): LLM default → **Laya** (local, after fine-tuning) → **Jev** (optional, paid). Chosen by bake-off, with a confidence fallback to the LLM. |
+| 2026-11-02 | Decision-science routines added to F1: Monte Carlo, weighted scoring, EV/decision trees, kill criteria, calibration (Brier). |
+| 2026-11-02 | M3 split into M3a/M3b/M3c. UI designed first with **Claude Design**; mock-ups in `docs/design/` are the reference for M0 shell and M4. |
