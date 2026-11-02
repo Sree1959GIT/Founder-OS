@@ -13,3 +13,7 @@ models/
 *.duckdb.wal
 .DS_Store
 Thumbs.db
+*.egg-info/
+build/
+*.log
+vault/
