@@ -3,11 +3,12 @@
 A local-first decision copilot for business owners. It combines a Socratic voice advisor, a deterministic
 DuckDB financial engine, an Obsidian-style Markdown brain with hybrid RAG, and a live visual canvas.
 
-**Status:** milestone M2 (vault and hybrid search). The backend loads CSV/XLSX financials into DuckDB and serves
+**Status:** milestone M3a (LLM layer and core agents). The backend loads CSV/XLSX financials into DuckDB and serves
 deterministic metrics (every number with its lineage), what-if scenarios, sensitivity tables and Monte Carlo
 runs over a REST API. It also keeps an Obsidian-compatible Markdown vault with wikilinks and backlinks, and
-searches it (plus PDFs and spreadsheets) with hybrid keyword + semantic retrieval and citations. Features arrive
-milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
+searches it (plus PDFs and spreadsheets) with hybrid keyword + semantic retrieval and citations. A team of agents
+(Planner, Financial Analyst, Librarian, Verifier, Advisor) answers questions over `/api/chat`, and every number in an
+answer is checked against its lineage. Features arrive milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
 
 - Product spec: [`docs/PRD.md`](docs/PRD.md)
 - How to run a dev session with Claude Code: [`docs/GOAL_PROMPT.md`](docs/GOAL_PROMPT.md)
@@ -18,8 +19,10 @@ milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
   packages (milestones M2–M5) may not ship wheels for them yet. `setup.bat` picks `py -3.12`, then `py -3.11`, then
   `python`.
 - Node.js 22 LTS (or 20.19+)
-- Optional: [Ollama](https://ollama.com/download) (local LLM) and Docker Desktop (Qdrant vector search).
-  Without them the app still starts and the health badge says what is missing.
+- Optional: [Ollama](https://ollama.com/download) (local LLM: the native app, or a Docker container at
+  `OLLAMA_BASE_URL`) with `qwen3:8b` and `nomic-embed-text`, and Docker Desktop (Qdrant vector search). Without them
+  the app still starts, the health badge says what is missing, and agents answer from rules.
+  With Ollama in Docker, pull models with `docker exec ollama ollama pull qwen3:8b`.
 
 ## Quick start
 
@@ -105,6 +108,28 @@ How search works: files are split into ~1000-token passages and ~250-token piece
 search (BM25) and by meaning (Ollama `nomic-embed-text` vectors in Qdrant, or in memory without Docker). The two
 rankings are merged with Reciprocal Rank Fusion. Without Ollama, search falls back to keywords and says so in
 `warnings`.
+
+## Agents and chat API (M3a)
+Ask a question in plain English. The **Planner** reads the intent (by rules, or with the decision model when the
+message is ambiguous) and proposes a team. The **Financial Analyst** (metric routines, scenarios, Monte Carlo, guarded
+SQL) and the **Librarian** (vault search with citations) run in parallel through LangGraph, at most 2 local agents
+at a time. The **Verifier** checks every number against the tool results and every cited path against the search
+results. It sends a failing answer back once, then flags it. The **Advisor** answers in at most 3 sentences and
+ends with a probing question.
+
+| Endpoint | What it does |
+|---|---|
+| `POST /api/chat` `{"message": "...", "stream": true}` | Server-Sent Events: agent events, then `delta` (Advisor text), then `done` (the full result) |
+| `POST /api/chat` `{"message": "...", "stream": false}` | One JSON result: `answer`, `metrics` (each with full `lineage`), `citations`, `verified`, `issues`, `timings_ms` |
+| `GET /api/events?run_id=&since=` | Live agent events (SSE) for the Agent Activity panel: `team.proposed`, `agent.status`, `agent.step`, ... |
+| `GET /api/runs/{id}` · `POST /api/runs/{id}/approve` · `/cancel` | A run's result and events; approve or reject a proposed team; cancel |
+| `GET /api/agents` | Agent types, their tools, privacy class and the provider each one uses now |
+
+Models: chat `OLLAMA_CHAT_MODEL` (default `qwen3:8b`, thinking off) on the local Ollama. Deep-work agents can use
+Claude (Agent SDK or API) or Gemini when `CLOUD_ALLOWED=true`. They fall back to Ollama, and teams with a cloud
+agent wait for approval (`TEAM_APPROVAL=cloud_only`). Small typed choices (intent routing) go through the decision
+model and are logged to `data/<workspace>/decision_log.jsonl`. Without Ollama, agents answer from rules (the metric
+routine or vault search), and say so.
 
 ## Development
 

@@ -5,17 +5,17 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3a: LLM layer, agent framework & core agents**, after the founder merges the M2 PR (M2 is a Light gate: run the checklist below, then merge). M1 is ACCEPTED (Major gate passed 2026-11-03)
+- **Next milestone:** **M3b: Specialist agents**, after the founder merges the M3a PR (M3a is a **Medium** gate: run the checklist below, try the chat by hand, then merge). M1 and M2 are ACCEPTED
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-03 (M2 session, 13:29 to ~14:15 UTC: M2 complete, PR open, awaiting the founder's Light gate)
+- **Last updated:** 2026-11-03 (M3a session, 16:16 to ~17:45 UTC: M3a complete, PR open, awaiting the founder's Medium gate)
 
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
-| M2 | Vault & hybrid RAG | DONE (PR open, awaiting Light gate) | Branch `claude/m2-vault-search` |
-| M3a | LLM layer, agent framework & core agents | NOT STARTED | |
+| M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
+| M3a | LLM layer, agent framework & core agents | DONE (PR open, awaiting Medium gate) | Branch `claude/m3a-agents` |
 | M3b | Specialist agents | NOT STARTED | |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
@@ -57,21 +57,110 @@
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
 
 ## Current session
-- Started (UTC): 2026-11-03 16:16 (local Windows 11 session, founder's PC), branch `claude/m3a-agents`
+- Started (UTC): 2026-11-03 16:16 (local Windows 11 session, founder's PC), branch `claude/m3a-agents`; wrapped up ~17:45
 - Target: **M3a: LLM layer, agent framework & core agents** (gate tier: **Medium**)
 - Plan:
-  - [ ] Founder feedback: "(None)" fallback warning; Ollama in Docker (setup.bat HTTP detection, `docker exec` hints)
-  - [ ] Decisions: chat model `qwen3:8b` with thinking off; Ollama is an external service; EmbeddingGemma vs nomic → M3c
-  - [ ] `app/llm/` (base, Ollama, Anthropic API, Gemini, Claude Agent SDK, Fake, router with fallback to Ollama)
-  - [ ] `app/decision/` (interface, LLM + Fake providers, JSONL decision log, confidence escalation)
-  - [ ] `app/agents/` (registry, prompts, tools with lineage/citations, runner, Planner, Financial Analyst, Librarian,
+  - [x] Founder feedback: "(None)" fallback warning; Ollama in Docker (setup.bat HTTP detection, `docker exec` hints)
+  - [x] Decisions: chat model `qwen3:8b` with thinking off; Ollama is an external service; EmbeddingGemma vs nomic → M3c
+  - [x] `app/llm/` (base, Ollama, Anthropic API, Gemini, Claude Agent SDK, Fake, router with fallback to Ollama)
+  - [x] `app/decision/` (interface, LLM + Fake providers, JSONL decision log, confidence escalation)
+  - [x] `app/agents/` (registry, prompts, tools with lineage/citations, runner, Planner, Financial Analyst, Librarian,
         Verifier, Advisor, LangGraph graph with `Send` fan-out, concurrency caps, team approval)
-  - [ ] Event bus + `/api/events` (SSE), `/api/chat` (streaming SSE or JSON), `/api/runs/*`, `/api/agents`
-  - [ ] Health: Ollama loaded models + VRAM in use
-  - [ ] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
+  - [x] Event bus + `/api/events` (SSE), `/api/chat` (streaming SSE or JSON), `/api/runs/*`, `/api/agents`
+  - [x] Health: Ollama loaded models + VRAM in use
+  - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
-**M2 is complete** (PR awaiting the founder's Light gate). M0 and M1 behaviour is unchanged (all M1 tests pass).
+**M3a is complete** (PR awaiting the founder's Medium gate). M0–M2 behaviour is unchanged, apart from the
+"(None)" warning fix. 397 backend tests pass.
+
+### LLM layer, agents and chat (M3a)
+- **Providers** (`app/llm/`): `LLMProvider.complete(messages, tools=None, json_schema=None, stream=False)` returns
+  a `Completion` (text, tool calls, usage, latency, provider, model), or with `stream=True` an async iterator of
+  `StreamChunk`s. There is also `embed(texts)`. Errors are typed: `LLMUnavailable` (unreachable, not configured,
+  model not pulled, 401/429/5xx) or `LLMError`.
+  - `OllamaProvider` (`ollama.py`): `/api/chat` with `think: false` (Qwen3 thinking off), `keep_alive` 30m,
+    `num_ctx` 8192, `format` = JSON Schema for structured output, NDJSON streaming, `/api/embed`, `/api/ps`.
+    **Loading:** the chat model is preloaded at startup, and before every call the provider checks `/api/ps`
+    (cached 60 s). If the model is not loaded, it loads it first with a 20-minute timeout behind a lock. Reason:
+    a cold load on the founder's PC takes ~3.5 min (Docker bind mount), and a chat call with a 180 s timeout made
+    Ollama abort the load every time.
+  - `cloud.py`: `AnthropicAPIProvider` and `GeminiProvider` over REST with httpx (JSON output through a forced
+    `respond` tool or `responseJsonSchema`), and `ClaudeAgentSDKProvider` (`claude-agent-sdk` imported lazily; no
+    custom tools, so tool-using agents stay on Ollama). `fake.py`: `FakeProvider` with scripted replies.
+  - `router.py`: `local` agents always use the local provider (PRD R2). `cloud_allowed`/`cloud` agents use
+    `DEEP_PROVIDER` only when `CLOUD_ALLOWED=true` and credentials exist, and fall back to Ollama on any failure
+    (`fallback_from` is recorded). Streaming falls back only before the first chunk.
+- **Decision models** (`app/decision/base.py`): `DecisionService.choose/yes_no/score` over `LLMDecisionProvider` (JSON
+  schema with an enum of the options) or `FakeDecisionProvider`. Every decision is appended to
+  `data/<ws>/decision_log.jsonl` (state, options, choice, probability, provider, latency; `correct()` appends a
+  correction line). An answer below `DECISION_MIN_CONFIDENCE` (0.75) is escalated to the fallback provider when one
+  is set. Laya/Jev arrive in M3c.
+- **Agents** (`app/agents/`): `registry.py` holds the 5 core types (Advisor, Planner, Financial Analyst, Librarian,
+  Verifier), each with its prompt (`prompts/*.md`, read on every call), tool allow-list, privacy class (all
+  `local`) and cost. `tools.py` wraps the M1 engine (`get_metric`, `metrics_summary`, `run_scenario` (with
+  `runway_change_months` computed in code), `run_monte_carlo`, `run_sql` (guarded), `weighted_scoring`,
+  `expected_value`, `calibration_scores`) and the M2 vault (`search_vault`, `read_note`, `write_note` only under
+  `decisions/` or `journal/`). Tools never raise. The model gets a compact JSON summary; the canvas artifact keeps
+  the full result with `Lineage`.
+- **Runtime** (`runtime.py`): **Planner**: intent by rules first (decision cues, finance words, notes words,
+  greetings), then the decision model for ambiguous messages. Finance → one Financial Analyst; knowledge → one
+  Librarian; decision → an LLM-planned team (JSON schema; 1–4 tasks; only registered types; reversibility one/two-way)
+  or a default team (Analyst + Librarian) if planning fails; chitchat → no team. **Agent loop**: up to
+  `AGENT_MAX_STEPS` (4) tool rounds, then a final answer. The analyst's prompt gets the data's month range (the
+  model invented `month=2023-10` before). **Rules fallback (R3)**: when the LLM is unavailable, the analyst runs
+  the matching metric routine and the Librarian runs a search, and both answer from a template.
+- **Verifier** (`verifier.py`, deterministic): every figure in an answer must match a number the model was shown by
+  a tool (1 % relative, % vs ratio allowed). Years, YYYY-MM months and integers ≤ 12 are skipped, and numbers from
+  the founder's message or the brief are allowed. Numbers quoted from returned vault passages are backed by their
+  citation. A Librarian answer must cite a source, and every path it names must have been returned. A failing answer is sent back once
+  with the issues, then flagged (`verified: false`, `issues`). The Advisor's reply is checked the same way at the end.
+- **Graph** (`graph.py`, LangGraph): `plan` → `Send` fan-out → `agent` (×N) → `verify` (join) → `advise` → END.
+  Concurrency caps are semaphores shared by all runs (`MAX_LOCAL_AGENTS` 2, `MAX_CLOUD_AGENTS` 6). Team approval
+  (`TEAM_APPROVAL`): `always` | `cloud_only` (default; core agents are local, so teams start at once) | `never`;
+  waiting teams time out after `TEAM_APPROVAL_TIMEOUT_S` and are rejected. Runs can be cancelled.
+- **Events** (`events.py`): typed `AgentEvent {seq, type, run_id, agent_id, at, data}`. Types: `run.started`,
+  `team.proposed`, `team.approved`, `team.rejected`, `agent.spawned`, `agent.status` (queued | thinking |
+  querying_data | searching_vault | waiting_cloud | verifying | done | failed | cancelled), `agent.step` (e.g.
+  `running get_metric(name="runway")`), `agent.tool_call`, `agent.artifact`, `agent.done` (elapsed, provider, model,
+  tokens), `run.finished`. The bus keeps 2,000 events for replay (`?since=`).
+- **REST**: `POST /api/chat` (`stream: true` = SSE: agent events, `delta` frames, then `done`; `stream: false` = one
+  JSON `ChatResult`: `answer`, `metrics` (label, value, unit, as_of, full `lineage`), `artifacts`, `citations`,
+  `agents` (text, tools, verified, attempts, provider, tokens), `verified`, `issues`, `timings_ms`, `elapsed_ms`),
+  `GET /api/events?run_id=&since=` (SSE, keep-alive comment every 15 s), `GET /api/runs/{id}`,
+  `POST /api/runs/{id}/approve` (`{"approved": true|false}`), `POST /api/runs/{id}/cancel`, `GET /api/agents`.
+- **Health**: the Ollama probe lists the loaded models and their VRAM (`/api/ps`), e.g. `in VRAM: qwen3:8b 5.8 GB,
+  nomic-embed-text:latest 0.3 GB`. The GPU probe shows total VRAM in use (`6.8/12.0 GB`). The GPU is shared with the
+  n8n stack's models.
+- **Setup**: `setup.bat` (and `setup.sh`) detect Ollama over HTTP (`/api/version`), report each model as pulled or
+  not (`/api/tags`), pull with the `ollama` CLI when present, and otherwise print `docker exec ollama ollama pull <model>`.
+- New settings (`.env.example`): `OLLAMA_CHAT_MODEL=qwen3:8b`, `OLLAMA_THINK`, `OLLAMA_KEEP_ALIVE`, `OLLAMA_NUM_CTX`,
+  `OLLAMA_WARMUP`, `LLM_PROVIDER` (ollama|fake), `LLM_TIMEOUT_S`, `TEAM_APPROVAL`, `TEAM_APPROVAL_TIMEOUT_S`,
+  `MAX_LOCAL_AGENTS`, `MAX_CLOUD_AGENTS`, `AGENT_MAX_STEPS`, `DECISION_PROVIDER` (llm|fake), `DECISION_MIN_CONFIDENCE`.
+  New dependency: `langgraph` (1.x).
+
+Live results on the founder's PC (Ollama 0.32.1 in Docker, RTX 4080 Laptop, qwen3:8b loaded, 2026-11-03):
+| Question | Time | Result |
+|---|---|---|
+| "What's our runway?" | 14.6–19.5 s | Runway (actual burn) 10.65 months with lineage; verified; 2 analyst LLM calls + 1 advisor |
+| "What do my notes say about annual prepayment?" | 41 s | Librarian cites `notes/pricing-strategy.md` and 3 more; "15 % discount"; verified |
+| "Should we hire two more SDRs next quarter?" | 46 s | LLM-planned team (Analyst `run_scenario` + Librarian); runway 11.23 → 9.81 (−1.42, computed in code); verified |
+| Runway with the model unloaded | 222 s | the provider loaded it first (203 s), then answered with the LLM (not rules) |
+
+Known issues / notes (M3a):
+- **Ollama overhead on the founder's PC:** every Ollama request spends ~3.7 s before inference (the runner itself
+  takes ~0.3 s for a short reply). `/api/tags` alone takes ~1.2 s. Cause: the model files sit on a Windows bind
+  mount (`C:/Dev_Tools/LLM Models/ollama` → `/root/.ollama`), which is slow from Docker/WSL2. A cold load of
+  qwen3:8b takes ~217 s. Moving the models to a Docker named volume (or the WSL filesystem) should cut both a lot.
+  This is the founder's n8n stack, so it is a suggestion only (see Open questions).
+- The decision model with qwen3:8b misclassified "What's our runway?" as `vault` in a raw test, which is why clear
+  cases go through rules first. The M3c bake-off will measure this properly.
+- Specialist agents, dependencies between tasks (one agent waiting for another), re-run with an edited brief, and
+  the privacy filter on cloud payloads are M3b. All core agents are `local`, so no cloud call happens in M3a even
+  with `CLOUD_ALLOWED=true`.
+- The Advisor streams before its reply is verified; a failed check shows in `verified`/`issues` of the `done` frame.
+- Token cost estimates for cloud agents are not computed yet (`est_cost_usd` is null for cloud).
+- Agent tool loops use the guarded SQL path only through `run_sql`; the model rarely needs it.
 
 ### Vault and search (M2)
 - **Vault** (`app/vault/manager.py`): `vault/<ws>/` with `profile/ notes/ decisions/ journal/ sources/`. API paths are
@@ -197,77 +286,99 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M3a session)
-0. **Gate check:** M2 is a **Light** gate. The founder runs the M2 checklist and merges the PR; act on any
-   "Founder feedback" first.
-1. M3a (PRD §4, F3, §8): `app/llm/` provider interface `complete(messages, tools, json_schema, stream)` + `embed()`
-   with Ollama / Gemini / ClaudeAgentSDK / Anthropic / Fake providers, routing table and fallback to Ollama (R2/R3).
-   Consider making `engine/embeddings.OllamaEmbedder` delegate to the new `OllamaProvider.embed` (keep the
-   `Embedder` protocol so the vault code does not change).
-2. Decision-model interface (`app/decision/`: LLM + Fake + decision log), agent registry, LangGraph graph
-   (Planner → `Send` fan-out → Verifier), concurrency caps (2 local / 6 cloud), team-approval policy `cloud_only`.
-3. Agent event protocol over SSE (`/api/events`) and `/api/chat` (streaming).
-4. Core agents: Advisor, Planner, Financial Analyst (tools = M1 metric routines + guarded SQL + decision-science and
-   calibration routines), **Librarian** (tools = `HybridIndex.search` with citations, `VaultManager.read_note`,
-   writes to `decisions/` and `journal/`), Verifier (checks every number against lineage and every claim against a
-   citation). Prompts go in `app/agents/prompts/*.md`; model IDs come from config.
-5. Tests with fakes only (FakeProvider scripted responses, FakeEmbedder, in-memory store).
+## Next steps (for the M3b session)
+0. **Gate check:** M3a is a **Medium** gate. The founder runs the M3a checklist, tries the chat by hand and merges
+   the PR. Act on any "Founder feedback" first.
+1. M3b (PRD F3, §8): register the specialist types in `app/agents/registry.py` with prompts in `prompts/`: Devil's
+   Advocate, Market Scout, Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Memo Writer and the
+   Perspective-lens template (prompt-only: no tools). Set their privacy classes (`cloud_allowed`/`cloud`) so the
+   router and the `cloud_only` approval policy apply. Extend the Planner's enum (it already accepts any spawnable type).
+2. Task dependencies: the Planner's tasks gain `depends_on`. Revenue & Customer asks the Financial Analyst for
+   numbers, so run dependent instances after their inputs, e.g. a second `Send` wave or a per-run dependency gate.
+3. Memo Writer: writes `vault/<ws>/decisions/YYYY-MM-DD-<slug>.md` (context, options, rejected alternatives,
+   assumptions, metrics with lineage, predictions stored in `CalibrationStore`, kill criteria, review date +30 d)
+   through `write_note`.
+4. Cancel and re-run with an edited brief: `agent.cancel` / `agent.rerun` (POST `/api/runs/{id}/agents/{agent_id}/…`)
+   per instance, using per-instance asyncio tasks inside the agent node.
+5. Privacy filter on cloud payloads (F3/F7): raw financial rows never go to the cloud; send summarised metrics with
+   lineage ids. A decision-model yes/no "may this text go to the cloud?" plus a deterministic row filter.
+6. Cost estimates for cloud agents (`est_cost_usd` in `agent.done`), from the token counts and a price table in config.
+7. Consider a smarter `LLM_PROVIDER=fake` (rule-based replies) for an offline demo, and making
+   `engine/embeddings.OllamaEmbedder` delegate to `OllamaProvider.embed`.
+
+Later (M3c): add the **EmbeddingGemma vs `nomic-embed-text` comparison** (retrieval quality on the sample vault plus
+a labelled query set, latency and VRAM), deferred from M3a by the founder, alongside the Laya/Jev bake-off. Collection
+names already include the embedding model, so switching models re-embeds cleanly.
 
 ## Windows verification checklist (for the founder)
-**M2 (Light tier, about 10 min).** In PowerShell, from `D:\Founder-OS`: `git fetch origin`, then
-`git checkout claude/m2-vault-search`, then run `setup.bat` once (it installs the new packages pypdf, tiktoken and
-rank-bm25), then `run.bat`. Every command below works in Windows PowerShell 5.1 and PowerShell 7. Optional for steps
-4–5: Docker Desktop (Qdrant) and Ollama with `nomic-embed-text` (setup pulls it). Without them, search is keyword-only
-and says so. When done, merge the PR, or write the issues under "Founder feedback".
+**M3a (Medium tier, about 20 min).** In PowerShell, from `D:\Founder-OS`. Every command works in Windows PowerShell
+5.1 and PowerShell 7. Each check prints one summary line; compare it with **Expected**. When done, merge the PR or
+write the issues under "Founder feedback".
 
-1. **Start-up log.** On the first start the backend window shows `Copied 7 sample notes into ...\vault\default`,
-   then `Vault indexed: 7 files, 20 chunks`, then `Watching vault ... for changes`. Expected: these 3 lines.
-2. **Status.** `Invoke-RestMethod http://127.0.0.1:8000/api/vault/status | Select-Object files, parents, children, tokenizer, vector_store, embedder, watching`
-   → files **7**, parents **7**, children **20**, tokenizer `tiktoken:cl100k_base`, vector_store `qdrant` (Docker
-   running) or `memory`, embedder `ollama:nomic-embed-text`, watching **True**.
-3. **Notes and backlinks.** `(Invoke-RestMethod http://127.0.0.1:8000/api/vault/notes).notes | Format-Table path, title, backlinks -AutoSize`
-   → 7 rows. Backlinks: customer-churn **3**, pricing-strategy **3**, company **2**, hire-two-sdrs **2**,
-   journal **1**, board-update **1**, competitor-pricing.csv **0**.
-4. **Keyword search with citations** (works without Ollama).
-   `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='annual prepayment discount'; mode='bm25'; k=3}).results | Format-Table rank, path, heading -AutoSize`
-   → 1 `notes/pricing-strategy.md` `Pricing strategy > Annual plans`; 2 `sources/board-update-2026-q3.md`
-   `Board update, Q3 2026 > Asks of the board`; 3 `journal/2026-10-28.md`.
-   `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='Fabrikam Enterprise dedicated support'; mode='bm25'; k=1}).results[0].citation`
-   → path `sources/competitor-pricing.csv`, heading `Sheet competitor-pricing`, chunk_id `sources/competitor-pricing.csv#p0`
-   (the CSV is searchable).
-5. **Hybrid search and fallback** (needs Ollama running).
-   `$r = Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='why are logistics customers churning'; k=3}; $r.mode; $r.warnings; $r.results | Format-Table rank, path, heading, bm25_rank, dense_rank -AutoSize`
-   → mode **hybrid**, no warnings, and `notes/customer-churn.md` in the top 3 (status `embedded` = **20**).
-   Then quit Ollama (tray icon → Quit) and run the same line → mode **bm25** and a warning `semantic search
-   unavailable (...); using keyword search (BM25) only`. Start Ollama again, wait 30 s, and run it twice → **hybrid**.
-6. **Edit a note in Notepad: search picks it up.**
-   `notepad .\vault\default\notes\pricing-strategy.md`. Add this line at the end, save (Ctrl+S), close:
-   `Flamingo bundle: test pricing for the Growth tier. See [[board-update-2026-q3]].` Then (within a few seconds):
-   `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='flamingo bundle'; mode='bm25'}).results[0] | Select-Object path, heading`
-   → `notes/pricing-strategy.md`, `Pricing strategy > Annual plans`. The new link counts too:
-   `(Invoke-RestMethod http://127.0.0.1:8000/api/vault/notes/sources/board-update-2026-q3.md).backlinks`
-   → `notes/pricing-strategy.md` and `profile/company.md` (it was only company before).
-7. **Create a note through the API.**
-   `Invoke-RestMethod -Method Put -Uri http://127.0.0.1:8000/api/vault/notes/notes/dubai-office.md -ContentType 'application/json' -Body '{"content": "# Dubai office\nShould we open a [[Northwind]] office in Dubai?"}' | Select-Object title, @{n='link';e={$_.links[0].resolved}}`
-   → title `Dubai office`, link `profile/company.md` (resolved through the alias). The file is in `vault\default\notes\`.
-8. **Rename keeps links working.**
-   `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/vault/rename -ContentType 'application/json' -Body '{"from_path": "notes/customer-churn.md", "to_path": "notes/churn-review.md"}'`
-   → updated_files `journal/2026-10-28.md, notes/pricing-strategy.md, profile/company.md`, links_rewritten **3**.
-   `Select-String -Path .\vault\default\journal\2026-10-28.md -Pattern 'churn-review'` → the line now shows
-   `[[churn-review]]`. Rename it back the same way (swap the two paths) → the same 3 files.
-9. **Upload a PDF.** With any text PDF on the PC (for example a page printed with "Microsoft Print to PDF"):
-   `curl.exe -F "file=@C:\path\to\your.pdf" http://127.0.0.1:8000/api/vault/upload` → `{"path":"sources/your.pdf",...,"error":null}`.
-   Searching a distinctive word from that PDF returns `sources/your.pdf` with heading `Page 1` (or the page it is on).
-   A `.exe` gives HTTP 415.
-10. **Path safety.** `try { Invoke-RestMethod "http://127.0.0.1:8000/api/vault/notes/..%2F..%2F.env" } catch { $_.Exception.Response.StatusCode.value__ }`
-    → **400**. `try { Invoke-RestMethod -Method Put -Uri http://127.0.0.1:8000/api/vault/notes/CON.md -ContentType 'application/json' -Body '{"content":"x"}' } catch { $_.Exception.Response.StatusCode.value__ }`
-    → **400**.
-11. **Link index on disk.** `(Get-Content .\vault\default\.index\links.json -Raw | ConvertFrom-Json).unresolved`
-    → empty (no broken links in the sample vault).
-12. **Regression (M1).** `(Invoke-RestMethod http://127.0.0.1:8000/api/metrics/runway).value` → **10.65**; the page at
-    http://127.0.0.1:3000 still loads with the health strip.
+**Prepare (once).**
+1. `git fetch origin; git checkout claude/m3a-agents`, then `setup.bat` (installs `langgraph`).
+   Expected, in the setup output: `Ollama 0.32.1 is running at http://localhost:11434`, `Ollama model qwen3:8b is pulled`,
+   `Ollama model nomic-embed-text is pulled`, and **no** "Ollama not found" warning.
+2. Your `.env` is never changed by setup. Check the chat model line:
+   `Select-String -Path .env -Pattern '^OLLAMA_CHAT_MODEL'`
+   Expected: `OLLAMA_CHAT_MODEL=qwen3:8b`. If it still says `qwen2.5:7b-instruct-q4_K_M`, change it to `qwen3:8b` in
+   Notepad (or delete the line to use the default). Then start `run.bat`.
+3. **Start-up log** (backend window). Expected: `Agents ready: local LLM ollama:qwen3:8b (thinking off), deep provider
+   none (local only), team approval cloud_only`, then `Loading qwen3:8b into Ollama in the background`, then
+   `Ollama model qwen3:8b is loaded (N s)`. N is ~5 s if the model was already in VRAM, and up to ~4 min from cold
+   (see the note on the Docker bind mount under "Open questions"). Wait for this line before step 6.
 
-To start again with a fresh demo vault: stop `run.bat`, delete `vault\default`, and start again.
+**Checks.**
+4. **Health shows VRAM (GPU shared with n8n).**
+   `(Invoke-RestMethod http://127.0.0.1:8000/api/health).dependencies | Where-Object { $_.name -in 'ollama','gpu' } | ForEach-Object { '{0}: {1} - {2}' -f $_.name, $_.state, $_.detail }`
+   Expected: `ollama: ok - Ollama is running; in VRAM: qwen3:8b 5.8 GB, ...` (plus any n8n models that are loaded) and
+   `gpu: ok - NVIDIA GeForce RTX 4080 Laptop GPU: X/12.0 GB VRAM in use` (X about 6–7 with only qwen3 loaded).
+5. **Agent registry.**
+   `(Invoke-RestMethod http://127.0.0.1:8000/api/agents).agents | ForEach-Object { '{0}: {1} {2} ({3})' -f $_.type, $_.provider, $_.model, $_.privacy }`
+   Expected: 5 lines (advisor, planner, financial_analyst, librarian, verifier), each `ollama qwen3:8b (local)`.
+6. **The real Ollama run: "What's our runway?" with lineage, timed.**
+   `$s = [Diagnostics.Stopwatch]::StartNew(); $r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What''s our runway?", "stream": false}' -TimeoutSec 900; '{0:n1} s | {1} = {2} {3} | verified {4} | {5}' -f $s.Elapsed.TotalSeconds, $r.metrics[0].label, $r.metrics[0].value, $r.metrics[0].unit, $r.verified, $r.answer`
+   Expected: about **15–20 s** (measured 14.6–19.5 s with the model loaded) `| Runway (actual burn) = 10.65 months | verified
+   True |` followed by a 2–3 sentence answer that says 10.65 months and ends with a question.
+   Lineage: `'{0} | {1} | {2}' -f $r.metrics[0].lineage.formula, $r.metrics[0].lineage.period, ($r.metrics[0].lineage.source_files -join ',')`
+   Expected: `closing_balance[2026-10] / net_burn  (net_burn = average over 3 month(s)) | 2026-08..2026-10 | northwind_financials.xlsx`
+   (the period may print slightly differently; the formula and file must match).
+   Who did what: `'{0} via {1} {2}; tools {3}; advisor {4}; plan/agents/advise ms {5}/{6}/{7}' -f $r.agents[0].name, $r.agents[0].provider, $r.agents[0].model, ($r.agents[0].tool_calls.tool -join ','), $r.advisor_provider, $r.timings_ms.plan, $r.timings_ms.agents, $r.timings_ms.advise`
+   Expected: `Financial Analyst via ollama qwen3:8b; tools get_metric; advisor ollama; ...` (agents ~7–13 s, advise ~6 s).
+7. **Streaming (SSE).** PowerShell 5.1 has no streaming client, so use `curl.exe` with a body file:
+   `Set-Content -Path $env:TEMP\ask.json -Value '{"message": "What''s our runway?"}' -Encoding ascii; $out = curl.exe -s -N -X POST http://127.0.0.1:8000/api/chat -H "Content-Type: application/json" --data-binary "@$env:TEMP\ask.json"; ($out | Select-String '^event:' | ForEach-Object { $_.Line.Substring(7) } | Group-Object | ForEach-Object { '{0} x{1}' -f $_.Name, $_.Count }) -join ', '`
+   Expected: one line containing `team.proposed x1`, `agent.spawned x1`, `agent.tool_call x1`, `agent.artifact x1`,
+   `agent.done x1`, `delta xN` (N about 40–90: the Advisor's words as they arrive), `run.finished x1`, `done x1`.
+8. **Librarian with citations.**
+   `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What do my notes say about annual prepayment?", "stream": false}' -TimeoutSec 900; '{0:n1} s | intent {1} | verified {2} | cites {3}' -f ($r.elapsed_ms/1000), $r.intent, $r.verified, (($r.citations.path | Select-Object -Unique) -join ', ')`
+   Expected: about **40 s** `| intent knowledge | verified True | cites ...notes/pricing-strategy.md...`, and
+   `$r.agents[0].text` quotes the 15 % discount with `[notes/pricing-strategy.md]`.
+9. **A decision: Planner team, scenario, no LLM arithmetic.**
+   `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire two more SDRs next quarter?", "stream": false}' -TimeoutSec 900; '{0:n1} s | {1} | team {2} | verified {3} | {4}' -f ($r.elapsed_ms/1000), $r.planner, (($r.agents | ForEach-Object { $_.name + ':' + ($_.tool_calls.tool -join '+') }) -join ', '), $r.verified, $r.answer`
+   Expected: about **45 s** `| rules; team by LLM | team Financial Analyst:run_scenario, Librarian:search_vault |
+   verified True |` and an answer with runway 11.23 → 9.81 months or "1.42 months" (that change is computed in code:
+   `runway_change_months`). LLM plans vary: another valid team (e.g. two analysts) is fine if `verified` is True.
+10. **Live Agent Activity events.** In a second PowerShell window run
+    `curl.exe -s -N "http://127.0.0.1:8000/api/events"`, then repeat step 6 in the first window.
+    Expected: the second window prints `event: run.started`, `team.proposed`, `agent.status` (queued, thinking,
+    querying_data, verifying, done), `agent.step` with `running get_metric(name=\"runway\")`, ..., `run.finished`;
+    when idle it prints `: keep-alive` every 15 s and stays open. Close it with Ctrl+C.
+11. **Decision log.** `(Get-Content .\data\default\decision_log.jsonl | Measure-Object -Line).Lines`
+    Expected: a number (≥ 0). It grows only when a message is ambiguous, e.g. after
+    `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Tell me about Fabrikam", "stream": false}' -TimeoutSec 900 | Select-Object intent, planner`
+    → planner `decision model (llm:qwen3:8b, p=...)` (or "unsure ... default team"), and the count goes up by 1.
+12. **Fallback without the LLM (optional; pauses Ollama for n8n too).** `docker stop ollama`, repeat step 6.
+    Expected: in a few seconds, `| Runway (actual burn) = 10.65 months | verified True | Runway (actual burn): 10.65
+    months as of 2026-10. (Answer assembled without the language model.)`. Then `docker start ollama`. The next
+    question loads the model first (up to ~4 min from cold, see the backend log line `loading it first`) and then
+    answers with the LLM again.
+13. **Regression.** `(Invoke-RestMethod http://127.0.0.1:8000/api/metrics/runway).value` → **10.65**;
+    `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='annual prepayment discount'; mode='bm25'; k=1}).results[0].path`
+    → `notes/pricing-strategy.md`; http://127.0.0.1:3000 still loads with the health strip.
+14. **Founder feedback re-test ("(None)" warning).** With Ollama stopped (step 12) run
+    `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='churn'}).warnings` three times within 30 s.
+    Expected: every time `semantic search unavailable (Ollama embeddings failed (ConnectError: ...)); using keyword
+    search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
@@ -276,12 +387,14 @@ _Write results from your Windows checks, bugs and change requests here. The next
 - Expected: warning names the reason, e.g. "Ollama not reachable"
 - Got: `semantic search unavailable (None); using keyword search (BM25) only` (the first search had the full ConnectError reason; later searches during the 30 s retry window show None)
 - Priority: low (fix at the start of M3a)
+- **Resolved (2026-11-03, M3a PR):** the retry thread found nothing to embed and cleared the error without asking the embedder, racing with the warning text. The sync now checks the embedder before clearing an error, and the warning reads the error once. Regression test `test_embedder_down_after_indexing_keeps_the_reason`. Re-test: checklist step 14.
 
 ### [Setup] Ollama runs in Docker on the founder's PC; qwen2.5 not pullable yet
 - Ollama is the `ollama/ollama:0.32.1` container from my n8n stack (port 11434, GPU confirmed: 100% GPU). There is no `ollama` command on Windows, so setup.bat warns "Ollama not found" (harmless)
 - `nomic-embed-text` pulled OK. Every `qwen2.5:7b*` tag fails at "pulling manifest: EOF" (other models pull fine), so health shows "Ollama (degraded)"
 - Decision needed before M3a: retry qwen2.5, switch to a newer Qwen, or use another local model; record it in PRD §12
 - Priority: medium (blocks the M3a Ollama run, not M2)
+- **Resolved (2026-11-03, M3a PR), per the founder's decisions:** Ollama is an external service at `OLLAMA_BASE_URL`. `setup.bat` detects it over HTTP (`/api/version`), reports each model from `/api/tags`, and without the CLI prints `docker exec ollama ollama pull <model>`. The chat model is now `qwen3:8b` with thinking off (config default and `.env.example`). Tool calling was verified live, and health shows VRAM per loaded model. Recorded in PRD §12. Re-test: checklist steps 1–6.
 ### [M1] Projected runway (11.23) differs from runway metric (10.65); growth assumption is hidden
 - Did: ran the M1 Windows checklist. Items 1–12 and 14 all pass; every number matches Excel
 - Expected: when the runway card and the scenario chart show different runways, the reason is visible and I can change it
@@ -321,7 +434,7 @@ _Write results from your Windows checks, bugs and change requests here. The next
   Re-test: checklist step 11.
 
 ## Open questions for founder
-_None open._
+1. **Ollama model storage (performance, optional).** Your `ollama` container mounts its models from `C:/Dev_Tools/LLM Models/ollama` (a Windows bind mount). Every Ollama request spends ~3.7 s before inference (`/api/tags` alone ~1.2 s), and a cold load of qwen3:8b takes ~3.5 min. A Docker named volume (or a folder inside WSL) usually cuts both to seconds, which would make answers 2–3x faster (runway: ~15–20 s now, likely ~5 s). It is your n8n stack, so I changed nothing. FounderOS works either way: it preloads the model at startup and loads it before a call when needed. Your call whether to move it.
 
 Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
@@ -343,6 +456,7 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+- 2026-11-03 (M3a session, 16:16 to ~17:45 UTC, local on the founder's PC): fixed the "(None)" warning; setup detects Ollama over HTTP; `app/llm` (Ollama/Anthropic/Gemini/Claude SDK/Fake, router), `app/decision`, `app/agents` (registry, prompts, tools, runtime, Verifier, LangGraph graph, events), `/api/chat`, `/api/events`, `/api/runs`, `/api/agents`, VRAM in health. The live Ollama run found 4 problems, all fixed with tests: (1) a 217 s cold load from the Docker bind mount was aborted by the 180 s chat timeout (now preload plus load-before-call; re-checked live: the first answer after an unload took 222 s and came from the LLM); (2) the analyst invented `month=2023-10` (now told the data range); (3) an LLM subtraction (11.23 − 9.81) passed the Verifier by matching the full scenario payload (now code-computed deltas and only numbers the model saw count); (4) a duplicate `run.finished` frame. The self-review (`/code-review high`) found 10 issues, all fixed with regression tests: the `/api/events` keep-alive killed the stream, a cut-off Advisor stream got a template appended, timed-out approvals looked open, non-object planner JSON crashed the run, Planner-written briefs whitelisted numbers, `DECISION_MIN_CONFIDENCE` had no effect, the Librarian citation rule never fired, the tolerance rejected correct rounding (`$1.2M`), the intent decision id was dropped, and `OLLAMA_WARMUP` was missing from `.env.example`. 397 backend tests.
 - 2026-11-03 (M2 session, 13:29 to ~14:15 UTC, local on the founder's PC): vault manager, links, parsers, chunking,
   embeddings, Qdrant/in-memory stores, hybrid RAG with RRF, watcher, `/api/vault/*` and `/api/search`, sample vault.
   Tests found an in-memory payload bug and the BM25 negative-IDF problem (both fixed). The self-review
@@ -372,6 +486,15 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M3a session)
+- Founder decisions (recorded in PRD §12): Ollama is an external service (the `ollama` Docker container, port 11434, GPU, shared with n8n) detected over HTTP; the chat model is `qwen3:8b` with thinking off; the EmbeddingGemma vs nomic comparison moves to M3c.
+- Providers live in `app/llm/` with the cloud ones in one module (`cloud.py`). Anthropic and Gemini are called over REST with httpx (no SDK dependency, faked with `httpx.MockTransport`); the Claude Agent SDK is imported lazily. All agent code reads model IDs from config.
+- The Verifier is deterministic code, not an LLM. Numbers must match what the model was shown by tools, within the written rounding or 1 %. Derived values (e.g. `runway_change_months`) are computed in tool code, so the model never subtracts.
+- Intent routing goes rules first, then the decision model (qwen3:8b misrouted a clear finance question in a raw test). A low-confidence intent gets the default team (Analyst + Librarian).
+- Every agent has a rules fallback (R3): without the LLM, the runway question still returns 10.65 with lineage.
+- Ollama calls make sure the model is loaded first (`/api/ps`, then `/api/generate` with a 20-minute timeout), because a slow cold load would otherwise be aborted by every chat call. The chat model is also preloaded at startup (`OLLAMA_WARMUP`).
+- Run state lives in memory (`AgentOrchestrator.runs`, last 100 runs; the event bus keeps 2,000 events). Persistent run history can come with M4 if needed.
 
 ## Decisions made (M2 session)
 - Vault code lives in `app/vault/` (manager, links, parsers, watcher, service); retrieval lives in `app/engine/`
