@@ -53,7 +53,7 @@
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
 | M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
-| M1 Financial spine | [Sree1959GIT/Founder-OS#3](https://github.com/Sree1959GIT/Founder-OS/pull/3) | **Major** | AWAITING FOUNDER (write `ACCEPTED` or the issues here) |
+| M1 Financial spine | [Sree1959GIT/Founder-OS#3](https://github.com/Sree1959GIT/Founder-OS/pull/3) | **Major** | ISSUES FOUND (2026-11-03): projection growth assumption, see Founder feedback |
 
 ## Current session
 - Started (UTC): 2026-11-03 05:48 (local Windows 11 session, founder's PC)
@@ -185,6 +185,16 @@ run `setup.bat` once (it installs the new `numpy` and `python-multipart` package
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M1] Projected runway (11.23) differs from runway metric (10.65); growth assumption is hidden
+- Did: ran the M1 Windows checklist. Items 1–12 and 14 all pass; every number matches Excel
+- Expected: when the runway card and the scenario chart show different runways, the reason is visible and I can change it
+- Got: /api/metrics/runway = 10.65 months (actual 3-month net burn), but /api/scenario base_runway_months = 11.23 because the projection assumes new customers keep arriving. Meanwhile revenue_growth = -0.63% last month, so the assumption isn't obvious from the data
+- Fix wanted:
+  1. ScenarioResult and MonteCarloResult return an `assumptions` list: each projection driver (new customers/month, ARPA, churn, fixed costs, cost per hire, etc.) with value, plain-English label, the window it was derived from, and lineage (table + rows)
+  2. A documented, tested way to run the projection with "no new customers" (e.g. acquisition_change_pct = -100 or a `growth_mode: "none" | "trend"` input), returned by /api/metrics/cash-projection too
+  3. A reconciliation test: with no growth, projection runway agrees with the runway metric (10.65) within a stated tolerance, or the remaining gap is explained in the response
+  4. Clear naming in API responses and docs: "runway (actual burn)" vs "projected runway (with growth assumptions)", ready for M4 labels
+- Priority: high (blocks M1 acceptance)
 ### [M0] setup.bat picks Python 3.14 when 3.11 is not installed
 - Did: ran setup.bat on Windows 11 with Python 3.12 and 3.14 installed (no 3.11); `python` on PATH is 3.14.5
 - Expected: setup.bat chooses a supported version (3.12 or 3.11)
