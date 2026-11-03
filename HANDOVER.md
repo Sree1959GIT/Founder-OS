@@ -5,15 +5,15 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M1: Financial spine (DuckDB)**, after the founder merges the M0 PR
+- **Next milestone:** **M1: Financial spine (DuckDB)**: in progress on `claude/m1-financial-spine`
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-02 (M0 session: scaffold done, PR awaiting founder)
 
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
-| M0 | Scaffold & foundations | DONE (awaiting merge) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
-| M1 | Financial spine (DuckDB) | NOT STARTED | |
+| M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
+| M1 | Financial spine (DuckDB) | IN PROGRESS | Branch `claude/m1-financial-spine` |
 | M2 | Vault & hybrid RAG | NOT STARTED | |
 | M3a | LLM layer, agent framework & core agents | NOT STARTED | |
 | M3b | Specialist agents | NOT STARTED | |
@@ -52,19 +52,20 @@
 | Milestone | PR | Tier | Status |
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
-| M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | AWAITING FOUNDER |
+| M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
 
 ## Current session
-- Started (UTC): 2026-11-02 15:47
-- Target: **M0: Scaffold & foundations** (gate tier: Light)
+- Started (UTC): 2026-11-03 05:48 (local Windows 11 session, founder's PC)
+- Target: **M1: Financial spine (DuckDB)** (gate tier: **Major**)
 - Plan:
-  - [x] Backend package (`pyproject.toml`, `app/main.py`, `config.py`, `deps.py`, `/api/health` with dependency probes + tests)
-  - [x] `.env.example`, `docker-compose.yml` (Qdrant only)
-  - [x] `scripts/generate_demo_data.py` (Northwind, seeded) + `sample_data/` + tests
-  - [x] Frontend shell (Vite + React + TS + Tailwind + shadcn/ui, design tokens, health badge via proxy)
-  - [x] `setup.bat`/`run.bat` + `setup.sh`/`run.sh`
-  - [x] GitHub Actions CI (pytest, ruff, frontend lint/tsc/build, windows-latest backend)
-  - [x] Minimal README; wrap-up, self-review, PR
+  - [ ] Founder notes: answers to the M0 questions recorded (HANDOVER + PRD §12); `frontend/.vite/` in `.gitignore`
+  - [ ] `engine/lineage.py`, `engine/schema.py` (canonical tables + header synonyms), `engine/ingest.py` (CSV/XLSX, `mappings.json`)
+  - [ ] `engine/duckdb_engine.py` (workspace DB, locking) + `engine/sql_guard.py` (read-only, single SELECT, allow-list, limits)
+  - [ ] `engine/metrics.py`: every §F1 routine with Lineage + golden tests (expected values computed independently with `Decimal`)
+  - [ ] `engine/scenario.py` (<200 ms) + sensitivity, `engine/montecarlo.py` (1,000 runs <1 s, seeded)
+  - [ ] `engine/decision_science.py` (MCDA, EV, decision trees, kill criteria), `engine/calibration.py` (Brier)
+  - [ ] REST: `/api/data/*`, `/api/metrics/*`, `/api/scenario*` + API tests
+  - [ ] Wrap-up: checks, self-review, HANDOVER (Windows checklist with Excel spot-checks), PR, CI
 
 ## Current state
 **M0 is complete.** What works:
@@ -152,10 +153,11 @@ _Write results from your Windows checks, bugs and change requests here. The next
   Re-test: checklist step 11.
 
 ## Open questions for founder
-1. Demo currency: USD is the default; INR is available with `--currency INR` (fixed rate 84). Should the shipped
-   `sample_data/` be INR instead?
-2. Runway in the demo data is about 10 months at the end of the window. Is that the right level of tension for the
-   demo (for example, so the Dubai scenario pushes it into the amber "under 3 months" band)?
+_None open._
+
+Answered (2026-11-03, founder note at the start of the M1 session):
+1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
+2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
 ## Decisions made
 See PRD §12 (Decision log). Summary of the planning session on 2026-11-02:
