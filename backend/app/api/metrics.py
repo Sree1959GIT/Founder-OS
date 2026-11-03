@@ -9,11 +9,14 @@ from app.deps import FinanceDep
 from app.engine.decision_science import KillCheck, KillCriterion, evaluate_kill_criteria
 from app.engine.lineage import MetricResult
 from app.engine.metrics import METRICS, SUMMARY_METRICS
-from app.engine.scenario import DEFAULT_HORIZON, MAX_HORIZON, Adjustments, ScenarioResult
+from app.engine.scenario import DEFAULT_HORIZON, MAX_HORIZON, Adjustments, GrowthMode, ScenarioResult
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 MonthQuery = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="As-of month YYYY-MM (default: latest)")
+GrowthModeQuery = Query(
+    "trend", description="'trend' (keep acquiring customers), 'none' (no new customers) or 'flat' (run-rate)"
+)
 
 
 class MetricInfo(BaseModel):
@@ -58,9 +61,11 @@ def cash_projection(
     finance: FinanceDep,
     month: str | None = MonthQuery,
     horizon: int = Query(DEFAULT_HORIZON, ge=1, le=MAX_HORIZON),
+    growth_mode: GrowthMode = GrowthModeQuery,
 ) -> ScenarioResult:
-    """The base-case cash-flow projection (no adjustments): `points[].base_cash`, runway and zero-cash month."""
-    return finance.scenario.run(Adjustments(), month, horizon)
+    """The base-case cash-flow projection (no adjustments): `points[].base_cash`, projected runway and zero-cash
+    month, the `assumptions` behind it and the `reconciliation` with the runway metric (actual burn)."""
+    return finance.scenario.run(Adjustments(growth_mode=growth_mode), month, horizon)
 
 
 @router.post("/kill-criteria", response_model=list[KillCheck])

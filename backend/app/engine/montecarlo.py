@@ -18,9 +18,13 @@ from app.engine.metrics import MetricError, shift_month
 from app.engine.scenario import (
     ADJUSTMENT_FIELDS,
     DEFAULT_HORIZON,
+    GROWTH_MODES,
     MAX_HORIZON,
+    RUNWAY_LABELS,
     RUNWAY_SEARCH_MONTHS,
     Adjustments,
+    Assumption,
+    GrowthMode,
     ScenarioEngine,
     adjustment_arrays,
     project,
@@ -95,12 +99,16 @@ class MonteCarloResult(BaseModel):
     currency: str
     runs: int
     seed: int
+    growth_mode: GrowthMode
+    growth_assumption: str = Field(description="Plain-English meaning of growth_mode")
     points: list[FanPoint]
+    runway_label: str = RUNWAY_LABELS["base_runway_months"]
     runway_p10: Number | None = Field(description="Months; None = cash never runs out within the search window")
     runway_p50: Number | None
     runway_p90: Number | None
     probability_cash_out_within_horizon: Number
     probability_cash_out_within_12_months: Number
+    assumptions: list[Assumption] = Field(description="The measured drivers every run starts from")
     elapsed_ms: float
     lineage: Lineage
 
@@ -112,7 +120,9 @@ def run_monte_carlo(engine: ScenarioEngine, request: MonteCarloRequest) -> Monte
             f"unknown variable(s) {', '.join(sorted(unknown))}; choose from {', '.join(ADJUSTMENT_FIELDS)}"
         )
     started = time.perf_counter()
-    d, t = engine.drivers(request.as_of)
+    baseline = engine.baseline(request.as_of)
+    d, t = baseline.drivers, baseline.trace
+    mode = request.adjustments.growth_mode
     rng = np.random.default_rng(request.seed)
     n = request.runs
     overrides = {}
@@ -125,7 +135,9 @@ def run_monte_carlo(engine: ScenarioEngine, request: MonteCarloRequest) -> Monte
             overrides[name] = np.clip(overrides[name], low, high)
     arrays = adjustment_arrays(n, request.adjustments, overrides)
     months = max(request.horizon, RUNWAY_SEARCH_MONTHS)
-    cash, _ = project(d, arrays, request.adjustments.start_month, months, request.adjustments.cost_per_hire_monthly)
+    cash, _ = project(
+        d, arrays, request.adjustments.start_month, months, request.adjustments.cost_per_hire_monthly, mode
+    )
     p10, p50, p90 = np.percentile(cash[:, : request.horizon], [10, 50, 90], axis=0)
     runway = runway_months(d.cash, cash)
     # "Never runs out" (NaN) becomes a sentinel past the search window, which `_months` maps back to None.
@@ -146,6 +158,9 @@ def run_monte_carlo(engine: ScenarioEngine, request: MonteCarloRequest) -> Monte
         currency=engine.currency,
         runs=n,
         seed=request.seed,
+        growth_mode=mode,
+        growth_assumption=GROWTH_MODES[mode],
+        assumptions=engine.assumptions(baseline, mode),
         points=[
             FanPoint(month=shift_month(d.as_of, k + 1), p10=_money(p10[k]), p50=_money(p50[k]), p90=_money(p90[k]))
             for k in range(request.horizon)

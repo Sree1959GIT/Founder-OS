@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import time
 from decimal import Decimal
 
@@ -10,9 +11,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.engine.duckdb_engine import FinanceDB
+from app.engine.lineage import compact_ranges
 from app.engine.metrics import MetricError
 from app.engine.montecarlo import Distribution, MonteCarloRequest, run_monte_carlo
-from app.engine.scenario import Adjustments, ScenarioEngine
+from app.engine.scenario import ASSUMPTIONS, Adjustments, ScenarioEngine, ScenarioResult
 from tests import golden as g
 
 LATEST = "2026-10"
@@ -180,6 +182,165 @@ def test_sensitivity_validation(engine: ScenarioEngine, kwargs: dict[str, object
     args.update(kwargs)
     with pytest.raises(MetricError, match=message):
         engine.sensitivity(**args)  # type: ignore[arg-type]
+
+
+# --- growth modes, assumptions and reconciliation (founder feedback: projected runway 11.23 vs metric 10.65) -----
+def test_growth_mode_none_adds_no_new_customers(engine: ScenarioEngine) -> None:
+    d, _ = engine.drivers()
+    result = engine.run(Adjustments(growth_mode="none"))
+    mrr1 = d.mrr * (1 - d.churn)  # churn continues, nothing new arrives
+    cash1 = d.cash + mrr1 + d.other_revenue - (d.variable_cogs_ratio + d.commission_ratio) * mrr1
+    cash1 -= d.fixed_costs + d.marketing  # marketing programmes are still spent
+    assert float(result.points[0].base_mrr) == pytest.approx(mrr1, abs=0.01)
+    assert float(result.points[0].base_cash) == pytest.approx(cash1, abs=0.01)
+    mrrs = [p.base_mrr for p in result.points]
+    assert all(a > b for a, b in itertools.pairwise(mrrs))  # only churn: MRR falls every month
+    assert result.base_runway_months == Decimal("9.69") and result.base_zero_cash_month == "2027-08"
+    # The documented equivalent: acquisition_change_pct = -100 with the default trend mode.
+    same = engine.run(Adjustments(acquisition_change_pct=-100))
+    assert same.scenario_runway_months == result.base_runway_months
+    assert result.growth_mode == "none" and "No new customers" in result.growth_assumption
+
+
+def test_growth_mode_flat_holds_todays_run_rate(engine: ScenarioEngine) -> None:
+    d, _ = engine.drivers()
+    result = engine.run(Adjustments(growth_mode="flat"))
+    assert {p.base_mrr for p in result.points} == {Decimal(str(d.mrr))}
+    burn = d.cash - float(result.points[0].base_cash)
+    deltas = [float(a.base_cash - b.base_cash) for a, b in itertools.pairwise(result.points)]
+    assert deltas == pytest.approx([burn] * 11, abs=0.02)  # constant burn (points are rounded to cents)
+    assert float(result.base_runway_months or 0) == pytest.approx(d.cash / burn, abs=0.005)
+
+
+@pytest.mark.parametrize(
+    ("month", "tolerance", "gap"),
+    [(LATEST, "0.53", "0.06"), ("2025-12", "1.11", "0.86")],  # Dec 2025: receipts lag the Nov price uplift
+)
+def test_run_rate_projection_reconciles_with_runway_metric(
+    engine: ScenarioEngine, month: str, tolerance: str, gap: str
+) -> None:
+    """With no growth the projection agrees with the runway metric (actual burn) within the stated tolerance."""
+    rec = engine.run(Adjustments(growth_mode="flat"), as_of=month).reconciliation
+    expected, _ = g.runway(month, 3)  # independent Decimal re-computation from the CSVs
+    assert rec.runway_actual_burn_months == expected
+    assert rec.actual_net_burn == g.net_burn(month, 3)
+    assert rec.tolerance_months == g.q(expected * Decimal("0.05")) == Decimal(tolerance)  # 5 % of the metric
+    assert rec.run_rate_runway_months is not None
+    assert rec.basis_gap_months == rec.run_rate_runway_months - expected == Decimal(gap)
+    assert abs(rec.basis_gap_months) <= rec.tolerance_months and rec.within_tolerance is True
+    # The gap is explained by the burn on the two bases (bank cash vs P&L), which differ by under 5 %.
+    assert rec.basis_gap_net_burn == g.net_burn(month, 3) - rec.run_rate_net_burn
+    assert abs(rec.basis_gap_net_burn) / g.net_burn(month, 3) < Decimal("0.05")
+    assert f"{abs(rec.basis_gap_net_burn):,.2f}/month" in rec.explanation
+
+
+def test_reconciliation_walks_from_metric_to_projection(engine: ScenarioEngine) -> None:
+    expected = {"trend": "11.23", "none": "9.69", "flat": "10.71"}
+    for mode, projected in expected.items():
+        result = engine.run(Adjustments(growth_mode=mode))  # type: ignore[arg-type]
+        rec = result.reconciliation
+        assert rec.growth_mode == mode
+        assert rec.projected_runway_months == result.base_runway_months == Decimal(projected)
+        assert rec.runway_actual_burn_months == Decimal("10.65")
+        assert rec.basis_gap_months == Decimal("0.06")
+        assert rec.runway_actual_burn_months + rec.basis_gap_months + rec.growth_gap_months == Decimal(projected)  # type: ignore[operator]
+        assert "Runway (actual burn) is 10.65 months" in rec.explanation
+        assert "172,280.47" in rec.explanation and "971.45/month (0.6%) of cash timing" in rec.explanation
+        assert "within the 5% tolerance (0.53 months)" in rec.explanation
+    trend = engine.run(Adjustments()).reconciliation
+    assert trend.growth_gap_months == Decimal("0.52")
+    assert "new customers keep arriving (5.33/month at 1,111.88 MRR each)" in trend.explanation
+    assert "1.67% of customers churn" in trend.explanation
+
+
+def test_reconciliation_when_runway_metric_is_undefined(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Not enough bank history for the 3-month metric: the gap is explained instead of compared."""
+    from app.engine.ingest import ingest_directory
+
+    db = FinanceDB(tmp_path / "ws")
+    ingest_directory(db, g.SAMPLE)
+    with db.connect(read_only=False) as con:
+        con.execute("DELETE FROM bank_balance WHERE month < '2026-10'")
+    rec = ScenarioEngine(db).run(Adjustments()).reconciliation
+    assert rec.runway_actual_burn_months is None and rec.basis_gap_months is None and rec.within_tolerance is None
+    assert "could not be computed" in rec.explanation
+    assert rec.projected_runway_months is not None
+
+
+def test_runway_labels_name_the_two_runways(engine: ScenarioEngine) -> None:
+    result = engine.run(Adjustments())
+    assert result.labels["runway_actual_burn_months"] == "Runway (actual burn)"
+    assert result.labels["base_runway_months"] == "Projected runway (with growth assumptions)"
+    schema = ScenarioResult.model_json_schema()["properties"]
+    assert "with growth assumptions" in schema["base_runway_months"]["description"]
+
+
+def test_assumptions_cover_every_driver_with_lineage(engine: ScenarioEngine) -> None:
+    d, _ = engine.drivers()
+    assumptions = {a.name: a for a in engine.run(Adjustments()).assumptions}
+    assert list(assumptions) == list(ASSUMPTIONS)
+    months = g.window(LATEST, 3)
+    for name, a in assumptions.items():
+        assert a.label and a.used and a.note is None
+        assert a.lineage.metric == f"assumption.{name}"
+        assert a.lineage.sql and a.lineage.source_rows and all(r.row_count for r in a.lineage.source_rows), name
+        assert float(a.value) == pytest.approx(getattr(d, name), abs=0.0051 if a.unit != "ratio" else 0.000051)
+        assert a.window == (LATEST if name in ("cash", "mrr", "cost_per_hire") else "2026-08..2026-10")
+    assert assumptions["cash"].value == Decimal("1835125.06") and assumptions["cash"].unit == "USD"
+    (bank,) = assumptions["cash"].lineage.source_rows
+    assert (bank.table, bank.rows) == (
+        "bank_balance",
+        compact_ranges(g.csv_line("bank_balance", lambda r: r["month"] == LATEST)),
+    )
+    assert assumptions["new_customers"].value == g.q(Decimal(g.new_customers(months)) / 3)
+    assert assumptions["new_customers"].unit == "count"
+    assert assumptions["churn"].value == Decimal("0.0167") and assumptions["churn"].unit == "ratio"
+    (spend,) = assumptions["marketing"].lineage.source_rows
+    assert spend.rows == compact_ranges(g.csv_line("marketing_spend", lambda r: r["month"] in months))
+    assert {r.table for r in assumptions["paid_cac"].lineage.source_rows} == {"marketing_spend", "customers"}
+
+
+def test_assumption_sql_reruns_to_the_value(engine: ScenarioEngine, loaded_db: FinanceDB) -> None:
+    assumptions = {a.name: a for a in engine.run(Adjustments()).assumptions}
+    with loaded_db.connect() as con:
+        (cash,) = con.execute(assumptions["cash"].lineage.sql[0]).fetchone()  # type: ignore[misc]
+        (count,) = con.execute(assumptions["new_customers"].lineage.sql[0]).fetchone()  # type: ignore[misc]
+    assert cash == assumptions["cash"].value
+    assert g.q(Decimal(count) / 3) == assumptions["new_customers"].value
+
+
+@pytest.mark.parametrize(
+    ("mode", "unused"),
+    [
+        ("trend", set()),
+        ("none", {"new_customers", "new_customer_arpa", "paid_cac"}),
+        ("flat", {"new_customers", "new_customer_arpa", "paid_cac", "churn"}),
+    ],
+)
+def test_assumptions_flag_drivers_the_growth_mode_replaces(engine: ScenarioEngine, mode: str, unused: set[str]) -> None:
+    assumptions = engine.run(Adjustments(growth_mode=mode)).assumptions  # type: ignore[arg-type]
+    assert {a.name for a in assumptions if not a.used} == unused
+    assert all(a.note and mode in a.note for a in assumptions if not a.used)
+
+
+def test_growth_mode_reaches_sensitivity_and_monte_carlo(engine: ScenarioEngine) -> None:
+    flat = engine.sensitivity(
+        "price_change_pct",
+        [0.0],
+        "churn_change_pts",
+        [0.0],
+        output="runway_months",
+        base=Adjustments(growth_mode="flat"),
+    )
+    assert flat.base_value == flat.table[0][0] == Decimal("10.71")
+    request = MonteCarloRequest(adjustments=Adjustments(growth_mode="none"), distributions={}, runs=20)
+    result = run_monte_carlo(engine, request)
+    assert result.growth_mode == "none" and result.runway_p50 == Decimal("9.69")
+    assert result.runway_label == "Projected runway (with growth assumptions)"
+    assert [a.name for a in result.assumptions] == list(ASSUMPTIONS)
+    assert not {a.name: a for a in result.assumptions}["new_customers"].used
+    with pytest.raises(ValidationError):
+        Adjustments(growth_mode="hockey-stick")  # type: ignore[arg-type]
 
 
 # --- Monte Carlo -----------------------------------------------------------------------------------------------

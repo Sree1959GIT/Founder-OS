@@ -65,13 +65,25 @@ try every endpoint at http://127.0.0.1:8000/docs.
 | `GET /api/data/mappings` | Saved column mappings (`data/<workspace>/mappings.json`, editable) |
 | `POST /api/data/query` | One read-only `SELECT` over the loaded tables (SQL guard) |
 | `GET /api/metrics` · `/api/metrics/summary` · `/api/metrics/{name}` | Metric routines (`?month=YYYY-MM&window=N`) |
-| `GET /api/metrics/cash-projection` | Base-case 12-month cash projection |
+| `GET /api/metrics/cash-projection` | Base-case 12-month cash projection (`?growth_mode=trend\|none\|flat`) |
 | `POST /api/metrics/kill-criteria` | Evaluate kill criteria against live metrics |
 | `POST /api/scenario` · `/sensitivity` · `/montecarlo` | What-if projection, 2-variable grid, seeded Monte Carlo |
 
 Every number comes back with a `lineage` object: the SQL that ran, the source file and row numbers (which match the
 Excel rows), the formula and the intermediate inputs. Metric definitions are documented at the top of
 `backend/app/engine/metrics.py`.
+
+There are two runways, and the API labels them differently:
+- **Runway (actual burn)** (`/api/metrics/runway`) is closing cash divided by the trailing 3-month net burn from the
+  bank sheet. It makes no growth assumptions.
+- **Projected runway (with growth assumptions)** (`base_runway_months` / `scenario_runway_months`) comes from the
+  projection. `growth_mode` sets the growth assumption:
+  - `trend` (default): new customers keep arriving at the measured acquisition cost.
+  - `none`: no new customers.
+  - `flat`: today's run-rate.
+
+  Projection responses list every driver under `assumptions`, each with its own lineage. They also include a
+  `reconciliation`, which explains the step from the actual-burn runway to the projected one.
 
 ## Development
 
