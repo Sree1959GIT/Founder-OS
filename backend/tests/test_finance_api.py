@@ -98,6 +98,33 @@ def test_cash_projection_endpoint(client: TestClient) -> None:
     assert len(client.get("/api/metrics/cash-projection", params={"horizon": 24}).json()["points"]) == 24
 
 
+def test_cash_projection_growth_modes_and_runway_names(client: TestClient) -> None:
+    """Founder feedback: show the growth assumption, allow "no new customers", reconcile with the runway metric."""
+    trend = client.get("/api/metrics/cash-projection").json()
+    assert trend["growth_mode"] == "trend" and trend["base_runway_months"] == 11.23
+    rec = trend["reconciliation"]
+    assert (rec["runway_actual_burn_months"], rec["run_rate_runway_months"], rec["growth_gap_months"]) == (
+        10.65,
+        10.71,
+        0.52,
+    )
+    assert rec["within_tolerance"] is True and rec["explanation"]
+    new_customers = {a["name"]: a for a in trend["assumptions"]}["new_customers"]
+    assert new_customers["value"] == 5.33 and new_customers["window"] == "2026-08..2026-10"
+    assert new_customers["lineage"]["source_rows"][0]["table"] == "customers"
+    none = client.get("/api/metrics/cash-projection", params={"growth_mode": "none"}).json()
+    assert none["base_runway_months"] == 9.69 and none["base_zero_cash_month"] == "2027-08"
+    flat = client.get("/api/metrics/cash-projection", params={"growth_mode": "flat"}).json()
+    assert flat["base_runway_months"] == 10.71
+    assert client.get("/api/metrics/cash-projection", params={"growth_mode": "rocket"}).status_code == 422
+    assert client.post("/api/scenario", json={"growth_mode": "none"}).json()["scenario_runway_months"] == 9.69
+    montecarlo = client.post("/api/scenario/montecarlo", json={"adjustments": {"growth_mode": "flat"}}).json()
+    assert montecarlo["growth_mode"] == "flat" and len(montecarlo["assumptions"]) == 12
+    runway = client.get("/api/metrics/runway").json()
+    assert runway["label"] == "Runway (actual burn)" and runway["value"] == 10.65
+    assert trend["labels"]["base_runway_months"] == "Projected runway (with growth assumptions)"
+
+
 def test_kill_criteria_endpoint(client: TestClient) -> None:
     body = {"criteria": [{"name": "Runway", "metric": "runway", "operator": "<", "threshold": 6}]}
     (check,) = client.post("/api/metrics/kill-criteria", json=body).json()

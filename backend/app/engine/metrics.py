@@ -8,7 +8,8 @@ and source rows in its lineage.
 Definitions (window W = the W months ending at the as-of month m):
 - gross_burn: average monthly `bank_balance.cash_out` over W.
 - net_burn: average monthly (cash_out - customer_receipts) over W. Operating burn, so financing inflows are excluded.
-- runway: closing cash at m / net_burn(W). Zero-cash month = m + ceil(runway). Undefined when not burning.
+- runway ("runway (actual burn)"): closing cash at m / net_burn(W). Zero-cash month = m + ceil(runway). Undefined
+  when not burning. No growth assumptions; the scenario engine's *projected* runway adds them (see scenario.py).
 - mrr / arr: sum of `subscriptions.mrr` in m (ARR = 12 x MRR). arpa: MRR / active customers.
 - revenue_growth / mrr_growth: compound monthly growth over W: (x_m / x_{m-W})^(1/W) - 1 (W=1 is month on month).
 - gross_margin: (Revenue - COGS) / Revenue from the P&L, summed over W.
@@ -26,8 +27,9 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any
 
@@ -88,6 +90,23 @@ def _period(months: list[str]) -> str:
     return months[0] if len(months) == 1 else f"{months[0]}..{months[-1]}"
 
 
+@dataclass
+class Capture:
+    """The SQL and source rows behind one intermediate value (see `_Trace.capture`)."""
+
+    sql: list[str] = field(default_factory=list)
+    sources: list[SourceRef] = field(default_factory=list)
+
+    def add(self, refs: list[SourceRef]) -> None:
+        self.sources.extend(r for r in refs if r not in self.sources)
+
+    def __add__(self, other: Capture) -> Capture:
+        merged = Capture(list(self.sql), list(self.sources))
+        merged.sql.extend(s for s in other.sql if s not in merged.sql)
+        merged.add(other.sources)
+        return merged
+
+
 class _Trace:
     """Runs SQL on one connection and records every statement and the source rows that fed the result."""
 
@@ -95,28 +114,52 @@ class _Trace:
         self.con = con
         self.sql: list[str] = []
         self.sources: list[SourceRef] = []
-        self._seen: set[tuple[str, str]] = set()
+        self._seen: dict[tuple[str, str], list[SourceRef]] = {}
+        self._captures: list[Capture] = []
+
+    def _log(self, sql: str) -> None:
+        self.sql.append(sql)
+        for capture in self._captures:
+            capture.sql.append(sql)
 
     def scalar(self, sql: str) -> Any:
-        self.sql.append(sql)
+        self._log(sql)
         row = self.con.execute(sql).fetchone()
         return row[0] if row else None
 
     def rows(self, sql: str) -> list[tuple[Any, ...]]:
-        self.sql.append(sql)
+        self._log(sql)
         return self.con.execute(sql).fetchall()
 
-    def source(self, table: str, where: str) -> None:
-        if (table, where) in self._seen:
-            return
-        self._seen.add((table, where))
-        for file, sheet, rows in self.con.execute(
-            f'SELECT _source_file, _source_sheet, list(_source_row) FROM "{table}" WHERE {where} GROUP BY ALL '
-            "ORDER BY 1, 2"
-        ).fetchall():
-            self.sources.append(
-                SourceRef(table=table, file=file, sheet=sheet, rows=compact_ranges(rows), row_count=len(rows))
-            )
+    @contextmanager
+    def capture(self) -> Iterator[Capture]:
+        """Collect the SQL and source rows used inside the block (also rows already recorded before it)."""
+        capture = Capture()
+        self._captures.append(capture)
+        try:
+            yield capture
+        finally:
+            self._captures.remove(capture)
+
+    def source(self, table: str, where: str) -> list[SourceRef]:
+        """Record the rows of `table` matching `where`; returns their refs (recorded once per table + filter)."""
+        refs = self._seen.get((table, where))
+        if refs is not None:
+            for capture in self._captures:
+                capture.add(refs)
+            return refs
+        refs = [
+            SourceRef(table=table, file=file, sheet=sheet, rows=compact_ranges(rows), row_count=len(rows))
+            for file, sheet, rows in self.con.execute(
+                f'SELECT _source_file, _source_sheet, list(_source_row) FROM "{table}" WHERE {where} GROUP BY ALL '
+                "ORDER BY 1, 2"
+            ).fetchall()
+        ]
+        self._seen[(table, where)] = refs
+        self.sources.extend(refs)
+        for capture in self._captures:
+            capture.add(refs)
+        return refs
 
     def lineage(self, metric: str, formula: str, inputs: dict[str, Decimal | None], period: str) -> Lineage:
         return Lineage(
@@ -143,7 +186,12 @@ METRICS: dict[str, MetricDef] = {
     for d in (
         MetricDef("gross_burn", "Gross burn (monthly)", 3, "Average monthly cash out"),
         MetricDef("net_burn", "Net burn (monthly)", 3, "Average monthly cash out minus customer receipts"),
-        MetricDef("runway", "Runway", 3, "Months of cash left at the current net burn, and the zero-cash month"),
+        MetricDef(
+            "runway",
+            "Runway (actual burn)",
+            3,
+            "Months of cash left at the trailing average net burn (no growth assumptions), and the zero-cash month",
+        ),
         MetricDef("mrr", "MRR", None, "Monthly recurring revenue"),
         MetricDef("arr", "ARR", None, "Annual recurring revenue (12 x MRR)"),
         MetricDef("arpa", "ARPA", None, "Average MRR per active customer"),
