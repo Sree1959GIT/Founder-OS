@@ -82,7 +82,9 @@ def test_metric_errors(client: TestClient) -> None:
 def test_metrics_index_and_summary(client: TestClient) -> None:
     index = client.get("/api/metrics").json()
     assert len(index["metrics"]) == 18 and index["months"][-1] == "2026-10"
-    summary = {m["metric"]: m["value"] for m in client.get("/api/metrics/summary").json()}
+    body = client.get("/api/metrics/summary").json()
+    assert body["unavailable"] == {}
+    summary = {m["metric"]: m["value"] for m in body["metrics"]}
     assert summary["mrr"] == 255344.27
     assert summary["net_burn"] == 172280.47
     assert summary["gross_margin"] == 0.7213
@@ -122,6 +124,10 @@ def test_sensitivity_and_montecarlo_endpoints(client: TestClient) -> None:
     assert grid["table"][2][1] == grid["base_value"]  # price 0, churn 0
     bad = client.post("/api/scenario/sensitivity", json={"row_variable": "x"})
     assert bad.status_code == 422
+    hires = {"row_variable": "new_hires", "row_values": [0.5, 1]}  # review finding: was HTTP 500
+    assert client.post("/api/scenario/sensitivity", json=hires).status_code == 422
+    first_month = client.get("/api/metrics/summary", params={"month": "2024-11"}).json()
+    assert "net_burn" in first_month["unavailable"] and first_month["metrics"]
     mc = client.post("/api/scenario/montecarlo", json={"runs": 500, "seed": 1}).json()
     assert mc["runs"] == 500 and len(mc["points"]) == 12
     assert client.post("/api/scenario/montecarlo", json={"runs": 500, "seed": 1}).json()["points"] == mc["points"]

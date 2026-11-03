@@ -175,9 +175,17 @@ class MetricsEngine:
         with self.db.connect() as con:
             return self._compute(con, name, month, window)
 
-    def compute_many(self, names: list[str], month: str | None = None) -> list[MetricResult]:
+    def summary(self, names: list[str], month: str | None = None) -> tuple[list[MetricResult], dict[str, str]]:
+        """Compute each metric independently: one that cannot be computed is reported, not fatal."""
+        results: list[MetricResult] = []
+        unavailable: dict[str, str] = {}
         with self.db.connect() as con:
-            return [self._compute(con, n, month, None) for n in names]
+            for name in names:
+                try:
+                    results.append(self._compute(con, name, month, None))
+                except (MetricError, NoDataError) as exc:
+                    unavailable[name] = str(exc)
+        return results, unavailable
 
     def available_months(self) -> list[str]:
         with self.db.connect() as con:

@@ -167,6 +167,7 @@ def test_sensitivity_runway_output(engine: ScenarioEngine) -> None:
         ({"column_variable": "price_change_pct"}, "must differ"),
         ({"output": "profit"}, "output"),
         ({"row_values": []}, "1 to 11"),
+        ({"row_values": [-95.0]}, "not allowed"),  # review finding: was a pydantic ValidationError (HTTP 500)
     ],
 )
 def test_sensitivity_validation(engine: ScenarioEngine, kwargs: dict[str, object], message: str) -> None:
@@ -249,6 +250,25 @@ def test_monte_carlo_validation(engine: ScenarioEngine) -> None:
         Distribution(kind="triangular", low=1, mode=0, high=2)
     with pytest.raises(ValidationError):
         MonteCarloRequest(runs=5)
+
+
+def test_monte_carlo_runway_percentiles_are_simulated_values(engine: ScenarioEngine) -> None:
+    """Review finding: interpolating towards the "never runs out" sentinel invented runways no run produced."""
+    from app.engine.scenario import adjustment_arrays, project, runway_months
+
+    request = MonteCarloRequest(
+        distributions={"spend_change_monthly": Distribution(kind="uniform", low=-260_000, high=-150_000)},
+        runs=400,
+        seed=3,
+    )
+    result = run_monte_carlo(engine, request)
+    d, _ = engine.drivers()
+    rng = np.random.default_rng(3)
+    draws = rng.uniform(-260_000, -150_000, 400)
+    cash, _ = project(d, adjustment_arrays(400, Adjustments(), {"spend_change_monthly": draws}), 1, 120)
+    simulated = {Decimal(str(round(float(r), 2))) for r in runway_months(d.cash, cash) if not np.isnan(r)}
+    for p in (result.runway_p10, result.runway_p50, result.runway_p90):
+        assert p is None or p in simulated
 
 
 def test_monte_carlo_draws_are_clipped_to_valid_range(engine: ScenarioEngine) -> None:

@@ -33,6 +33,8 @@ SUPPORTED_SUFFIXES = (".csv", ".xlsx")
 MAPPINGS_FILE_NAME = "mappings.json"
 MAX_REPORTED_ERRORS = 25
 CENT = Decimal("0.01")
+MAX_MONEY = Decimal(10) ** 16  # DECIMAL(18,2) holds 16 digits before the point
+MONEY_TEXT = re.compile(r"-?(\d+(\.\d*)?|\.\d+)")
 _MONTH_NAMES = {
     **dict.fromkeys(("jan", "january"), 1),
     **dict.fromkeys(("feb", "february"), 2),
@@ -100,7 +102,10 @@ def _read_csv(data: bytes, name: str) -> RawSheet:
     try:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = data.decode("cp1252")  # Excel on Windows saves "CSV" in the ANSI code page
+        try:
+            text = data.decode("cp1252")  # Excel on Windows saves "CSV" in the ANSI code page
+        except UnicodeDecodeError as exc:
+            raise IngestError(f"{name}: not UTF-8 or Windows-1252 text; save it as 'CSV UTF-8' in Excel") from exc
     reader = csv.reader(io.StringIO(text, newline=""))
     headers = next(reader, None)
     if not headers or not any(h.strip() for h in headers):
@@ -251,17 +256,22 @@ def parse_money(value: Any) -> Decimal:
     elif isinstance(value, float):
         number = Decimal(repr(value))
     else:
-        text = str(value).strip()
-        negative = text.startswith("(") and text.endswith(")")
-        text = re.sub(r"(?i)\b(usd|inr|eur|gbp|rs\.?)\b|[$₹€£,\s()]", "", text)
+        text = str(value).strip().replace("\u2212", "-")  # Unicode minus sign
+        # Accounting negatives: "(1,000)", "$(1,000)", "USD (250.00)".
+        negative = bool(re.search(r"\(.*\)", text))
+        text = text.replace("(", "").replace(")", "")
+        # Currency codes as a prefix or suffix ("Rs. 1,000", "USD 10", "84,000 INR"), then symbols and separators.
+        text = re.sub(r"(?i)^\s*(usd|inr|eur|gbp|rs\.?)|(usd|inr|eur|gbp)\s*$", "", text)
+        text = re.sub(r"[$₹€£,\s]", "", text)
+        if not MONEY_TEXT.fullmatch(text):
+            raise ValueError("not a number")
+        number = Decimal(text)
         if negative:
-            text = "-" + text.lstrip("-")
-        try:
-            number = Decimal(text)
-        except InvalidOperation as exc:
-            raise ValueError("not a number") from exc
+            number = -abs(number)
     if not number.is_finite():
         raise ValueError("not a finite number")
+    if abs(number) >= MAX_MONEY:
+        raise ValueError("too large (limit 10^16)")
     return number.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
@@ -357,6 +367,18 @@ def parse_rows(spec: TableSpec, sheet: RawSheet, mapping: dict[int, Column]) -> 
                 continue
             values[order[column.name]] = value
         out.append([*values, sheet.file_name, sheet.sheet, row_number])
+    if spec.name == "bank_balance":
+        # Metrics read one bank row per month (burn sums the window, runway reads the closing balance).
+        first_seen: dict[str, int] = {}
+        month_index = [c.name for c in spec.columns].index("month")
+        for row in out:
+            month, row_number = row[month_index], row[-1]
+            if month is None:
+                continue
+            if month in first_seen:
+                errors.append(f"row {row_number}: month {month} already appears in row {first_seen[month]}")
+            else:
+                first_seen[month] = row_number
     if errors:
         shown = errors[:MAX_REPORTED_ERRORS]
         more = len(errors) - len(shown)
@@ -376,10 +398,6 @@ def validation_warnings(con: duckdb.DuckDBPyConnection, table: str) -> list[str]
             (
                 "SELECT count(*) FROM bank_balance WHERE closing_balance <> opening_balance + cash_in - cash_out",
                 "{n} month(s) where closing_balance <> opening_balance + cash_in - cash_out",
-            ),
-            (
-                "SELECT count(*) FROM (SELECT month FROM bank_balance GROUP BY month HAVING count(*) > 1)",
-                "{n} month(s) appear more than once; metrics use the last row of each month",
             ),
         ],
         "subscriptions": [
@@ -415,7 +433,10 @@ def _create_and_insert(con: duckdb.DuckDBPyConnection, spec: TableSpec, rows: li
     con.register("_ingest_rows", view)
     try:
         select = ", ".join(f"CAST(c{i} AS {t})" for i, t in enumerate(types))
-        con.execute(f'INSERT INTO "{spec.name}" SELECT {select} FROM _ingest_rows')
+        try:
+            con.execute(f'INSERT INTO "{spec.name}" SELECT {select} FROM _ingest_rows')
+        except duckdb.Error as exc:  # parsed values are validated, so this is a safety net, not the normal path
+            raise IngestError(f"{spec.name}: could not store the data ({exc})") from exc
     finally:
         con.unregister("_ingest_rows")
 

@@ -74,13 +74,15 @@
   `marketing_spend`, `headcount`): explicit choice > saved mapping > file or sheet name > best header match. Headers
   map through synonyms (e.g. `Period` → `month`, `Line Item` → `account`, `Cost of Sales` → `COGS`). Values are parsed
   strictly (`$1,234.50`, `(500)`, `Oct 2026`, Excel dates, `25%`). One bad cell rejects the whole file with row-level
-  errors, and the previous data stays. Loading replaces the table. Mappings are saved to `data/<ws>/mappings.json`.
+  errors, and the previous data stays. `bank_balance` must have one row per month. Loading replaces the table.
+  Mappings are saved to `data/<ws>/mappings.json`.
   Every row keeps `_source_file`, `_source_sheet` and `_source_row` (= CSV record / Excel row number, header = 1).
 - **DuckDB** (`duckdb_engine.py`): `data/<ws>/founder.duckdb`. Short-lived connections behind a lock, and **external
   file access is disabled on every connection**.
 - **SQL guard** (`sql_guard.py`): exactly one SELECT; tables are read from the parsed AST (CTE-aware) and must be
   canonical tables; no table functions (`read_csv`, `glob`…), file paths, system catalogs or `_internal` tables. It
-  runs on a read-only connection with a row limit (+ truncation flag) and a time limit (`interrupt()`).
+  runs DuckDB's canonical re-serialisation of the validated AST (so comments and `;` cannot change it) on a
+  read-only connection with a row limit (+ truncation flag) and a time limit (`interrupt()`).
 - **Metrics** (`metrics.py`): 18 routines, each returning `MetricResult {value, unit, as_of, detail, lineage}`.
   Lineage = the exact SQL executed, the source files and row ranges, the formula, the named inputs and the period. Definitions
   and default windows are in the module docstring. Defaults: burn and runway use the **trailing 3 months**, gross
@@ -94,7 +96,8 @@
 - **Decision science** (`decision_science.py`): weighted scoring with 2×2 quadrants (Quick win / Big bet / Fill-in /
   Deprioritise), expected value, decision trees with rollback and policy (e.g. "pilot first"), and kill criteria
   evaluated on live metrics. **Calibration** (`calibration.py`): a JSON store of predictions, outcomes and Brier per owner.
-- **REST**: `/api/data/{tables,mappings,load-sample,upload,query}`, `/api/metrics` (index), `/api/metrics/summary`,
+- **REST**: `/api/data/{tables,mappings,load-sample,upload,query}`, `/api/metrics` (index), `/api/metrics/summary`
+  (`{metrics, unavailable}`: one metric that cannot be computed does not fail the rest),
   `/api/metrics/{name}`, `/api/metrics/cash-projection`, `/api/metrics/kill-criteria`, `/api/scenario`,
   `/api/scenario/sensitivity`, `/api/scenario/montecarlo`. Engine errors map to 409 (no data), 422 (bad input or
   file), 400 (SQL rejected), 413 (upload too big) and 415 (wrong type). Uploads are kept in `data/<ws>/uploads/`.
@@ -143,8 +146,8 @@ run `setup.bat` once (it installs the new `numpy` and `python-multipart` package
    pipeline 396, marketing_spend 72, headcount 29).
 
 *Numbers: spot-check these against Excel* (open `sample_data\northwind_financials.xlsx`)
-3. http://127.0.0.1:8000/api/metrics/summary (shown as JSON in the browser) should show `mrr` 255344.27, `net_burn` 172280.47,
-   `gross_burn` 428612.47, `runway` 10.65, `gross_margin` 0.7213.
+3. http://127.0.0.1:8000/api/metrics/summary (shown as JSON in the browser) lists under `metrics`: `mrr` 255344.27, `net_burn`
+   172280.47, `gross_burn` 428612.47, `runway` 10.65, `gross_margin` 0.7213; `unavailable` is `{}`.
 4. **Burn** (sheet `bank_balance`, rows **23–25** = 2026-08, 2026-09, 2026-10; column F = `cash_out`, C = `customer_receipts`):
    - Gross burn = `=AVERAGE(F23:F25)` → **428,612.47**
    - Net burn = `=AVERAGE(F23:F25)-AVERAGE(C23:C25)` → **172,280.47** (same as `=-AVERAGE(G23:G25)`, since there is no
@@ -219,6 +222,10 @@ Second planning round (2026-11-02):
   mapping, ingest, DuckDB with external access disabled, SQL guard, 18 metric routines); scenario + sensitivity,
   Monte Carlo, decision science, calibration; REST endpoints; backend tests including golden tests against an
   independent Decimal re-computation. Push needed the GitHub noreply email (repo-local `user.email`; see Decisions).
+- 2026-11-03 (M1 self-review, `/code-review high`): 10 findings, all fixed with regression tests: money parsing
+  ("Rs. 1,000" read as 0.10; "$(1,000)" lost its sign), duplicate bank months, a CTE-scope bypass in the SQL guard,
+  trailing comments breaking guarded SQL, the summary failing on one metric, a sensitivity 500, interpolated Monte Carlo
+  runway percentiles, undecodable CSV / DECIMAL overflow giving 500s, and a dead registry class. 250 backend tests.
 - 2026-11-02: Planning session. Agreed scope with the founder and wrote PRD v2, GOAL_PROMPT, CLAUDE.md and HANDOVER.md.
 - 2026-11-02: Added the agent design (F3, F4b), decision models (F7) and decision-science routines to the PRD; split M3; started the UI mock-ups in Claude Design.
 - 2026-11-02 (M0 session, 15:47 to ~16:15 UTC): backend scaffold with config and the `/api/health` probes; Northwind

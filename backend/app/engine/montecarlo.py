@@ -130,7 +130,8 @@ def run_monte_carlo(engine: ScenarioEngine, request: MonteCarloRequest) -> Monte
     runway = runway_months(d.cash, cash)
     # "Never runs out" (NaN) becomes a sentinel past the search window, which `_months` maps back to None.
     never = float(months + 1)
-    r10, r50, r90 = np.percentile(np.where(np.isnan(runway), never, runway), [10, 50, 90])
+    # inverted_cdf returns actual simulated runways, never a value interpolated towards the sentinel.
+    r10, r50, r90 = np.percentile(np.where(np.isnan(runway), never, runway), [10, 50, 90], method="inverted_cdf")
     within = (cash[:, : request.horizon] < 0).any(axis=1).mean()
     within_12 = (cash[:, :12] < 0).any(axis=1).mean()
     lineage = engine._lineage(

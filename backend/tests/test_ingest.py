@@ -48,6 +48,13 @@ def scalar(db: FinanceDB, sql: str):  # type: ignore[no-untyped-def]
         ("-12", "-12.00"),
         ("₹ 84,000", "84000.00"),
         ("USD 10", "10.00"),
+        ("Rs. 1,000", "1000.00"),  # review finding: was read as 0.10
+        ("Rs 1,000", "1000.00"),
+        ("84,000 INR", "84000.00"),
+        ("$(1,000)", "-1000.00"),  # review finding: sign was lost after a currency prefix
+        ("USD (250.00)", "-250.00"),
+        ("-$1,000", "-1000.00"),
+        ("\u22125", "-5.00"),
         (1234.565, "1234.57"),
         (7, "7.00"),
         (Decimal("0.005"), "0.01"),
@@ -57,7 +64,7 @@ def test_parse_money(raw: object, expected: str) -> None:
     assert parse_money(raw) == Decimal(expected)
 
 
-@pytest.mark.parametrize("raw", ["abc", "", "1.2.3", True, "NaN"])
+@pytest.mark.parametrize("raw", ["abc", "", "1.2.3", True, "NaN", "Rs.", "12abc", "1e20", "99999999999999999"])
 def test_parse_money_rejects(raw: object) -> None:
     with pytest.raises(ValueError):
         parse_money(raw)
@@ -252,6 +259,26 @@ def test_two_sheets_for_one_table_rejected(empty_db: FinanceDB, tmp_path: Path) 
     wb.save(tmp_path / "book.xlsx")
     with pytest.raises(IngestError, match="more than one sheet"):
         ingest_file(empty_db, tmp_path / "book.xlsx")
+
+
+def test_bank_month_must_be_unique(empty_db: FinanceDB, tmp_path: Path) -> None:
+    """Review finding: duplicate months were summed into burn but runway read only one closing balance."""
+    path = write(
+        tmp_path / "bank.csv",
+        "month,opening_balance,cash_in,cash_out,closing_balance\n"
+        "2026-09,100,10,5,105\n2026-10,105,10,5,110\n2026-10,105,10,6,109\n",
+    )
+    with pytest.raises(IngestError) as info:
+        ingest_file(empty_db, path)
+    assert info.value.errors == ["row 4: month 2026-10 already appears in row 3"]
+
+
+def test_undecodable_csv_is_a_clear_error(empty_db: FinanceDB, tmp_path: Path) -> None:
+    """Review finding: bytes undefined in both UTF-8 and cp1252 raised a raw UnicodeDecodeError (500)."""
+    path = tmp_path / "pnl.csv"
+    path.write_bytes(b"month,account,category,amount\n2026-10,A\x81\x9d,Revenue,1\n")
+    with pytest.raises(IngestError, match="UTF-8"):
+        ingest_file(empty_db, path)
 
 
 def test_bank_identity_warning(empty_db: FinanceDB, tmp_path: Path) -> None:

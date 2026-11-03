@@ -188,9 +188,17 @@ def test_lineage_sql_reruns_to_the_same_numbers(engine: MetricsEngine, loaded_db
     assert total == lineage.inputs["total_cash_out"]
 
 
-def test_compute_many_matches_compute(engine: MetricsEngine) -> None:
-    many = engine.compute_many(["mrr", "runway"])
-    assert [r.value for r in many] == [value(engine, "mrr"), value(engine, "runway")]
+def test_summary_matches_compute(engine: MetricsEngine) -> None:
+    results, unavailable = engine.summary(["mrr", "runway"])
+    assert [r.value for r in results] == [value(engine, "mrr"), value(engine, "runway")]
+    assert unavailable == {}
+
+
+def test_summary_reports_metrics_it_cannot_compute(engine: MetricsEngine) -> None:
+    """Review finding: one metric without enough history must not fail the whole dashboard."""
+    results, unavailable = engine.summary(["mrr", "net_burn", "gross_margin"], "2024-11")
+    assert [r.metric for r in results] == ["mrr", "gross_margin"]
+    assert "does not cover" in unavailable["net_burn"]
 
 
 @pytest.mark.parametrize(

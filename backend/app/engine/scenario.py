@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.engine.duckdb_engine import FinanceDB, NoDataError
 from app.engine.lineage import Lineage, Number
@@ -354,7 +354,10 @@ class ScenarioEngine:
         base = base or Adjustments()
         for name, values in ((row_variable, row_values), (column_variable, column_values)):
             for v in values:  # reuse the Adjustments bounds for validation
-                Adjustments(**{**base.model_dump(), name: v})
+                try:
+                    Adjustments(**{**base.model_dump(), name: v})
+                except ValidationError as exc:
+                    raise MetricError(f"{name}={v:g} is not allowed: {exc.errors()[0]['msg']}") from exc
         d, t = self.drivers(as_of)
         grid_r, grid_c = np.meshgrid(np.asarray(row_values, float), np.asarray(column_values, float), indexing="ij")
         n = grid_r.size

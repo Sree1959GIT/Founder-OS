@@ -41,10 +41,16 @@ def index(finance: FinanceDep) -> MetricsIndex:
     )
 
 
-@router.get("/summary", response_model=list[MetricResult])
-def summary(finance: FinanceDep, month: str | None = MonthQuery) -> list[MetricResult]:
-    """The headline numbers for the dashboard, computed on one connection."""
-    return finance.metrics.compute_many(list(SUMMARY_METRICS), month)
+class SummaryResponse(BaseModel):
+    metrics: list[MetricResult]
+    unavailable: dict[str, str] = Field(description="metric -> reason it could not be computed")
+
+
+@router.get("/summary", response_model=SummaryResponse)
+def summary(finance: FinanceDep, month: str | None = MonthQuery) -> SummaryResponse:
+    """The headline numbers for the dashboard. A metric that cannot be computed is listed in `unavailable`."""
+    results, unavailable = finance.metrics.summary(list(SUMMARY_METRICS), month)
+    return SummaryResponse(metrics=results, unavailable=unavailable)
 
 
 @router.get("/cash-projection", response_model=ScenarioResult)

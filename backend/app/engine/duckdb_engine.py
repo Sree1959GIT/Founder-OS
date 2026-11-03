@@ -17,8 +17,6 @@ import duckdb
 
 DB_FILE_NAME = "founder.duckdb"
 INGEST_LOG_TABLE = "_ingest_log"
-# Provenance columns added to every canonical table by the ingester.
-SOURCE_COLUMNS = ("_source_file", "_source_sheet", "_source_row")
 
 
 class NoDataError(RuntimeError):
@@ -57,18 +55,3 @@ class FinanceDB:
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
             ).fetchall()
         return {name for (name,) in rows if not name.startswith("_")}
-
-
-class FinanceDBRegistry:
-    """One `FinanceDB` per workspace data directory, shared by all requests of the process."""
-
-    def __init__(self) -> None:
-        self._dbs: dict[Path, FinanceDB] = {}
-        self._lock = threading.Lock()
-
-    def get(self, data_dir: Path) -> FinanceDB:
-        with self._lock:
-            db = self._dbs.get(data_dir)
-            if db is None:
-                db = self._dbs[data_dir] = FinanceDB(data_dir)
-            return db

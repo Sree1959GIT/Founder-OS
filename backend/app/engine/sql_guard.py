@@ -9,6 +9,7 @@ disabled, so even a query that slipped past the parser could not write or touch 
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -24,6 +25,7 @@ from app.engine.schema import TABLES
 DEFAULT_MAX_ROWS = 1000
 DEFAULT_TIMEOUT_S = 5.0
 MAX_SQL_CHARS = 10_000
+CTE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
 class SqlGuardError(ValueError):
@@ -50,7 +52,11 @@ def _walk(node: Any) -> Iterator[dict[str, Any]]:
 
 
 def validate_sql(con: duckdb.DuckDBPyConnection, sql: str, allowed_tables: set[str]) -> tuple[str, set[str]]:
-    """Return the cleaned statement and the tables it reads, or raise `SqlGuardError`."""
+    """Return the statement to run and the tables it reads, or raise `SqlGuardError`.
+
+    The statement returned is DuckDB's own re-serialisation of the validated AST (comments and `;` removed), so what
+    runs is exactly what was checked.
+    """
     if len(sql) > MAX_SQL_CHARS:
         raise SqlGuardError(f"Query is longer than {MAX_SQL_CHARS} characters")
     try:
@@ -61,9 +67,8 @@ def validate_sql(con: duckdb.DuckDBPyConnection, sql: str, allowed_tables: set[s
         raise SqlGuardError(f"Exactly one statement is allowed (got {len(statements)})")
     if statements[0].type != duckdb.StatementType.SELECT:
         raise SqlGuardError(f"Only SELECT queries are allowed (got {statements[0].type.name})")
-    cleaned = sql.strip().rstrip(";").strip()
 
-    row = con.execute("SELECT json_serialize_sql(?)", [cleaned]).fetchone()
+    row = con.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()
     ast = json.loads(row[0]) if row else {"error": True, "error_message": "no parse result"}
     if ast.get("error"):
         raise SqlGuardError(f"Query does not parse: {ast.get('error_message')}")
@@ -80,14 +85,22 @@ def validate_sql(con: duckdb.DuckDBPyConnection, sql: str, allowed_tables: set[s
         cte_map = node.get("cte_map")
         if isinstance(cte_map, dict):
             cte_names.update(str(entry.get("key")) for entry in cte_map.get("map", []))
-    # A CTE name shadows a table only inside the query, so CTE references are not table reads.
+    # CTE references are not table reads. CTE scopes are not tracked, so a CTE must never be able to stand in for
+    # a table that is not allowed: the only such tables are internal (`_` prefix) and file paths, and both are
+    # impossible as plain CTE names.
+    for name in cte_names:
+        if not CTE_NAME.fullmatch(name):
+            raise SqlGuardError(f"CTE name {name!r} is not allowed (use letters, digits and _, not starting with _)")
     tables = referenced - cte_names
     forbidden = sorted(t for t in tables if t not in allowed_tables)
     if forbidden:
         raise SqlGuardError(
             f"Table(s) not allowed: {', '.join(forbidden)}. Allowed: {', '.join(sorted(allowed_tables)) or 'none'}"
         )
-    return cleaned, tables
+    canonical = con.execute("SELECT json_deserialize_sql(?)", [row[0]]).fetchone() if row else None
+    if not canonical or not canonical[0]:
+        raise SqlGuardError("Query could not be normalised")
+    return str(canonical[0]), tables
 
 
 def run_guarded_query(
