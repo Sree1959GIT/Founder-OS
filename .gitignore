@@ -7,9 +7,13 @@ __pycache__/
 .mypy_cache/
 node_modules/
 frontend/dist/
-data/
-models/
+/data/
+/models/
 *.duckdb
 *.duckdb.wal
 .DS_Store
 Thumbs.db
+*.egg-info/
+*.log
+/vault/
+*.tsbuildinfo

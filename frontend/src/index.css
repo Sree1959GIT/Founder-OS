@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* "Graphite & Signal" design tokens (docs/design/README.md). HSL channels so Tailwind can apply opacity. */
+@layer base {
+  :root {
+    --bg: 217.5 22.2% 7.1%; /* #0E1116: app background */
+    --panel: 216.0 22.7% 8.6%; /* #11151B: side panels, top bar */
+    --card: 218.2 20.0% 10.8%; /* #161A21: cards */
+    --card-hover: 218.6 20.0% 13.7%; /* #1C212A: hovered controls */
+    --border: 220.0 16.5% 17.8%; /* #262B35: card borders */
+    --border-strong: 218.8 16.8% 19.8%; /* #2A303B: control borders */
+    --text: 220.0 13.6% 91.4%; /* #E6E8EC: primary text */
+    --text-muted: 217.5 13.5% 65.1%; /* #9AA3B2: labels (4.5:1 on card) */
+    --signal: 36.1 87.6% 59.0%; /* #F2A93B: amber accent: scenario, running, attention */
+    --signal-soft: 38.5 82.2% 71.4%; /* #F2C77A: amber text on dark */
+    --info: 214.1 85.5% 72.9%; /* #7FB2F5: base series, links, lineage chips */
+    --ok: 156.8 57.1% 68.0%; /* #7FDCB8: done, local, healthy */
+    --danger: 0.0 79.7% 71.0%; /* #F07A7A: failed, unavailable */
+    --paper: 45.0 30.8% 94.9%; /* #F6F4EE: decision memo sheet */
+    --bubble-user: 215.6 30.3% 17.5%; /* #1F2A3A: founder chat bubble */
+    --radius: 8px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-sm text-foreground antialiased;
+  }
+
+  a {
+    @apply text-info hover:underline;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-signal ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  /* Every number uses the mono font (design rule). */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+}

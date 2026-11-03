@@ -1,0 +1,199 @@
+customer_id,name,segment,plan,region,acquisition_channel,signup_month,churn_month,status
+C0001,Ironcrest Media,SMB,Starter,India,Outbound,2024-06,2026-03,churned
+C0002,Copperforge Logistics,SMB,Starter,Europe,Content & SEO,2022-12,,active
+C0003,Ironfield Health,SMB,Starter,Europe,Paid Search,2023-04,2025-04,churned
+C0004,Bluebridge Health,Mid-Market,Growth,India,Content & SEO,2024-01,,active
+C0005,Blueline Finance,SMB,Starter,Middle East,Content & SEO,2024-01,,active
+C0006,Falconfield Travel,SMB,Starter,North America,Outbound,2022-11,,active
+C0007,Zenithworks Health,SMB,Starter,North America,Paid Search,2023-02,,active
+C0008,Ironcrest Foods,Mid-Market,Growth,North America,Outbound,2023-08,,active
+C0009,Willowforge Labs,Mid-Market,Growth,North America,Outbound,2023-02,,active
+C0010,Lumenpeak Energy,SMB,Starter,North America,Content & SEO,2022-12,2025-01,churned
+C0011,Quartzpoint Foods,Mid-Market,Growth,North America,Paid Search,2023-02,,active
+C0012,Bluevale Logistics,Mid-Market,Growth,India,Paid Search,2024-08,,active
+C0013,Orchidbridge Energy,SMB,Starter,India,Outbound,2022-11,,active
+C0014,Harborpoint Media,SMB,Starter,Europe,Outbound,2022-10,2025-04,churned
+C0015,Vertexpath Energy,Enterprise,Enterprise,Europe,Paid Search,2023-10,2026-02,churned
+C0016,Bluevale Finance,SMB,Starter,Europe,Outbound,2022-11,2026-04,churned
+C0017,Zenithbridge Logistics,Enterprise,Enterprise,Europe,Outbound,2024-02,,active
+C0018,Cedarfield Foods,SMB,Starter,North America,Content & SEO,2023-11,2025-08,churned
+C0019,Willowport Foods,Mid-Market,Growth,North America,Content & SEO,2023-03,2026-04,churned
+C0020,Northfield Finance,Enterprise,Enterprise,North America,Outbound,2022-08,,active
+C0021,Cedarworks Logistics,SMB,Starter,North America,Content & SEO,2024-07,2026-07,churned
+C0022,Cedarline Labs,SMB,Starter,Europe,Outbound,2023-06,2026-06,churned
+C0023,Falconpoint Energy,SMB,Starter,India,Content & SEO,2024-09,,active
+C0024,Harborworks Retail,Mid-Market,Growth,North America,Paid Search,2023-12,2025-09,churned
+C0025,Falconworks Logistics,SMB,Starter,North America,Paid Search,2023-02,,active
+C0026,Quartzport Finance,SMB,Starter,North America,Outbound,2023-03,,active
+C0027,Vertexline Logistics,SMB,Starter,North America,Paid Search,2023-08,2026-02,churned
+C0028,Silverpoint Systems,SMB,Starter,Europe,Outbound,2022-05,2026-01,churned
+C0029,Silverpoint Retail,Mid-Market,Growth,North America,Outbound,2023-05,,active
+C0030,Atlasfield Retail,SMB,Starter,Europe,Content & SEO,2023-06,2024-12,churned
+C0031,Quartzstone Foods,SMB,Starter,North America,Content & SEO,2023-07,2025-09,churned
+C0032,Bluewave Travel,Mid-Market,Growth,North America,Content & SEO,2024-08,2025-01,churned
+C0033,Willowwave Energy,SMB,Starter,North America,Content & SEO,2024-04,2025-04,churned
+C0034,Summitstone Systems,SMB,Starter,Europe,Paid Search,2022-12,,active
+C0035,Riverlight Health,SMB,Starter,North America,Outbound,2022-10,2025-05,churned
+C0036,Northlight Finance,SMB,Starter,Europe,Outbound,2022-06,2026-02,churned
+C0037,Harborpeak Foods,SMB,Starter,North America,Content & SEO,2024-02,2026-10,churned
+C0038,Lumenbridge Media,SMB,Starter,India,Outbound,2022-09,2025-03,churned
+C0039,Orchidwave Retail,Mid-Market,Growth,Europe,Outbound,2023-09,,active
+C0040,Ironvale Travel,Mid-Market,Growth,North America,Outbound,2022-09,2024-12,churned
+C0041,Vertexgate Foods,SMB,Starter,Middle East,Content & SEO,2024-01,2026-04,churned
+C0042,Ironport Logistics,Enterprise,Enterprise,Europe,Outbound,2024-10,,active
+C0043,Maplegate Media,Mid-Market,Growth,Europe,Paid Search,2022-10,2025-02,churned
+C0044,Quartzline Health,Enterprise,Enterprise,North America,Outbound,2022-05,,active
+C0045,Riverstone Logistics,SMB,Starter,India,Outbound,2022-12,,active
+C0046,Northpeak Health,SMB,Starter,India,Paid Search,2024-09,2025-06,churned
+C0047,Pioneerstone Logistics,SMB,Starter,North America,Paid Search,2024-02,,active
+C0048,Lumengate Retail,Mid-Market,Growth,India,Content & SEO,2023-01,2026-10,churned
+C0049,Willowpath Media,Enterprise,Enterprise,North America,Outbound,2022-08,,active
+C0050,Riverpoint Media,Mid-Market,Growth,North America,Outbound,2023-11,2025-02,churned
+C0051,Quartzvale Foods,Mid-Market,Growth,North America,Outbound,2024-09,2025-06,churned
+C0052,Falconbridge Health,SMB,Starter,Middle East,Content & SEO,2022-10,2025-03,churned
+C0053,Riverlight Finance,Enterprise,Enterprise,North America,Content & SEO,2022-08,,active
+C0054,Ironvale Retail,SMB,Starter,Europe,Outbound,2023-08,2026-08,churned
+C0055,Bluegate Logistics,SMB,Starter,North America,Content & SEO,2022-10,2026-10,churned
+C0056,Silverwave Media,Mid-Market,Growth,India,Content & SEO,2024-01,,active
+C0057,Cedarforge Retail,SMB,Starter,North America,Paid Search,2023-04,,active
+C0058,Bluepeak Travel,Mid-Market,Growth,North America,Outbound,2023-10,,active
+C0059,Orchidvale Media,Mid-Market,Growth,Middle East,Content & SEO,2023-10,2026-07,churned
+C0060,Harborstone Finance,Mid-Market,Growth,North America,Content & SEO,2023-03,,active
+C0061,Northpath Health,SMB,Starter,North America,Outbound,2023-06,,active
+C0062,Orchidpoint Foods,SMB,Starter,Middle East,Content & SEO,2023-04,2026-01,churned
+C0063,Rivervale Labs,Enterprise,Enterprise,Europe,Outbound,2022-12,,active
+C0064,Pioneerforge Health,SMB,Starter,India,Paid Search,2024-03,2025-05,churned
+C0065,Ironline Energy,SMB,Starter,Europe,Content & SEO,2023-09,,active
+C0066,Pioneerlight Health,Enterprise,Enterprise,North America,Outbound,2024-02,,active
+C0067,Ironpeak Travel,Mid-Market,Growth,North America,Paid Search,2024-09,2026-03,churned
+C0068,Bluewave Retail,SMB,Starter,Europe,Paid Search,2024-09,,active
+C0069,Pioneerport Retail,SMB,Starter,North America,Content & SEO,2023-05,2025-04,churned
+C0070,Atlasvale Foods,Mid-Market,Growth,North America,Paid Search,2023-02,,active
+C0071,Harborcrest Logistics,Mid-Market,Growth,North America,Paid Search,2024-11,,active
+C0072,Willowpeak Travel,SMB,Starter,India,Paid Search,2024-11,,active
+C0073,Lumenworks Retail,Mid-Market,Growth,India,Content & SEO,2024-12,2025-01,churned
+C0074,Vertexpeak Health,Mid-Market,Growth,Europe,Content & SEO,2024-12,,active
+C0075,Orchidfield Finance,Enterprise,Enterprise,Europe,Content & SEO,2024-12,2025-12,churned
+C0076,Zenithlight Logistics,Enterprise,Enterprise,Europe,Content & SEO,2025-01,,active
+C0077,Summitlight Media,SMB,Starter,North America,Paid Search,2025-02,,active
+C0078,Riverbridge Travel,SMB,Starter,Middle East,Paid Search,2025-02,2026-03,churned
+C0079,Northbridge Health,SMB,Starter,Europe,Paid Search,2025-02,2026-01,churned
+C0080,Willowline Media,SMB,Starter,India,Paid Search,2025-02,,active
+C0081,Summitfield Retail,Enterprise,Enterprise,North America,Content & SEO,2025-02,,active
+C0082,Harborlight Foods,SMB,Starter,North America,Content & SEO,2025-02,2025-04,churned
+C0083,Harborpath Media,Mid-Market,Growth,Europe,Paid Search,2025-03,,active
+C0084,Vertexpath Retail,SMB,Starter,India,Content & SEO,2025-03,2026-05,churned
+C0085,Summitgate Energy,SMB,Starter,India,Content & SEO,2025-03,2025-06,churned
+C0086,Silverpoint Media,SMB,Starter,North America,Content & SEO,2025-03,,active
+C0087,Pioneergate Energy,Mid-Market,Growth,India,Outbound,2025-03,,active
+C0088,Harborpoint Foods,SMB,Starter,North America,Outbound,2025-03,,active
+C0089,Falconpeak Retail,SMB,Starter,India,Outbound,2025-03,2025-06,churned
+C0090,Maplegate Energy,SMB,Starter,North America,Paid Search,2025-04,,active
+C0091,Atlasgate Travel,SMB,Starter,India,Paid Search,2025-04,,active
+C0092,Harborgate Energy,SMB,Starter,North America,Paid Search,2025-04,,active
+C0093,Maplebridge Travel,SMB,Starter,Middle East,Content & SEO,2025-04,,active
+C0094,Vertexpath Logistics,Mid-Market,Growth,Europe,Outbound,2025-04,,active
+C0095,Copperpath Travel,Mid-Market,Growth,North America,Outbound,2025-04,,active
+C0096,Pioneergate Health,SMB,Starter,North America,Paid Search,2025-05,2026-06,churned
+C0097,Riverline Logistics,Enterprise,Enterprise,Europe,Paid Search,2025-05,,active
+C0098,Vertexpeak Finance,SMB,Starter,North America,Paid Search,2025-05,2026-10,churned
+C0099,Granitefield Media,SMB,Starter,North America,Content & SEO,2025-05,,active
+C0100,Pioneerworks Systems,Enterprise,Enterprise,North America,Content & SEO,2025-05,,active
+C0101,Willowvale Finance,SMB,Starter,India,Content & SEO,2025-05,,active
+C0102,Vertexgate Retail,SMB,Starter,Europe,Outbound,2025-05,2026-02,churned
+C0103,Atlaspeak Logistics,Mid-Market,Growth,India,Paid Search,2025-06,2025-10,churned
+C0104,Zenithbridge Labs,SMB,Starter,North America,Content & SEO,2025-06,,active
+C0105,Lumenworks Media,Mid-Market,Growth,North America,Paid Search,2025-07,,active
+C0106,Summitlight Logistics,SMB,Starter,India,Content & SEO,2025-07,,active
+C0107,Silverforge Health,Mid-Market,Growth,North America,Content & SEO,2025-07,,active
+C0108,Rivervale Logistics,SMB,Starter,Europe,Content & SEO,2025-07,,active
+C0109,Bluepoint Systems,SMB,Starter,North America,Outbound,2025-07,,active
+C0110,Harborpoint Systems,Enterprise,Enterprise,North America,Outbound,2025-07,,active
+C0111,Riverbridge Logistics,SMB,Starter,North America,Paid Search,2025-08,,active
+C0112,Bluebridge Labs,Enterprise,Enterprise,India,Paid Search,2025-08,,active
+C0113,Atlasbridge Labs,Enterprise,Enterprise,India,Content & SEO,2025-08,,active
+C0114,Pioneercrest Labs,Mid-Market,Growth,Middle East,Content & SEO,2025-08,,active
+C0115,Northcrest Labs,Mid-Market,Growth,North America,Outbound,2025-08,,active
+C0116,Falconport Energy,Enterprise,Enterprise,Europe,Outbound,2025-08,,active
+C0117,Riverworks Media,Enterprise,Enterprise,India,Outbound,2025-08,,active
+C0118,Falconstone Labs,SMB,Starter,North America,Paid Search,2025-09,2026-04,churned
+C0119,Atlasport Travel,SMB,Starter,Middle East,Paid Search,2025-09,,active
+C0120,Quartzstone Labs,Mid-Market,Growth,Europe,Paid Search,2025-09,,active
+C0121,Summitlight Finance,Mid-Market,Growth,Europe,Content & SEO,2025-09,,active
+C0122,Atlasvale Media,Enterprise,Enterprise,North America,Content & SEO,2025-09,,active
+C0123,Quartzwave Foods,Enterprise,Enterprise,North America,Content & SEO,2025-09,,active
+C0124,Pioneerwave Travel,Mid-Market,Growth,Europe,Outbound,2025-09,,active
+C0125,Granitestone Health,Enterprise,Enterprise,India,Outbound,2025-09,,active
+C0126,Zenithworks Foods,Mid-Market,Growth,Europe,Paid Search,2025-10,,active
+C0127,Atlaspath Finance,Mid-Market,Growth,India,Paid Search,2025-10,,active
+C0128,Granitewave Logistics,SMB,Starter,North America,Paid Search,2025-10,,active
+C0129,Vertexline Energy,Mid-Market,Growth,Europe,Paid Search,2025-10,,active
+C0130,Lumenstone Labs,Mid-Market,Growth,North America,Paid Search,2025-11,,active
+C0131,Harborpath Logistics,Enterprise,Enterprise,Europe,Paid Search,2025-11,,active
+C0132,Pioneerport Health,SMB,Starter,India,Paid Search,2025-11,,active
+C0133,Falconlight Logistics,Mid-Market,Growth,North America,Content & SEO,2025-11,,active
+C0134,Ironwave Travel,Enterprise,Enterprise,Middle East,Content & SEO,2025-11,2026-04,churned
+C0135,Ironforge Logistics,SMB,Starter,North America,Paid Search,2025-12,,active
+C0136,Vertexfield Labs,SMB,Starter,North America,Outbound,2025-12,,active
+C0137,Lumenpath Labs,SMB,Starter,India,Outbound,2025-12,,active
+C0138,Summitcrest Media,Mid-Market,Growth,Europe,Outbound,2025-12,,active
+C0139,Northcrest Retail,Mid-Market,Growth,North America,Paid Search,2026-01,,active
+C0140,Blueline Health,SMB,Starter,North America,Content & SEO,2026-01,,active
+C0141,Orchidbridge Travel,SMB,Starter,North America,Outbound,2026-01,,active
+C0142,Falconfield Logistics,Mid-Market,Growth,Europe,Outbound,2026-01,,active
+C0143,Vertexforge Finance,SMB,Starter,North America,Outbound,2026-01,2026-06,churned
+C0144,Atlaspeak Systems,SMB,Starter,India,Paid Search,2026-02,,active
+C0145,Copperfield Retail,Mid-Market,Growth,Europe,Content & SEO,2026-02,,active
+C0146,Falconwave Foods,Enterprise,Enterprise,Europe,Content & SEO,2026-02,,active
+C0147,Atlasbridge Media,Mid-Market,Growth,North America,Content & SEO,2026-02,,active
+C0148,Harborstone Media,Mid-Market,Growth,North America,Content & SEO,2026-02,,active
+C0149,Pioneerwave Energy,SMB,Starter,India,Outbound,2026-02,,active
+C0150,Atlasline Retail,Mid-Market,Growth,North America,Outbound,2026-02,,active
+C0151,Quartzfield Travel,SMB,Starter,Middle East,Paid Search,2026-03,,active
+C0152,Bluepath Systems,Mid-Market,Growth,Middle East,Paid Search,2026-03,,active
+C0153,Zenithvale Energy,SMB,Starter,North America,Content & SEO,2026-03,,active
+C0154,Zenithpath Finance,Mid-Market,Growth,Middle East,Content & SEO,2026-03,,active
+C0155,Cedarline Finance,SMB,Starter,North America,Outbound,2026-03,,active
+C0156,Willowworks Health,SMB,Starter,Middle East,Paid Search,2026-04,2026-07,churned
+C0157,Atlasgate Foods,SMB,Starter,Europe,Paid Search,2026-04,2026-05,churned
+C0158,Harborline Foods,SMB,Starter,India,Paid Search,2026-04,2026-06,churned
+C0159,Cedarline Travel,SMB,Starter,North America,Outbound,2026-04,,active
+C0160,Ironpeak Health,Enterprise,Enterprise,North America,Outbound,2026-04,,active
+C0161,Falconpeak Health,Mid-Market,Growth,Europe,Paid Search,2026-05,,active
+C0162,Summitline Health,Mid-Market,Growth,Europe,Paid Search,2026-05,,active
+C0163,Lumenbridge Systems,Mid-Market,Growth,Europe,Paid Search,2026-05,,active
+C0164,Willowpeak Labs,SMB,Starter,Europe,Paid Search,2026-05,,active
+C0165,Harborlight Labs,SMB,Starter,North America,Paid Search,2026-05,,active
+C0166,Northport Logistics,Mid-Market,Growth,Europe,Content & SEO,2026-05,,active
+C0167,Willowgate Media,Mid-Market,Growth,North America,Content & SEO,2026-05,,active
+C0168,Atlasbridge Systems,Mid-Market,Growth,North America,Content & SEO,2026-05,,active
+C0169,Ironpoint Finance,Mid-Market,Growth,India,Content & SEO,2026-05,,active
+C0170,Mapleworks Retail,Enterprise,Enterprise,India,Content & SEO,2026-05,,active
+C0171,Cedarforge Travel,SMB,Starter,Europe,Content & SEO,2026-05,,active
+C0172,Silverpath Travel,Mid-Market,Growth,North America,Outbound,2026-05,,active
+C0173,Coppergate Foods,Mid-Market,Growth,Europe,Outbound,2026-05,2026-09,churned
+C0174,Bluewave Health,SMB,Starter,Europe,Outbound,2026-05,,active
+C0175,Lumenlight Labs,Mid-Market,Growth,North America,Paid Search,2026-06,,active
+C0176,Northwave Foods,Mid-Market,Growth,North America,Paid Search,2026-06,,active
+C0177,Maplepeak Health,SMB,Starter,India,Content & SEO,2026-06,,active
+C0178,Summitworks Media,SMB,Starter,Europe,Outbound,2026-06,,active
+C0179,Granitelight Finance,SMB,Starter,India,Content & SEO,2026-07,,active
+C0180,Rivergate Energy,SMB,Starter,North America,Content & SEO,2026-07,,active
+C0181,Bluepath Foods,Mid-Market,Growth,North America,Content & SEO,2026-07,,active
+C0182,Falconline Retail,Mid-Market,Growth,Europe,Outbound,2026-07,,active
+C0183,Atlasworks Travel,Mid-Market,Growth,North America,Paid Search,2026-08,,active
+C0184,Vertexlight Health,SMB,Starter,North America,Paid Search,2026-08,,active
+C0185,Copperfield Foods,SMB,Starter,North America,Content & SEO,2026-08,,active
+C0186,Granitebridge Health,SMB,Starter,North America,Content & SEO,2026-08,,active
+C0187,Maplewave Foods,SMB,Starter,North America,Outbound,2026-08,,active
+C0188,Northport Energy,Mid-Market,Growth,Europe,Outbound,2026-08,,active
+C0189,Summitpoint Logistics,Mid-Market,Growth,North America,Outbound,2026-08,,active
+C0190,Northlight Media,Mid-Market,Growth,Middle East,Paid Search,2026-09,,active
+C0191,Lumenforge Travel,Mid-Market,Growth,Europe,Paid Search,2026-09,,active
+C0192,Pioneerbridge Logistics,SMB,Starter,North America,Content & SEO,2026-09,,active
+C0193,Silvercrest Logistics,SMB,Starter,Middle East,Content & SEO,2026-09,,active
+C0194,Atlasstone Labs,Enterprise,Enterprise,Europe,Content & SEO,2026-09,,active
+C0195,Vertexvale Systems,Mid-Market,Growth,North America,Outbound,2026-09,2026-10,churned
+C0196,Quartzwave Retail,SMB,Starter,India,Outbound,2026-09,,active
+C0197,Northpath Labs,Mid-Market,Growth,India,Outbound,2026-09,,active
+C0198,Falconpoint Systems,SMB,Starter,Europe,Outbound,2026-10,,active

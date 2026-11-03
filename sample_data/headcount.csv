@@ -1,0 +1,30 @@
+employee_id,department,role,start_month,end_month,annual_salary
+E001,Engineering,Senior Engineer,2023-10,,154000.00
+E002,Engineering,Senior Engineer,2023-01,,125000.00
+E003,Engineering,Software Engineer,2023-06,,141000.00
+E004,Engineering,Software Engineer,2024-03,,118000.00
+E005,Engineering,Software Engineer,2022-10,,116000.00
+E006,Engineering,Data Engineer,2024-05,,155000.00
+E007,Engineering,Software Engineer,2023-07,,134000.00
+E008,Engineering,Software Engineer,2023-09,,149000.00
+E009,Engineering,Senior Engineer,2025-05,,152000.00
+E010,Engineering,Senior Engineer,2026-09,,125000.00
+E011,Engineering,Software Engineer,2025-05,,162000.00
+E012,Sales,Sales Development Rep,2024-03,,126000.00
+E013,Sales,Sales Development Rep,2023-07,2025-06,110000.00
+E014,Sales,Account Executive,2023-02,,104000.00
+E015,Sales,Account Executive,2025-12,,121000.00
+E016,Sales,Account Executive,2026-06,,87000.00
+E017,Marketing,Growth Marketer,2024-09,2025-03,102000.00
+E018,Marketing,Growth Marketer,2023-08,,109000.00
+E019,Marketing,Growth Marketer,2024-12,,88000.00
+E020,Customer Success,Customer Success Manager,2022-06,,77000.00
+E021,Customer Success,Customer Success Manager,2023-12,,88000.00
+E022,Customer Success,Customer Success Manager,2023-04,,85000.00
+E023,Customer Success,Customer Success Manager,2026-04,,83000.00
+E024,Customer Success,Customer Success Manager,2026-08,,68000.00
+E025,G&A,CEO,2023-08,,160000.00
+E026,G&A,Finance Manager,2022-08,,126000.00
+E027,G&A,Finance Manager,2026-03,,145000.00
+E028,Sales,Sales Development Rep,2025-07,,114400.00
+E029,Marketing,Growth Marketer,2025-04,,106080.00

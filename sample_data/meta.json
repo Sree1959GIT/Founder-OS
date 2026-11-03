@@ -1,0 +1,18 @@
+{
+  "company": "Northwind Analytics",
+  "generator_version": "1.0.0",
+  "seed": 42,
+  "currency": "USD",
+  "start_month": "2024-11",
+  "end_month": "2026-10",
+  "months": 24,
+  "rows": {
+    "customers": 198,
+    "subscriptions": 2535,
+    "pipeline": 396,
+    "marketing_spend": 72,
+    "headcount": 29,
+    "pnl": 360,
+    "bank_balance": 24
+  }
+}

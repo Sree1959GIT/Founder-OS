@@ -5,14 +5,14 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M0: Scaffold & foundations**
+- **Next milestone:** **M1: Financial spine (DuckDB)**, after the founder merges the M0 PR
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-02 (planning session, no code yet)
+- **Last updated:** 2026-11-02 (M0 session: scaffold done, PR awaiting founder)
 
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
-| M0 | Scaffold & foundations | NOT STARTED | |
+| M0 | Scaffold & foundations | DONE (awaiting merge) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
 | M1 | Financial spine (DuckDB) | NOT STARTED | |
 | M2 | Vault & hybrid RAG | NOT STARTED | |
 | M3a | LLM layer, agent framework & core agents | NOT STARTED | |
@@ -52,34 +52,110 @@
 | Milestone | PR | Tier | Status |
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
+| M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | AWAITING FOUNDER |
 
 ## Current session
-- Started (UTC): n/a
-- Target: n/a
-- Plan: n/a
+- Started (UTC): 2026-11-02 15:47
+- Target: **M0: Scaffold & foundations** (gate tier: Light)
+- Plan:
+  - [x] Backend package (`pyproject.toml`, `app/main.py`, `config.py`, `deps.py`, `/api/health` with dependency probes + tests)
+  - [x] `.env.example`, `docker-compose.yml` (Qdrant only)
+  - [x] `scripts/generate_demo_data.py` (Northwind, seeded) + `sample_data/` + tests
+  - [x] Frontend shell (Vite + React + TS + Tailwind + shadcn/ui, design tokens, health badge via proxy)
+  - [x] `setup.bat`/`run.bat` + `setup.sh`/`run.sh`
+  - [x] GitHub Actions CI (pytest, ruff, frontend lint/tsc/build, windows-latest backend)
+  - [x] Minimal README; wrap-up, self-review, PR
 
 ## Current state
-Only planning documents exist: PRD v2, the `/goal` prompt, CLAUDE.md and this file. The original blueprint is kept in
-`docs/reference/original_blueprint.md` for reference only. Where it differs from `docs/PRD.md`, the PRD wins.
+**M0 is complete.** What works:
+- **Backend** (`backend/`, Python 3.11, FastAPI). Started with `uvicorn --factory app.main:create_app` (no module-level
+  app, so importing never reads `.env`). `GET /api/health` always answers 200 and reports `ok` or `degraded`, with one
+  entry each for `ollama` (reachable, models pulled), `qdrant` (optional), `cloud` (from config only, never shows secrets),
+  `gpu` (NVML through the optional `gpu` extra) and `storage` (workspace folders writable). Probes run concurrently
+  with timeouts and never raise.
+- **Config** (`app/config.py`, pydantic-settings) reads `<repo>/.env`. Relative paths resolve against the repo root,
+  workspace ids are validated (no path tricks), and `effective_deep_provider()` falls back to Ollama unless
+  `CLOUD_ALLOWED=true` and credentials exist.
+- Empty packages with docstrings for `llm/`, `agents/` (+ `prompts/`), `decision/`, `engine/`, `vault/` and `voice/`
+  (PRD §10 layout).
+- **Demo data**: `scripts/generate_demo_data.py` writes Northwind Analytics (seed 42, USD, 2024-11..2026-10) to
+  `sample_data/`: 7 CSVs, one XLSX (a sheet per table), `meta.json` and a data dictionary in `sample_data/README.md`.
+  Money is computed in integer cents, so the cash identities reconcile exactly. At the end: 142 active customers, MRR
+  about $255k, 27 staff, net burn about $176k/month, cash about $1.84M (runway roughly 10 months). `--currency INR`
+  scales by a fixed 84.
+- **Frontend** (`frontend/`, Vite 7, React 18, strict TypeScript, Tailwind 3, shadcn/ui primitives `Button`, `Badge`
+  and `Card`). Design tokens ("Graphite & Signal") are CSS variables in `src/index.css`, mapped in `tailwind.config.ts`.
+  Fonts are bundled locally (`@fontsource`), so the app works offline. The layout follows `Main.dc.html`: top bar
+  (workspace, data status, privacy badge, live service health), Advisor panel, canvas and agent rail, with honest
+  empty states that name the milestone each feature arrives in. The health badge polls `/api/health` every 15 s
+  through the Vite proxy (3000 → 8000) and labels every status in text.
+- **Scripts**: `setup.bat`/`run.bat` and `setup.sh`/`run.sh` (drafts; finalised in M6). Tested `.sh` in the
+  container; the `.bat` files are untested (no Windows here).
+- **CI** (`.github/workflows/ci.yml`): the backend runs ruff and pytest on ubuntu and windows-latest, plus a
+  reproducibility check that the CSV/JSON demo data matches the generator. The frontend runs lint, tsc, vitest and build.
 
-## Next steps (for the M0 session)
-1. Create the repo layout from PRD §10. Backend: `pyproject.toml` (or requirements + requirements-dev), `app/main.py`, `config.py` (pydantic-settings, reads `.env`), `/api/health` reporting dependency status (Ollama, Qdrant, Gemini/Claude configured?, GPU?).
-2. Write `.env.example` with these keys: `WORKSPACE_ID`, `DATA_DIR`, `VAULT_PATH`, `OLLAMA_BASE_URL`, `OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, `QDRANT_HOST`, `QDRANT_PORT`, `DEEP_PROVIDER`, `CLOUD_ALLOWED`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `CURRENCY`.
-3. Add `docker-compose.yml` with Qdrant only.
-4. Write `scripts/generate_demo_data.py`: seeded "Northwind Analytics" B2B SaaS covering 24 months of P&L, bank balance, customers/subscriptions, pipeline, marketing spend by channel and headcount. Output to `sample_data/` as CSV plus one XLSX.
-5. Set up the frontend: Vite + React + TS + Tailwind + shadcn/ui shell. Take the **design tokens (colours, type, spacing, radius) and the overall layout from the Claude Design mock-ups** linked in `docs/design/README.md`, and put them in Tailwind config and CSS variables. Include a health badge that calls `/api/health` through the Vite proxy (port 3000 → 8000).
-6. Draft `setup.bat`/`run.bat` and `setup.sh`/`run.sh`.
-7. Add GitHub Actions CI with jobs for pytest, ruff, frontend lint/tsc/build, and one `windows-latest` backend test job.
-8. Write a minimal README (it is expanded fully in M6).
+Stubbed or faked: nothing in delivered features. Advisor input, mic and Settings are visibly disabled until M3a, M5
+and M4. Tests use fakes (httpx `MockTransport`, a fake NVML, fake probes).
+
+Known issues:
+- `npm audit` reports 12 moderate advisories, all inside eslint/typescript-eslint (a minimatch ReDoS); they are
+  lint-time only. The critical and high Vite/Vitest advisories were fixed by moving to Vite 7 and Vitest 4.
+- Vite 7 needs Node 20.19+ or 22.12+ (Node 22 LTS recommended).
+- pytest shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
+
+## Next steps (for the M1 session)
+1. Read founder feedback below first, and fix any M0 issues found on Windows.
+2. `app/engine/lineage.py`: the `Lineage` model `{metric, sql, source_files, source_rows/range, formula, computed_at}`.
+3. `app/engine/ingest.py` + column mapping (header synonyms, `data/<ws>/mappings.json`). Load the `sample_data/`
+   tables into `data/<ws>/founder.duckdb`. Use `sample_data/README.md` for the schema and built-in identities.
+4. `app/engine/sql_guard.py` (read-only connection, a single SELECT, a table allow-list, row and time limits).
+5. `app/engine/metrics.py`: every PRD §F1 routine returns value + Lineage. Golden tests come from `sample_data`
+   (compute the expected numbers independently in the tests with `Decimal`, as `tests/test_demo_data.py` does).
+6. `scenario.py` (<200 ms), sensitivity, `montecarlo.py` (1,000 runs <1 s, seeded), `decision_science.py`
+   (MCDA, EV and decision trees, kill criteria) and `calibration.py` (Brier).
+7. REST: `/api/data/*`, `/api/metrics/*`, `/api/scenario`. M1 is a **Major** gate: write a thorough Windows checklist
+   with expected numbers.
 
 ## Windows verification checklist (for the founder)
-_None yet. Each milestone adds one here._
+**M0 (Light tier).** Run in a terminal (cmd or PowerShell) from the repo folder after checking out the PR branch.
+1. `node --version` should print v22.x (or v20.19 or newer). `py -3.11 --version` should print Python 3.11.x or newer.
+2. `setup.bat`: it should finish with "Setup complete". Warnings about Docker or Ollama are fine if they are not
+   installed. It creates `.env`, `.venv` and `frontend\node_modules`.
+3. `run.bat`: two windows open (backend, frontend) and the browser opens http://127.0.0.1:3000.
+4. The page shows the dark FounderOS layout: Advisor panel on the left, "No decision open yet" in the centre,
+   "Local only" badge top right.
+5. The service-health strip shows Ollama, Qdrant, Cloud, GPU and Storage. With Ollama running and models pulled,
+   Ollama has a green dot and no "(down)". With Docker Desktop running, Qdrant is green. With the NVIDIA driver,
+   the GPU shows `GPU x.x/12.0 GB`. Storage is green.
+6. Open http://127.0.0.1:8000/api/health: JSON with `"status": "ok"` when Ollama, Qdrant and GPU are all up
+   (otherwise `"degraded"` with a reason per dependency).
+7. Stop Ollama (quit it from the tray) and wait 15 s: the badge shows `Ollama (down)` and the page keeps working.
+8. Close the backend window: within 15 s the strip shows "Backend offline" and the privacy badge says
+   "Privacy status unknown".
+9. Optional: `.venv\Scripts\python scripts\generate_demo_data.py`, then `git status sample_data` shows
+   no CSV/JSON changes (the demo data is reproducible on Windows).
+10. Optional: open `sample_data\northwind_financials.xlsx` in Excel: 7 sheets, with figures that look plausible.
+11. Python selection (founder feedback): delete `.venv`, run `setup.bat`. It should print `Using Python 3.12.x via "py -3.12"`
+    and show no 3.13+ warning. Then `run.bat` starts as before.
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M0] setup.bat picks Python 3.14 when 3.11 is not installed
+- Did: ran setup.bat on Windows 11 with Python 3.12 and 3.14 installed (no 3.11); `python` on PATH is 3.14.5
+- Expected: setup.bat chooses a supported version (3.12 or 3.11)
+- Got: it only tries `py -3.11`, then falls back to `python` (3.14). Worked around by running `py -3.12 -m venv .venv` before setup.bat
+- Fix wanted: try `py -3.12`, then `py -3.11`, then `python`; warn if the chosen version is 3.13 or newer (later ML/voice wheels may be missing). Update run.bat/README to match
+- Priority: low
+- M0 checklist: items 1–8 passed on RTX 4080 Laptop (Node v24.13.1, Python 3.12 venv); Ollama not installed yet
+- **Resolved (2026-11-03, same PR):** `setup.bat` now tries `py -3.12`, then `py -3.11`, then `python`, and prints
+  the version it chose. `setup.bat`, `run.bat` and `setup.sh` warn when `.venv` is Python 3.13+. The README recommends 3.12.
+  Re-test: checklist step 11.
 
 ## Open questions for founder
-_None._
+1. Demo currency: USD is the default; INR is available with `--currency INR` (fixed rate 84). Should the shipped
+   `sample_data/` be INR instead?
+2. Runway in the demo data is about 10 months at the end of the window. Is that the right level of tension for the
+   demo (for example, so the Dubai scenario pushes it into the amber "under 3 months" band)?
 
 ## Decisions made
 See PRD §12 (Decision log). Summary of the planning session on 2026-11-02:
@@ -99,3 +175,22 @@ Second planning round (2026-11-02):
 ## Progress log
 - 2026-11-02: Planning session. Agreed scope with the founder and wrote PRD v2, GOAL_PROMPT, CLAUDE.md and HANDOVER.md.
 - 2026-11-02: Added the agent design (F3, F4b), decision models (F7) and decision-science routines to the PRD; split M3; started the UI mock-ups in Claude Design.
+- 2026-11-02 (M0 session, 15:47 to ~16:15 UTC): backend scaffold with config and the `/api/health` probes; Northwind
+  generator and `sample_data/`; frontend shell with design tokens and the live health badge; setup/run scripts; CI;
+  README. Self-review found 9 issues, all fixed with regression tests. The first CI run caught a Windows-only bug
+  (`meta.json` written with CRLF); it was fixed by forcing LF, with a test. 55 backend tests and 5 frontend tests pass, and CI is
+  green on ubuntu and windows-latest.
+
+- 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
+  3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M0 session)
+- Python venv at the repo root (`.venv`); backend installed editable from `backend/pyproject.toml` (extras: `dev`, `gpu`).
+- Uvicorn runs the app factory (`--factory app.main:create_app`); there is no module-level app.
+- `/api/health` returns 200 even when dependencies are down. "Required" covers Ollama and storage; Qdrant, cloud
+  and GPU are optional. `not_configured` on an optional dependency still counts as OK overall.
+- The shared ruff config is in the root `ruff.toml` (line length 120) and covers `backend/` and `scripts/`.
+- Frontend: Tailwind 3 (not 4) for shadcn/ui compatibility; Vite 7 and Vitest 4 for security fixes. Node 22 LTS recommended.
+- Fonts are bundled with `@fontsource` (no Google Fonts CDN) so the app works offline (acceptance demo step 7).
+- Demo money is computed in integer cents; the XLSX is written with fixed timestamps so regeneration is byte-stable.
+- `.gitattributes` keeps CSV/JSON as LF (Windows checkouts stay byte-identical) and `.bat` as CRLF.

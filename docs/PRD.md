@@ -329,3 +329,5 @@ founder-os/
 | 2026-11-02 | Decision-model layer (F7): LLM default → **Laya** (local, after fine-tuning) → **Jev** (optional, paid). Chosen by bake-off, with a confidence fallback to the LLM. |
 | 2026-11-02 | Decision-science routines added to F1: Monte Carlo, weighted scoring, EV/decision trees, kill criteria, calibration (Brier). |
 | 2026-11-02 | M3 split into M3a/M3b/M3c. UI designed first with **Claude Design**; mock-ups in `docs/design/` are the reference for M0 shell and M4. |
+| 2026-11-02 | M0: Node 22 LTS recommended (Vite 7 needs Node 20.19+); Tailwind 3 for shadcn/ui; fonts bundled locally (offline-safe); Python venv at repo root `.venv`; uvicorn runs the `create_app` factory. |
+| 2026-11-02 | M0: `/api/health` always returns 200; Ollama and storage are "required", Qdrant, cloud and GPU optional. Demo data uses integer-cent maths and is byte-reproducible (CI checks it). |

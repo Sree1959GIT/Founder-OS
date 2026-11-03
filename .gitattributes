@@ -1,0 +1,5 @@
+*.bat text eol=crlf
+*.sh text eol=lf
+*.csv text eol=lf
+*.json text eol=lf
+*.xlsx binary
