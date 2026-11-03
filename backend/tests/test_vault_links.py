@@ -43,6 +43,6 @@ def test_resolver_by_name_path_alias_and_ambiguity() -> None:
 
 def test_rewrite_keeps_heading_alias_and_embed() -> None:
     text = "[[old]] [[Old#H|label]] ![[old]] [[other]] `[[old]]`"
-    new, count = rewrite_links(text, lambda link: link.target.lower() == "old", "new-name")
+    new, count = rewrite_links(text, lambda link: "new-name" if link.target.lower() == "old" else None)
     assert count == 3
     assert new == "[[new-name]] [[new-name#H|label]] ![[new-name]] [[other]] `[[old]]`"

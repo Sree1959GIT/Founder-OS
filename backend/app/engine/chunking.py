@@ -5,7 +5,7 @@ Children (~250 tokens) are what we embed and score: they are small enough to mat
 
 Splitting respects structure: text is cut into blocks at blank lines (paragraphs, list groups, table rows), blocks
 that are still too big are cut at sentence ends and finally at word boundaries. Blocks never cross a section
-(heading), so each chunk has one heading for its citation; small sections are packed together into one parent.
+(heading), so each child has exactly one heading for its citation; small sections are packed together into one parent.
 
 Token counts use tiktoken `cl100k_base` (an approximation of the embedding model's tokenizer, as the PRD says).
 tiktoken downloads its vocabulary on first use, so when it is unavailable (offline first run, tests) we fall back to
@@ -15,6 +15,7 @@ tiktoken downloads its vocabulary on first use, so when it is unavailable (offli
 from __future__ import annotations
 
 import hashlib
+import itertools
 import math
 import re
 from dataclasses import dataclass, field
@@ -174,7 +175,10 @@ def chunk_document(
             text="\n\n".join(b.text for b in group),
             tokens=sum(b.tokens for b in group),
         )
-        for c_index, child_group in enumerate(_pack(group, child_tokens)):
+        # Children never cross a heading, so every citation names the exact section it came from.
+        runs = [list(run) for _, run in itertools.groupby(group, key=lambda b: b.heading)]
+        child_groups = [g for run in runs for g in _pack(run, child_tokens)]
+        for c_index, child_group in enumerate(child_groups):
             heading = child_group[0].heading
             text = "\n\n".join(b.text for b in child_group)
             context = " > ".join(part for part in (title, heading) if part)

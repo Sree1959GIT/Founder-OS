@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import shutil
 import threading
 from pathlib import Path
@@ -26,12 +27,19 @@ def build_embedder(settings: Settings) -> Embedder:
     return OllamaEmbedder(settings.ollama_base_url, settings.ollama_embed_model)
 
 
-def build_store(settings: Settings, workspace_id: str) -> tuple[VectorStore | None, str | None]:
+def collection_name(workspace_id: str, embedder_name: str) -> str:
+    """One Qdrant collection per workspace *and* embedding model, so vectors from two models never mix."""
+    return f"founderos_{workspace_id}_{hashlib.sha1(embedder_name.encode('utf-8')).hexdigest()[:8]}"
+
+
+def build_store(settings: Settings, workspace_id: str, embedder_name: str) -> tuple[VectorStore | None, str | None]:
     """(store, warning). `auto` uses Qdrant when it answers, else the in-memory store (PRD R3)."""
     if settings.vector_store == "memory":
         return InMemoryVectorStore(), None
     base = f"http://{settings.qdrant_host}:{settings.qdrant_port}"
-    qdrant = QdrantVectorStore(base, f"founderos_{workspace_id}", timeout_s=max(settings.health_probe_timeout_s, 5.0))
+    qdrant = QdrantVectorStore(
+        base, collection_name(workspace_id, embedder_name), timeout_s=max(settings.health_probe_timeout_s, 5.0)
+    )
     try:
         qdrant.ping()
         return qdrant, None
@@ -55,13 +63,11 @@ class VaultService:
         self.settings = settings
         self.workspace_id = workspace_id or settings.workspace_id
         self.vault = VaultManager(settings.workspace_vault_dir(self.workspace_id))
-        store_note: str | None = None
-        if store is None:
-            store, store_note = build_store(settings, self.workspace_id)
-        self.store_note = store_note
-        self.index = HybridIndex(
-            self.vault, embedder or build_embedder(settings), store, get_tokenizer(settings.tokenizer)
-        )
+        # The index (Qdrant ping, tiktoken load) is built in start(), in a worker thread, so startup never waits.
+        self._embedder = embedder
+        self._store = store
+        self.store_note: str | None = None
+        self.index: HybridIndex | None = None
         self.ready = threading.Event()
         self._start_lock = threading.Lock()
         self._started = False
@@ -86,6 +92,16 @@ class VaultService:
 
     def start(self) -> None:
         """Build the index (keyword search is ready first), then embed. Runs in a worker thread at startup."""
+        embedder = self._embedder or build_embedder(self.settings)
+        store, self.store_note = (
+            (self._store, None)
+            if self._store is not None
+            else build_store(self.settings, self.workspace_id, embedder.name)
+        )
+        self.index = HybridIndex(
+            self.vault, embedder, store, get_tokenizer(self.settings.tokenizer), store_warning=self.store_note
+        )
+        indexed = False
         try:
             self.vault.ensure_layout()
             if self.settings.auto_load_sample_vault:
@@ -93,11 +109,13 @@ class VaultService:
             self.index.refresh(dense=False)
             stats = self.index.status()
             logger.info("Vault indexed: {} files, {} chunks", stats["files"], stats["children"])
+            indexed = True
         except Exception as exc:  # PRD R3: the API still answers (empty results + status shows the error)
             logger.exception("Vault indexing failed: {}", exc)
         finally:
             self.ready.set()
-        self.index.sync_vectors()
+        if indexed:  # never sync against an index that failed to build (it would delete every stored vector)
+            threading.Thread(target=self.index.sync_vectors, name="vault-embed", daemon=True).start()
 
     def ensure_started(self) -> None:
         """Run `start()` once (the app lifespan calls this in a thread; a lazily created service on first use)."""
@@ -111,7 +129,8 @@ class VaultService:
         return self.ready.wait(timeout_s)
 
     def apply_changes(self, paths: set[str]) -> None:
-        self.index.refresh(paths)
+        if self.index is not None and self.ready.is_set():  # before that, start() indexes everything anyway
+            self.index.refresh(paths)
 
     async def start_watcher(self) -> None:
         self._stop = asyncio.Event()

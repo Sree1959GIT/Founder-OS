@@ -142,9 +142,7 @@ def links(vault: VaultDep) -> dict[str, Any]:
 @router.post("/vault/reindex")
 def reindex(vault: VaultDep, full: bool = False) -> dict[str, Any]:
     """Rescan the vault (normally not needed: the watcher does this). `full=true` re-parses every file."""
-    if full:
-        vault.index.reset()
-    vault.index.refresh()
+    vault.index.refresh(full=full)
     return _status(vault)
 
 

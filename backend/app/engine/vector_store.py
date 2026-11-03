@@ -50,7 +50,7 @@ class VectorStore(Protocol):
 
     def delete(self, ids: list[str]) -> None: ...
 
-    def search(self, vector: list[float], limit: int) -> list[VectorHit]: ...
+    def search(self, vector: list[float], limit: int, folder: str | None = None) -> list[VectorHit]: ...
 
 
 class InMemoryVectorStore:
@@ -78,9 +78,9 @@ class InMemoryVectorStore:
             for item in ids:
                 self._points.pop(item, None)
 
-    def search(self, vector: list[float], limit: int) -> list[VectorHit]:
+    def search(self, vector: list[float], limit: int, folder: str | None = None) -> list[VectorHit]:
         with self._lock:
-            items = list(self._points.items())
+            items = [i for i in self._points.items() if folder is None or folder in i[1][1].get("folders", [])]
         if not items:
             return []
         query = np.asarray(vector, dtype=np.float32)
@@ -135,13 +135,19 @@ class QdrantVectorStore:
         if self._dim == dim:
             return
         existing = self._collection_dim()
-        if existing is not None and existing != dim:  # embedding model changed: rebuild
+        if existing is not None and existing != dim:
+            # Same collection, new vector size: rebuild it and make the caller re-read ids and re-embed everything.
             self._request("DELETE", f"/collections/{self.collection}")
-            existing = None
+            self._create(dim)
+            raise VectorStoreError(f"collection {self.collection} had a different vector size; it was recreated")
         if existing is None:
             self._request(
                 "PUT", f"/collections/{self.collection}", json={"vectors": {"size": dim, "distance": "Cosine"}}
             )
+        self._dim = dim
+
+    def _create(self, dim: int) -> None:
+        self._request("PUT", f"/collections/{self.collection}", json={"vectors": {"size": dim, "distance": "Cosine"}})
         self._dim = dim
 
     def ids(self) -> set[str]:
@@ -176,12 +182,11 @@ class QdrantVectorStore:
         if ids:
             self._request("POST", f"/collections/{self.collection}/points/delete?wait=true", json={"points": ids})
 
-    def search(self, vector: list[float], limit: int) -> list[VectorHit]:
-        body = self._request(
-            "POST",
-            f"/collections/{self.collection}/points/search",
-            json={"vector": vector, "limit": limit, "with_payload": True},
-        )
+    def search(self, vector: list[float], limit: int, folder: str | None = None) -> list[VectorHit]:
+        query: dict[str, Any] = {"vector": vector, "limit": limit, "with_payload": True}
+        if folder:
+            query["filter"] = {"must": [{"key": "folders", "match": {"value": folder}}]}
+        body = self._request("POST", f"/collections/{self.collection}/points/search", json=query)
         if body.get("status") == 404:
             return []
         return [VectorHit(str(h["id"]), float(h["score"]), h.get("payload") or {}) for h in body.get("result", [])]

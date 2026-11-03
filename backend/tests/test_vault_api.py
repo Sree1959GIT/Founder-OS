@@ -175,3 +175,11 @@ async def test_watcher_reindexes_external_edits(settings: Settings) -> None:
     finally:
         await service.stop_watcher()
     assert not service.watching
+
+
+def test_collection_name_is_per_workspace_and_model() -> None:
+    from app.vault.service import collection_name
+
+    a = collection_name("default", "ollama:nomic-embed-text")
+    assert a.startswith("founderos_default_") and a != collection_name("default", "ollama:mxbai-embed-large")
+    assert a == collection_name("default", "ollama:nomic-embed-text")

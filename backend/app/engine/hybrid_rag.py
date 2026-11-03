@@ -89,6 +89,12 @@ class LuceneBM25(BM25Okapi):
             self.idf[word] = math.log(1 + (self.corpus_size - freq + 0.5) / (freq + 0.5))
 
 
+def folder_prefixes(path: str) -> list[str]:
+    """`notes/a/b.md` -> ["notes", "notes/a"]: stored with each vector so folder searches filter in the store."""
+    parts = path.split("/")[:-1]
+    return ["/".join(parts[: i + 1]) for i in range(len(parts))]
+
+
 def bm25_tokens(text: str) -> list[str]:
     return [t for t in (m.lower() for m in _TOKEN_RE.findall(text)) if t not in _STOPWORDS]
 
@@ -170,9 +176,10 @@ class HybridIndex:
             parsed = parse_file(path)
             parents = chunk_document(rel, parsed.title, parsed.sections, self.tokenizer)
             doc = IndexedDoc(rel, parsed.title, kind, stamp, file_hash, parents, parsed.warnings)
-        except ParseError as exc:
-            doc = IndexedDoc(rel, path.stem, kind, stamp, file_hash, error=str(exc))
-            logger.warning("Vault: cannot index {}: {}", rel, exc)
+        except Exception as exc:  # one odd file (bad CSV, AES-encrypted PDF...) must never stop the index
+            message = str(exc) if isinstance(exc, ParseError) else f"cannot parse ({type(exc).__name__}: {exc})"
+            doc = IndexedDoc(rel, path.stem, kind, stamp, file_hash, error=message)
+            logger.warning("Vault: cannot index {}: {}", rel, message)
         self._docs[rel] = doc
         return True
 
@@ -207,9 +214,16 @@ class HybridIndex:
         self._snapshot = _Snapshot(children, parents, titles, bm25)
         self.last_indexed_at = time.time()
 
-    def refresh(self, paths: Iterable[str] | None = None, *, dense: bool = True) -> bool:
-        """Re-index `paths` (vault-relative), or rescan everything when None. Missing files are dropped."""
+    def refresh(self, paths: Iterable[str] | None = None, *, dense: bool = True, full: bool = False) -> bool:
+        """Re-index `paths` (vault-relative), or rescan everything when None. Missing files are dropped.
+
+        `full=True` re-parses every file. The search snapshot is swapped only once the new one is complete, so a
+        concurrent search or vector sync never sees a half-built (or empty) index.
+        """
         with self._lock:
+            if full:
+                self._docs.clear()
+                paths = None
             path_list = None if paths is None else list(paths)
             if path_list is not None and any(not self.vault.is_indexable(p) for p in path_list):
                 path_list = None  # a folder or unknown path changed (e.g. a folder rename): rescan
@@ -218,18 +232,12 @@ class HybridIndex:
                 for rel in list(self._docs):
                     if not (self.vault.root / rel).is_file():
                         changed |= self._remove(rel)
-            if changed or self._snapshot.bm25 is None:
+            if changed or full or self._snapshot.bm25 is None:
                 self._rebuild_snapshot()
             self.vault.refresh_links()
         if dense:
             self.sync_vectors()
         return changed
-
-    def reset(self) -> None:
-        """Forget every parsed file so the next `refresh()` re-parses all of them (vectors are kept by content id)."""
-        with self._lock:
-            self._docs.clear()
-            self._snapshot = _Snapshot([], {}, {}, None)
 
     def sync_vectors(self) -> None:
         """Embed children that are not in the vector store yet and delete stale points. Never raises."""
@@ -240,10 +248,9 @@ class HybridIndex:
         try:
             self._last_dense_attempt = time.monotonic()
             wanted = {point_id(c.id, c.content_hash): c for c in self._snapshot.children}
-            if self._stored_ids is None:
-                self._stored_ids = self.store.ids()
-            missing = [pid for pid in wanted if pid not in self._stored_ids]
-            stale = [pid for pid in self._stored_ids if pid not in wanted]
+            stored = set(self._stored_ids) if self._stored_ids is not None else self.store.ids()
+            missing = [pid for pid in wanted if pid not in stored]
+            stale = [pid for pid in stored if pid not in wanted]
             for start in range(0, len(missing), 64):
                 batch = missing[start : start + 64]
                 vectors = self.embedder.embed_documents([wanted[pid].embed_text for pid in batch])
@@ -251,16 +258,24 @@ class HybridIndex:
                     VectorPoint(
                         pid,
                         vec,
-                        {"chunk_id": wanted[pid].id, "path": wanted[pid].path, "hash": wanted[pid].content_hash},
+                        {
+                            "chunk_id": wanted[pid].id,
+                            "path": wanted[pid].path,
+                            "hash": wanted[pid].content_hash,
+                            "folders": folder_prefixes(wanted[pid].path),
+                        },
                     )
                     for pid, vec in zip(batch, vectors, strict=True)
                 ]
                 self.store.upsert(points)
-                self._stored_ids.update(batch)
+                stored.update(batch)
+                self._stored_ids = set(stored)
+                self._embedded_ids = set(stored)
             if stale:
                 self.store.delete(stale)
-                self._stored_ids.difference_update(stale)
-            self._embedded_ids = set(self._stored_ids)
+                stored.difference_update(stale)
+            self._stored_ids = stored
+            self._embedded_ids = set(stored)
             if missing and self._dense_error:
                 logger.info("Vault: dense search available again ({} chunks embedded)", len(missing))
             self._dense_error = None
@@ -269,8 +284,9 @@ class HybridIndex:
                 logger.warning("Vault: dense index unavailable, search uses BM25 only: {}", exc)
             self._dense_error = str(exc)
             self._stored_ids = None
-        except ValueError as exc:  # zip length mismatch from a misbehaving embedder
-            self._dense_error = f"embedding backend returned bad data: {exc}"
+        except Exception as exc:  # e.g. a misbehaving embedder (zip length mismatch); never kill the caller
+            logger.exception("Vault: vector sync failed: {}", exc)
+            self._dense_error = f"vector sync failed ({type(exc).__name__}: {exc})"
             self._stored_ids = None
         finally:
             self._vector_lock.release()
@@ -291,7 +307,7 @@ class HybridIndex:
 
         dense_ranking: list[str] | None = None
         if mode in ("hybrid", "dense"):
-            dense_ranking, dense_warning = self._dense_ranking(query, allowed, candidates)
+            dense_ranking, dense_warning = self._dense_ranking(query, allowed, candidates, prefix)
             if dense_warning:
                 warnings.append(dense_warning)
             if dense_ranking is not None:
@@ -319,7 +335,7 @@ class HybridIndex:
         return [snap.children[i].id for i in order if scores[i] > 0 and snap.children[i].id in allowed][:candidates]
 
     def _dense_ranking(
-        self, query: str, allowed: dict[str, ChildChunk], candidates: int
+        self, query: str, allowed: dict[str, ChildChunk], candidates: int, prefix: str | None
     ) -> tuple[list[str] | None, str | None]:
         if self.store is None:
             return None, self._store_warning or "no vector store configured; using keyword search (BM25) only"
@@ -334,10 +350,9 @@ class HybridIndex:
             warning = f"{pending} of {len(wanted)} chunks are not embedded yet; their semantic matches are missing"
         try:
             vector = self.embedder.embed_query(query)
-            hits = self.store.search(vector, candidates * 3)
+            hits = self.store.search(vector, candidates * 2, folder=prefix.rstrip("/") if prefix else None)
         except (EmbeddingError, VectorStoreError) as exc:
-            self._dense_error = str(exc)
-            self._stored_ids = None
+            self._dense_error = str(exc)  # the next sync re-reads the store's ids
             return None, f"semantic search unavailable ({exc}); using keyword search (BM25) only"
         ranking: list[str] = []
         for hit in hits:
@@ -385,15 +400,17 @@ class HybridIndex:
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict[str, Any]:
+        with self._lock:
+            docs = list(self._docs.values())
         snap = self._snapshot
         wanted = {point_id(c.id, c.content_hash) for c in snap.children}
         return {
-            "files": len(self._docs),
+            "files": len(docs),
             "parents": len(snap.parents),
             "children": len(snap.children),
             "embedded": len(wanted & self._embedded_ids),
-            "errors": {d.path: d.error for d in self._docs.values() if d.error},
-            "file_warnings": {d.path: d.warnings for d in self._docs.values() if d.warnings},
+            "errors": {d.path: d.error for d in docs if d.error},
+            "file_warnings": {d.path: d.warnings for d in docs if d.warnings},
             "embedder": self.embedder.name,
             "vector_store": self.store.name if self.store else None,
             "tokenizer": self.tokenizer.name,

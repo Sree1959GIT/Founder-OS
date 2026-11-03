@@ -30,6 +30,7 @@ from app.vault.parsers import (
     decode_text,
     parse_markdown,
     render_frontmatter,
+    split_frontmatter,
 )
 
 FOLDERS = ("profile", "notes", "decisions", "journal", "sources")
@@ -295,18 +296,28 @@ class VaultManager:
         body: str | None = None,
         create_only: bool = False,
     ) -> str:
-        """Create or replace a Markdown/TXT note. Either `content`, or `frontmatter` + `body`."""
+        """Create or replace a Markdown/TXT note: either the full `content`, or `frontmatter` and/or `body`.
+
+        With only one of `frontmatter`/`body`, the other part is kept from the existing note (so updating tags
+        never erases the text).
+        """
         path = self.resolve(rel)
         if path.suffix.lower() not in WRITABLE_SUFFIXES:
             raise VaultError("only .md and .txt notes can be written; upload other files")
-        if content is None:
-            content = render_frontmatter(frontmatter or {}, body or "")
-        data = content.encode("utf-8")
-        if len(data) > MAX_NOTE_BYTES:
-            raise VaultError(f"note is larger than {MAX_NOTE_BYTES // 1024 // 1024} MB")
         with self._lock:
             if create_only and path.exists():
                 raise NoteExistsError(f"already exists: {rel}")
+            if content is None:
+                if (frontmatter is None or body is None) and path.is_file():
+                    existing_fm, existing_body, error = split_frontmatter(decode_text(path.read_bytes()))
+                    if error and frontmatter is not None:
+                        raise VaultError(f"cannot merge into the existing note: {error}")
+                    frontmatter = existing_fm if frontmatter is None else frontmatter
+                    body = existing_body if body is None else body
+                content = render_frontmatter(frontmatter or {}, body or "")
+            data = content.encode("utf-8")
+            if len(data) > MAX_NOTE_BYTES:
+                raise VaultError(f"note is larger than {MAX_NOTE_BYTES // 1024 // 1024} MB")
             atomic_write(path, data)
         return self.relative(path)
 
@@ -344,20 +355,28 @@ class VaultManager:
             source.rename(target)
             dst_rel = self.relative(target)
             new_graph = self.refresh_links()
-            new_name = link_text_for(dst_rel, new_graph.resolver)
             updated: list[str] = []
             total = 0
             for rel in list(new_graph.notes):
                 old_rel = src_rel if rel == dst_rel else rel
 
-                def points_at_old(link: Any, _new: str = rel, _old: str = old_rel) -> bool:
-                    was = old_graph.resolver.resolve(link.target, _old) == src_rel
-                    still = new_graph.resolver.resolve(link.target, _new) == dst_rel
-                    return was and not still
+                def keep_target(link: Any, _new: str = rel, _old: str = old_rel) -> str | None:
+                    """Every link must point at the same file after the rename (the moved file at its new path).
+
+                    This rewrites links to the renamed file, and also protects links that the move would otherwise
+                    capture (e.g. `[[plan]]` when another `plan.md` moves into the linking note's folder).
+                    """
+                    before = old_graph.resolver.resolve(link.target, _old)
+                    if before is None:
+                        return None  # was unresolved: leave it as written
+                    expected = dst_rel if before == src_rel else before
+                    if new_graph.resolver.resolve(link.target, _new) == expected:
+                        return None
+                    return link_text_for(expected, new_graph.resolver, _new)
 
                 path = self.root / rel
                 text = decode_text(path.read_bytes())
-                rewritten, count = rewrite_links(text, points_at_old, new_name)
+                rewritten, count = rewrite_links(text, keep_target)
                 if count:
                     atomic_write(path, rewritten.encode("utf-8"))
                     updated.append(rel)

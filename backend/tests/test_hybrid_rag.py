@@ -81,13 +81,13 @@ def test_embedder_down_falls_back_to_bm25_then_recovers(tmp_path: Path) -> None:
     index.retry_s = 0.0
     status = index.status()
     assert status["embedded"] == 0 and not status["dense_available"] and "fail" in status["dense_error"]
-    result = index.search("annual prepayment")
+    result = index.search("annual prepayment discount")
     assert result["mode"] == "bm25" and result["results"][0]["path"] == "notes/pricing-strategy.md"
     assert "keyword search (BM25) only" in result["warnings"][0]
     embedder.fail = False  # "Ollama started"
     index.sync_vectors()
     assert index.status()["embedded"] == index.status()["children"]
-    assert index.search("annual prepayment")["mode"] == "hybrid"
+    assert index.search("annual prepayment discount")["mode"] == "hybrid"
 
 
 def test_no_store_means_bm25_with_warning(tmp_path: Path) -> None:
@@ -123,8 +123,7 @@ def test_folder_delete_and_rescan(tmp_path: Path) -> None:
     shutil.rmtree(index.vault.root / "journal")
     index.refresh({"journal"})  # a folder path triggers a full rescan
     assert not any(r["path"].startswith("journal/") for r in index.search("journal board prep runway", k=10)["results"])
-    index.reset()
-    index.refresh()
+    assert index.refresh(full=True) is True
     assert index.status()["files"] == 6
 
 
@@ -217,8 +216,9 @@ def test_qdrant_store_end_to_end_with_fake_server(tmp_path: Path, monkeypatch: p
     # A different embedding size recreates the collection.
     server.down = False
     store._dim = None
-    store.upsert([VectorPoint("00000000-0000-0000-0000-000000000001", [1.0, 0.0], {"chunk_id": "x"})])
-    assert server.collections["founderos_default"]["dim"] == 2
+    with pytest.raises(VectorStoreError, match="recreated"):
+        store.upsert([VectorPoint("00000000-0000-0000-0000-000000000001", [1.0, 0.0], {"chunk_id": "x"})])
+    assert server.collections["founderos_default"] == {"dim": 2, "points": {}}  # caller re-embeds everything
 
 
 def test_ollama_embedder_request_shape_and_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -264,3 +264,39 @@ def test_bm25_finds_words_shared_by_every_note(tmp_path: Path) -> None:
     vault.write_note("notes/second.md", "Runway again, and runway.")
     index.refresh()
     assert {r["path"] for r in index.search("runway", mode="bm25")["results"]} == {"notes/only.md", "notes/second.md"}
+
+
+def test_folder_search_filters_inside_the_vector_store(tmp_path: Path) -> None:
+    store = InMemoryVectorStore()
+    index = make_index(tmp_path, store=store)
+    hits = store.search(FakeEmbedder().embed_query("runway"), 100, folder="decisions")
+    assert hits and {h.payload["path"].split("/")[0] for h in hits} == {"decisions"}
+    result = index.search("runway hiring", folder="decisions", mode="dense")
+    assert result["mode"] == "dense" and result["results"][0]["path"] == "decisions/2026-09-hire-two-sdrs.md"
+
+
+def test_unexpected_parser_errors_are_per_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.engine.hybrid_rag as rag
+
+    real = rag.parse_file
+
+    def flaky(path: Path):  # type: ignore[no-untyped-def]
+        if path.suffix == ".csv":
+            raise RuntimeError("field larger than field limit")  # e.g. csv.Error / pypdf DependencyError
+        return real(path)
+
+    monkeypatch.setattr(rag, "parse_file", flaky)
+    index = make_index(tmp_path)
+    status = index.status()
+    assert status["files"] == 7 and "RuntimeError" in status["errors"]["sources/competitor-pricing.csv"]
+    assert index.search("churn")["results"]
+
+
+def test_sync_failure_never_raises(tmp_path: Path) -> None:
+    class BadEmbedder(FakeEmbedder):
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0]]  # wrong count: zip(strict=True) fails
+
+    index = make_index(tmp_path, embedder=BadEmbedder())
+    assert "vector sync failed" in index.status()["dense_error"]
+    assert index.search("churn")["mode"] == "bm25"

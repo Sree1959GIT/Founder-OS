@@ -14,6 +14,8 @@ from pathlib import Path
 from loguru import logger
 from watchfiles import Change, awatch
 
+from app.vault.parsers import SUPPORTED_SUFFIXES
+
 DEBOUNCE_MS = 400
 
 
@@ -29,7 +31,11 @@ def make_filter(root: Path) -> Callable[[Change, str], bool]:
         if not parts or parts[0] == "..":
             return False
         name = parts[-1]
-        return not any(p.startswith((".", "~$")) for p in parts) and not name.endswith((".tmp", ".swp", "~"))
+        if any(p.startswith((".", "~$")) for p in parts) or name.endswith("~"):
+            return False
+        suffix = Path(name).suffix.lower()
+        # Supported files, plus suffix-less paths (folders: a folder rename/delete triggers a rescan).
+        return suffix in SUPPORTED_SUFFIXES or (not suffix and not os.path.isfile(path))
 
     return keep
 

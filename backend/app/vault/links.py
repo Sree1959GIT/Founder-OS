@@ -32,10 +32,6 @@ class WikiLink:
     start: int
     end: int
 
-    @property
-    def raw(self) -> str:
-        return f"{'!' if self.embed else ''}[[{self.render(self.target)}]]"
-
     def render(self, target: str) -> str:
         inner = target
         if self.heading is not None:
@@ -144,13 +140,17 @@ class LinkResolver:
         return len(self._by_name.get(link_key(path).rsplit("/", 1)[-1], [])) <= 1
 
 
-def rewrite_links(text: str, should_rewrite: Callable[[WikiLink], bool], new_target: str) -> tuple[str, int]:
-    """Replace the target of every matching link with `new_target`, keeping heading and alias. Returns (text, count)."""
+def rewrite_links(text: str, replacement: Callable[[WikiLink], str | None]) -> tuple[str, int]:
+    """Give each link the target `replacement(link)` returns (None = leave it), keeping heading and alias.
+
+    Returns (text, number of links changed).
+    """
     pieces: list[str] = []
     last = 0
     count = 0
     for link in parse_links(text):
-        if not link.target or not should_rewrite(link):
+        new_target = replacement(link) if link.target else None
+        if new_target is None:
             continue
         pieces.append(text[last : link.start])
         pieces.append(f"{'!' if link.embed else ''}[[{link.render(new_target)}]]")
@@ -160,14 +160,14 @@ def rewrite_links(text: str, should_rewrite: Callable[[WikiLink], bool], new_tar
     return "".join(pieces), count
 
 
-def link_text_for(path: str, resolver: LinkResolver) -> str:
-    """The shortest link target that resolves to `path`: the bare name when unique, else the full path."""
+def link_text_for(path: str, resolver: LinkResolver, source: str | None = None) -> str:
+    """The shortest link target that resolves to `path` from `source`: the bare name if that works, else the path."""
     name = PurePosixPath(path).name
     for suffix in MARKDOWN_SUFFIXES:
         if name.lower().endswith(suffix):
             name = name[: -len(suffix)]
             break
-    if resolver.is_unique_name(path):
+    if resolver.is_unique_name(path) and resolver.resolve(name, source) == path:
         return name
     full = path
     for suffix in MARKDOWN_SUFFIXES:

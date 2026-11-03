@@ -115,3 +115,27 @@ def test_rename_errors(vault: VaultManager) -> None:
         vault.rename("notes/a.md", "notes/a.txt")
     with pytest.raises(VaultPathError):
         vault.rename("notes/a.md", "../a.md")
+
+
+def test_rename_protects_links_it_would_capture(vault: VaultManager) -> None:
+    vault.write_note("notes/plan.md", "the notes plan")
+    vault.write_note("decisions/foo.md", "Follow [[plan]].")
+    vault.write_note("journal/x.md", "draft")
+    result = vault.rename("journal/x.md", "decisions/plan.md")
+    # [[plan]] in decisions/ would now prefer decisions/plan.md; it is rewritten to keep its old target.
+    assert result.updated_files == ["decisions/foo.md"]
+    assert (vault.root / "decisions" / "foo.md").read_text(encoding="utf-8") == "Follow [[notes/plan]]."
+    assert vault.graph.backlinks["notes/plan.md"] == ["decisions/foo.md"]
+
+
+def test_partial_write_keeps_the_other_part(vault: VaultManager) -> None:
+    rel = vault.write_note("notes/p.md", "---\ntitle: P\n---\nImportant body.\n")
+    vault.write_note(rel, frontmatter={"title": "P", "tags": ["pricing"]})
+    note = vault.read_note(rel)
+    assert note["frontmatter"]["tags"] == ["pricing"] and note["body"] == "Important body.\n"
+    vault.write_note(rel, body="New body.\n")
+    note = vault.read_note(rel)
+    assert note["frontmatter"] == {"title": "P", "tags": ["pricing"]} and note["body"] == "New body.\n"
+    vault.write_note("notes/bad.md", "---\ntitle: [oops\n---\nx")
+    with pytest.raises(VaultError):
+        vault.write_note("notes/bad.md", frontmatter={"title": "fixed"})

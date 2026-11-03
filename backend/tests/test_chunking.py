@@ -64,3 +64,11 @@ def test_get_tokenizer_approx_and_fallback(monkeypatch) -> None:  # type: ignore
     monkeypatch.setattr(chunking.TiktokenTokenizer, "__init__", boom)
     assert get_tokenizer("tiktoken").name == "approx"
     assert TOK.count("Hello, world") == 5  # Hello (2) + "," (1) + world (2)
+
+
+def test_children_do_not_cross_headings_but_parents_pack_sections() -> None:
+    sections = [Section("Doc", "Intro."), Section("Doc > Pricing", "Price text."), Section("Doc > Churn", "Churn.")]
+    parents = chunk_document("n.md", "N", sections, TOK)
+    assert len(parents) == 1
+    assert [c.heading for c in parents[0].children] == ["Doc", "Doc > Pricing", "Doc > Churn"]
+    assert parents[0].text == "Intro.\n\nPrice text.\n\nChurn."
