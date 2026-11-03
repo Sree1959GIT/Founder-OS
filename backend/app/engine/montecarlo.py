@@ -128,9 +128,9 @@ def run_monte_carlo(engine: ScenarioEngine, request: MonteCarloRequest) -> Monte
     cash, _ = project(d, arrays, request.adjustments.start_month, months, request.adjustments.cost_per_hire_monthly)
     p10, p50, p90 = np.percentile(cash[:, : request.horizon], [10, 50, 90], axis=0)
     runway = runway_months(d.cash, cash)
-    # NaN (never runs out) sorts as +infinity for percentiles.
-    runway_for_pct = np.where(np.isnan(runway), np.inf, runway)
-    r10, r50, r90 = np.percentile(runway_for_pct, [10, 50, 90])
+    # "Never runs out" (NaN) becomes a sentinel past the search window, which `_months` maps back to None.
+    never = float(months + 1)
+    r10, r50, r90 = np.percentile(np.where(np.isnan(runway), never, runway), [10, 50, 90])
     within = (cash[:, : request.horizon] < 0).any(axis=1).mean()
     within_12 = (cash[:, :12] < 0).any(axis=1).mean()
     lineage = engine._lineage(
@@ -149,9 +149,9 @@ def run_monte_carlo(engine: ScenarioEngine, request: MonteCarloRequest) -> Monte
             FanPoint(month=shift_month(d.as_of, k + 1), p10=_money(p10[k]), p50=_money(p50[k]), p90=_money(p90[k]))
             for k in range(request.horizon)
         ],
-        runway_p10=_months(r10),
-        runway_p50=_months(r50),
-        runway_p90=_months(r90),
+        runway_p10=_months(r10, never),
+        runway_p50=_months(r50, never),
+        runway_p90=_months(r90, never),
         probability_cash_out_within_horizon=Decimal(str(round(float(within), 4))),
         probability_cash_out_within_12_months=Decimal(str(round(float(within_12), 4))),
         elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
@@ -170,5 +170,5 @@ def _money(value: float) -> Decimal:
     return Decimal(str(round(float(value), 2)))
 
 
-def _months(value: float) -> Decimal | None:
-    return None if not np.isfinite(value) else Decimal(str(round(float(value), 2)))
+def _months(value: float, never: float) -> Decimal | None:
+    return None if value > never - 1 else Decimal(str(round(float(value), 2)))

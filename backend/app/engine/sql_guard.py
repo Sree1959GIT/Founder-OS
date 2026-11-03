@@ -67,17 +67,21 @@ def validate_sql(con: duckdb.DuckDBPyConnection, sql: str, allowed_tables: set[s
     ast = json.loads(row[0]) if row else {"error": True, "error_message": "no parse result"}
     if ast.get("error"):
         raise SqlGuardError(f"Query does not parse: {ast.get('error_message')}")
+    cte_names: set[str] = set()
+    referenced: set[str] = set()
     for node in _walk(ast):
         node_type = node.get("type")
         if node_type == "TABLE_FUNCTION":
             raise SqlGuardError("Table functions (e.g. read_csv, glob) are not allowed")
-        if node_type == "BASE_TABLE" and (node.get("catalog_name") or node.get("schema_name") not in ("", "main")):
-            raise SqlGuardError("Only tables in the workspace database may be queried")
-
-    try:
-        tables = set(con.get_table_names(cleaned))
-    except duckdb.Error as exc:
-        raise SqlGuardError(f"Query does not parse: {exc}") from exc
+        if node_type == "BASE_TABLE":
+            if node.get("catalog_name") or node.get("schema_name") not in ("", "main"):
+                raise SqlGuardError("Only tables in the workspace database may be queried")
+            referenced.add(str(node.get("table_name")))
+        cte_map = node.get("cte_map")
+        if isinstance(cte_map, dict):
+            cte_names.update(str(entry.get("key")) for entry in cte_map.get("map", []))
+    # A CTE name shadows a table only inside the query, so CTE references are not table reads.
+    tables = referenced - cte_names
     forbidden = sorted(t for t in tables if t not in allowed_tables)
     if forbidden:
         raise SqlGuardError(
