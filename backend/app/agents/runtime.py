@@ -7,6 +7,7 @@ only from tool results.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -262,7 +263,7 @@ class AgentRunner:
         result = AgentResult(agent_id=inst.id, type=inst.type, name=inst.name, brief=inst.brief)
         self._emit("agent.status", inst.id, status="thinking")
         messages = [
-            Message.system(spec.prompt()),
+            Message.system(spec.prompt() + await self._data_context(spec)),
             Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}"),
         ]
         try:
@@ -302,6 +303,22 @@ class AgentRunner:
             est_cost_usd=0.0 if not inst.is_cloud else None,
         )
         return result
+
+    async def _data_context(self, spec: AgentType) -> str:
+        """Tell the Financial Analyst which months exist, so it does not invent a `month` argument."""
+        if spec.name != "financial_analyst":
+            return ""
+        try:
+            months = await asyncio.to_thread(self.ctx_factory("").finance.metrics.available_months)
+        except Exception as exc:  # no data loaded yet: the tools will say so
+            logger.debug("No month range for the analyst: {}", exc)
+            return "\n\nNo financial data is loaded yet."
+        if not months:
+            return ""
+        return (
+            f"\n\nThe data covers {months[0]} to {months[-1]}; the latest month is {months[-1]}. "
+            "Leave `month` out to use the latest month."
+        )
 
     def _verify(self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult) -> None:
         self._emit("agent.status", inst.id, status="verifying")

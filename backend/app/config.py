@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     # How long Ollama keeps the chat model in VRAM after a call ("" = Ollama's default, 5 minutes).
     ollama_keep_alive: str = "30m"
     ollama_num_ctx: int | None = Field(default=8192, ge=2048, le=131072)
+    # Load the chat model into VRAM in the background at startup (a cold load can take minutes on a slow disk).
+    ollama_warmup: bool = True
     # ollama: the local provider is OLLAMA_CHAT_MODEL. fake: scripted offline replies (tests, demos without Ollama).
     llm_provider: Literal["ollama", "fake"] = "ollama"
     llm_timeout_s: float = Field(default=180.0, gt=0, le=1800)

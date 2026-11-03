@@ -63,7 +63,7 @@ def test_chat_streams_events_deltas_and_done(client: TestClient) -> None:
         assert response.headers["content-type"].startswith("text/event-stream")
         frames = parse_sse(response.read().decode("utf-8"))
     kinds = [k for k, _ in frames]
-    assert kinds[0] == "run" and kinds[-1] == "done"
+    assert kinds[0] == "run" and kinds[-1] == "done" and kinds.count("run.finished") == 1
     assert {"team.proposed", "agent.spawned", "agent.tool_call", "agent.artifact", "agent.done", "delta"} <= set(kinds)
     assert kinds.index("agent.done") < kinds.index("delta")
     text = "".join(d["text"] for k, d in frames if k == "delta")

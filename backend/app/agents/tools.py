@@ -13,6 +13,7 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -87,7 +88,13 @@ def _artifact(ctx: ToolContext, kind: ArtifactKind, title: str, data: dict[str, 
 
 
 def _lineage_summary(lineage: Lineage) -> dict[str, Any]:
-    return {"formula": lineage.formula, "period": lineage.period, "sources": lineage.source_files}
+    inputs = {k: (float(v) if v is not None else None) for k, v in lineage.inputs.items()}
+    return {"formula": lineage.formula, "period": lineage.period, "inputs": inputs, "sources": lineage.source_files}
+
+
+def _difference(new: Decimal | None, old: Decimal | None) -> float | None:
+    """Deltas are computed here, in code, so the model never subtracts (PRD R1)."""
+    return None if new is None or old is None else float(new - old)
 
 
 # --- finance ----------------------------------------------------------------------------------------------------
@@ -110,7 +117,7 @@ def _get_metric(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "lineage": _lineage_summary(result.lineage),
     }
     card = _artifact(ctx, "metric_card", result.label, data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(data))
+    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
 
 
 def _metrics_summary(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -122,7 +129,7 @@ def _metrics_summary(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "unavailable": unavailable,
     }
     cards = [_artifact(ctx, "metric_card", r.label, d, lineage=[r.lineage]) for r, d in zip(results, rows, strict=True)]
-    return ToolOutcome(content, artifacts=cards, numbers=collect_numbers(rows))
+    return ToolOutcome(content, artifacts=cards, numbers=collect_numbers(content))
 
 
 def _run_scenario(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -137,11 +144,12 @@ def _run_scenario(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "scenario_runway_months": data["scenario_runway_months"],
         "base_zero_cash_month": result.base_zero_cash_month,
         "scenario_zero_cash_month": result.scenario_zero_cash_month,
+        "runway_change_months": _difference(result.scenario_runway_months, result.base_runway_months),
         "final_month": data["points"][-1] if data["points"] else None,
         "labels": result.labels,
     }
     card = _artifact(ctx, "scenario", "What-if scenario", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(data))
+    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
 
 
 def _run_monte_carlo(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -162,7 +170,7 @@ def _run_monte_carlo(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         )
     }
     card = _artifact(ctx, "monte_carlo", "Monte Carlo cash range", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(data))
+    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
 
 
 def _run_sql(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -170,7 +178,7 @@ def _run_sql(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     data = result.model_dump(mode="json")
     content = {"columns": result.columns, "rows": data["rows"][:20], "row_count": result.row_count}
     card = _artifact(ctx, "table", "Query result", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(data["rows"]))
+    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
 
 
 def _weighted_scoring(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -251,7 +259,10 @@ def _model_params(model: type[BaseModel]) -> dict[str, Any]:
     return {k: v for k, v in schema.items() if k in ("type", "properties", "required", "$defs")}
 
 
-_MONTH = {"type": "string", "description": "As-of month YYYY-MM (default: latest)"}
+_MONTH = {
+    "type": "string",
+    "description": "As-of month YYYY-MM. Leave out for the latest month; set only when the founder names a month.",
+}
 _ADJ = {
     name: {"type": "number", "description": str(f.description or name)}
     for name, f in Adjustments.model_fields.items()

@@ -63,11 +63,13 @@ async def _chat_stream(run: RunContext, bus: EventBus) -> AsyncIterator[str]:
         await merged.put(("end", None))
 
     tasks = [asyncio.create_task(pump_events()), asyncio.create_task(pump_deltas())]
+    sent: set[int] = set()
     try:
         while True:
             kind, item = await merged.get()
             if kind == "event":
                 assert isinstance(item, AgentEvent)
+                sent.add(item.seq)
                 yield sse(item.type, item.model_dump(mode="json"), item.seq)
             elif kind == "delta":
                 yield sse("delta", {"text": item})
@@ -77,7 +79,7 @@ async def _chat_stream(run: RunContext, bus: EventBus) -> AsyncIterator[str]:
         try:
             result = await run.task
             for event in bus.history(run.run_id):  # events published after the last delta
-                if event.type == "run.finished":
+                if event.type == "run.finished" and event.seq not in sent:
                     yield sse(event.type, event.model_dump(mode="json"), event.seq)
             yield sse("done", result.model_dump(mode="json"))
         except asyncio.CancelledError:

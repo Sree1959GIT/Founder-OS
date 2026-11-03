@@ -130,6 +130,17 @@ async def test_ollama_embed_and_loaded_models() -> None:
     assert await provider.embed([]) == []
 
 
+async def test_ollama_warm_up_loads_with_the_chat_context_size() -> None:
+    """A cold load from a slow disk took 217 s on the founder's PC; chat calls with a 180 s timeout aborted it."""
+    transport, seen = recorder(lambda r, b: httpx.Response(200, json={"done": True}))
+    seconds = await OllamaProvider("http://o", "qwen3:8b", num_ctx=8192, transport=transport).warm_up()
+    assert seconds >= 0 and seen[0]["path"] == "/api/generate"
+    assert seen[0]["body"] == {"model": "qwen3:8b", "keep_alive": "30m", "options": {"num_ctx": 8192}}
+    down = OllamaProvider("http://o", "m", transport=httpx.MockTransport(lambda r: httpx.Response(404, text="no")))
+    with pytest.raises(LLMUnavailable):
+        await down.warm_up()
+
+
 # --- cloud providers -------------------------------------------------------------------------------------------
 async def test_anthropic_tools_and_json() -> None:
     def handler(request: httpx.Request, body: dict[str, Any]) -> httpx.Response:

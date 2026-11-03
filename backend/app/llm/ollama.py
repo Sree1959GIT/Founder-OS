@@ -210,6 +210,29 @@ class OllamaProvider(LLMProvider):
             raise LLMError("Ollama returned the wrong number of embeddings")
         return [[float(x) for x in v] for v in vectors]
 
+    async def warm_up(self, timeout_s: float = 1200.0) -> float:
+        """Load the chat model into VRAM (`/api/generate` without a prompt) and return the seconds it took.
+
+        A cold load can take minutes when the model files sit on a slow disk (e.g. a Windows bind mount into Docker).
+        Ollama aborts a load when the client disconnects, so a short chat timeout would never let it finish. This call
+        waits up to `timeout_s` and uses the same `num_ctx` as chat calls, so they reuse the loaded runner.
+        """
+        timer = Timer()
+        body: dict[str, Any] = {"model": self.model}
+        if self.keep_alive:
+            body["keep_alive"] = self.keep_alive
+        if self.num_ctx:
+            body["options"] = {"num_ctx": self.num_ctx}
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.base_url, timeout=httpx.Timeout(timeout_s, connect=5.0), transport=self._transport
+            ) as client:
+                response = await client.post("/api/generate", json=body)
+                response.raise_for_status()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise self._error(exc) from exc
+        return round(timer.ms / 1000, 1)
+
     async def loaded_models(self) -> list[dict[str, Any]]:
         """`/api/ps`: models in memory and the VRAM each one uses (the GPU is shared with other apps)."""
         try:

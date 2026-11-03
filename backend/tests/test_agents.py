@@ -123,6 +123,22 @@ async def test_scenario_and_monte_carlo_tools(finance: Any) -> None:
     assert {m["metric"] for m in summary.content["metrics"]} >= {"runway", "mrr"} and len(summary.artifacts) >= 5
 
 
+async def test_scenario_deltas_come_from_code_and_unseen_numbers_do_not_verify(finance: Any) -> None:
+    """Live run: the model subtracted 11.23 - 9.81 itself and the answer still verified, because the Verifier
+    accepted any number anywhere in the full scenario payload. Deltas now come from code, and only numbers the
+    model was shown count as lineage-backed."""
+    from app.agents.verifier import verify_numbers
+
+    allowed = REGISTRY["financial_analyst"].tools
+    outcome = await run_tool("run_scenario", ctx(finance, None), {"new_hires": 2}, allowed)
+    c = outcome.content
+    assert (c["base_runway_months"], c["scenario_runway_months"], c["runway_change_months"]) == (11.23, 9.81, -1.42)
+    assert verify_numbers("Two hires cut runway by 1.42 months, to 9.81.", outcome.numbers) == []
+    mid_point = outcome.artifacts[0].data["points"][5]["scenario_cash"]  # in the artifact, never shown to the model
+    assert mid_point not in outcome.numbers
+    assert verify_numbers(f"Cash in month 6 is ${mid_point:,.2f}.", outcome.numbers) == [f"${mid_point:,.2f}"]
+
+
 async def test_librarian_tools_search_cite_and_write_only_decisions(finance: Any, vault: FakeVault) -> None:
     allowed = REGISTRY["librarian"].tools
     found = await run_tool("search_vault", ctx(finance, vault), {"query": "annual prepayment discount"}, allowed)
@@ -300,7 +316,7 @@ async def test_fan_out_respects_the_local_cap(finance: Any) -> None:
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.5)  # longer than the staggered start (each agent reads the month range from DuckDB)
         active -= 1
         return "No numbers here."
 
@@ -308,7 +324,7 @@ async def test_fan_out_respects_the_local_cap(finance: Any) -> None:
     plan_reply = '{"decision_type": "x", "reversibility": "two_way", "tasks": [' + tasks + "]}"
 
     class SlowFake(FakeProvider):
-        """Plans from the script; every agent call takes 50 ms so overlapping calls can be counted."""
+        """Plans from the script; every agent call takes 0.5 s so overlapping calls can be counted."""
 
         async def _complete(self, messages, tools, json_schema):  # type: ignore[no-untyped-def]
             if json_schema is not None or not tools:
