@@ -5,16 +5,16 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M2: Vault & hybrid RAG**, but only after the founder writes `ACCEPTED` for M1 in the Gate log (Major gate)
+- **Current milestone:** **M2: Vault & hybrid RAG** (IN PROGRESS, branch `claude/m2-vault-search`; gate tier Light). M1 is ACCEPTED (Major gate passed 2026-11-03)
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-03 (M1 bug-fix session: projected-runway feedback fixed in PR #4 (#3 was already merged), awaiting the founder's **re-test**)
+- **Last updated:** 2026-11-03 (M2 session started 13:29 UTC)
 
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
-| M1 | Financial spine (DuckDB) | DONE (founder feedback fixed; awaiting Major-gate re-test) | Branch `claude/m1-financial-spine` |
-| M2 | Vault & hybrid RAG | NOT STARTED | |
+| M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
+| M2 | Vault & hybrid RAG | IN PROGRESS | Branch `claude/m2-vault-search` |
 | M3a | LLM layer, agent framework & core agents | NOT STARTED | |
 | M3b | Specialist agents | NOT STARTED | |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
@@ -56,17 +56,18 @@
 | M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | ACCEPTED (SM, 2026-11-03) after re-test R1–R8 on Windows; fix in #4 |
 
 ## Current session
-- Started (UTC): 2026-11-03 05:48 (local Windows 11 session, founder's PC)
-- Target: **M1: Financial spine (DuckDB)** (gate tier: **Major**)
+- Started (UTC): 2026-11-03 13:29 (local Windows 11 session, founder's PC)
+- Target: **M2: Vault & hybrid RAG** (gate tier: **Light**)
 - Plan:
-  - [x] Founder notes: answers to the M0 questions recorded (HANDOVER + PRD §12); `frontend/.vite/` in `.gitignore`
-  - [x] `engine/lineage.py`, `engine/schema.py` (canonical tables + header synonyms), `engine/ingest.py` (CSV/XLSX, `mappings.json`)
-  - [x] `engine/duckdb_engine.py` (workspace DB, locking) + `engine/sql_guard.py` (read-only, single SELECT, allow-list, limits)
-  - [x] `engine/metrics.py`: every §F1 routine with Lineage + golden tests (expected values computed independently with `Decimal`)
-  - [x] `engine/scenario.py` (<200 ms) + sensitivity, `engine/montecarlo.py` (1,000 runs <1 s, seeded)
-  - [x] `engine/decision_science.py` (MCDA, EV, decision trees, kill criteria), `engine/calibration.py` (Brier)
-  - [x] REST: `/api/data/*`, `/api/metrics/*`, `/api/scenario*` + API tests
-  - [x] Wrap-up: checks, self-review, HANDOVER (Windows checklist with Excel spot-checks), PR, CI
+  - [x] Tidy stale M1 status lines (M1 ACCEPTED)
+  - [ ] `vault/links.py` (wikilinks + aliases, rename rewrite), `vault/parsers.py` (MD/TXT, PDF via pypdf, CSV/XLSX summary rows)
+  - [ ] `vault/manager.py` (frontmatter, safe paths, CRUD, rename-safe link updates, backlinks `.index/links.json`)
+  - [ ] `engine/chunking.py` (parent ~1000 / child ~250 tokens; tiktoken `cl100k_base` with offline fallback)
+  - [ ] `engine/embeddings.py` (Ollama `nomic-embed-text` + fake), `engine/vector_store.py` (Qdrant REST + in-memory)
+  - [ ] `engine/hybrid_rag.py` (BM25 via rank-bm25 + dense, RRF k=60, parent chunks with citations)
+  - [ ] `vault/watcher.py` (watchfiles re-index), sample Northwind vault notes, startup wiring
+  - [ ] REST `/api/vault/*`, `/api/search` + tests (fake embeddings, in-memory store)
+  - [ ] Wrap-up: checks, self-review, HANDOVER (Windows checklist incl. Notepad edit), PR, CI
 
 ## Current state
 **M1 is complete** (PR awaiting the founder's Major gate). M0 behaviour is unchanged. What works:
