@@ -3,8 +3,9 @@
 A local-first decision copilot for business owners. It combines a Socratic voice advisor, a deterministic
 DuckDB financial engine, an Obsidian-style Markdown brain with hybrid RAG, and a live visual canvas.
 
-**Status:** milestone M0 (scaffold and foundations). The app starts, reports the health of its dependencies and
-ships a synthetic demo company. Features arrive milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
+**Status:** milestone M1 (financial spine). The backend loads CSV/XLSX financials into DuckDB and serves
+deterministic metrics (every number with its lineage), what-if scenarios, sensitivity tables and Monte Carlo
+runs over a REST API. Features arrive milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
 
 - Product spec: [`docs/PRD.md`](docs/PRD.md)
 - How to run a dev session with Claude Code: [`docs/GOAL_PROMPT.md`](docs/GOAL_PROMPT.md)
@@ -51,6 +52,26 @@ subscriptions, pipeline, marketing spend and headcount). Regenerate it with:
 python scripts/generate_demo_data.py              # USD
 python scripts/generate_demo_data.py --currency INR --out sample_data_inr
 ```
+
+## Financial engine API (M1)
+On first start an empty workspace is loaded with the Northwind demo data (`AUTO_LOAD_SAMPLE_DATA=true`). Browse and
+try every endpoint at http://127.0.0.1:8000/docs.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/data/tables` | Loaded tables (source file, rows, column mapping) and the canonical schema |
+| `POST /api/data/upload` | Upload a CSV/XLSX; columns are mapped by header synonyms (optional `table` form field) |
+| `POST /api/data/load-sample` | Reload the Northwind demo data |
+| `GET /api/data/mappings` | Saved column mappings (`data/<workspace>/mappings.json`, editable) |
+| `POST /api/data/query` | One read-only `SELECT` over the loaded tables (SQL guard) |
+| `GET /api/metrics` · `/api/metrics/summary` · `/api/metrics/{name}` | Metric routines (`?month=YYYY-MM&window=N`) |
+| `GET /api/metrics/cash-projection` | Base-case 12-month cash projection |
+| `POST /api/metrics/kill-criteria` | Evaluate kill criteria against live metrics |
+| `POST /api/scenario` · `/sensitivity` · `/montecarlo` | What-if projection, 2-variable grid, seeded Monte Carlo |
+
+Every number comes back with a `lineage` object: the SQL that ran, the source file and row numbers (which match the
+Excel rows), the formula and the intermediate inputs. Metric definitions are documented at the top of
+`backend/app/engine/metrics.py`.
 
 ## Development
 

@@ -5,15 +5,15 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M1: Financial spine (DuckDB)**, after the founder merges the M0 PR
+- **Next milestone:** **M2: Vault & hybrid RAG**, but only after the founder writes `ACCEPTED` for M1 in the Gate log (Major gate)
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-02 (M0 session: scaffold done, PR awaiting founder)
+- **Last updated:** 2026-11-03 (M1 session: financial spine done, PR awaiting the founder's **Major** gate)
 
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
-| M0 | Scaffold & foundations | DONE (awaiting merge) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
-| M1 | Financial spine (DuckDB) | NOT STARTED | |
+| M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
+| M1 | Financial spine (DuckDB) | DONE (awaiting Major gate) | Branch `claude/m1-financial-spine` |
 | M2 | Vault & hybrid RAG | NOT STARTED | |
 | M3a | LLM layer, agent framework & core agents | NOT STARTED | |
 | M3b | Specialist agents | NOT STARTED | |
@@ -52,91 +52,136 @@
 | Milestone | PR | Tier | Status |
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
-| M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | AWAITING FOUNDER |
+| M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
+| M1 Financial spine | [Sree1959GIT/Founder-OS#3](https://github.com/Sree1959GIT/Founder-OS/pull/3) | **Major** | AWAITING FOUNDER (write `ACCEPTED` or the issues here) |
 
 ## Current session
-- Started (UTC): 2026-11-02 15:47
-- Target: **M0: Scaffold & foundations** (gate tier: Light)
+- Started (UTC): 2026-11-03 05:48 (local Windows 11 session, founder's PC)
+- Target: **M1: Financial spine (DuckDB)** (gate tier: **Major**)
 - Plan:
-  - [x] Backend package (`pyproject.toml`, `app/main.py`, `config.py`, `deps.py`, `/api/health` with dependency probes + tests)
-  - [x] `.env.example`, `docker-compose.yml` (Qdrant only)
-  - [x] `scripts/generate_demo_data.py` (Northwind, seeded) + `sample_data/` + tests
-  - [x] Frontend shell (Vite + React + TS + Tailwind + shadcn/ui, design tokens, health badge via proxy)
-  - [x] `setup.bat`/`run.bat` + `setup.sh`/`run.sh`
-  - [x] GitHub Actions CI (pytest, ruff, frontend lint/tsc/build, windows-latest backend)
-  - [x] Minimal README; wrap-up, self-review, PR
+  - [x] Founder notes: answers to the M0 questions recorded (HANDOVER + PRD §12); `frontend/.vite/` in `.gitignore`
+  - [x] `engine/lineage.py`, `engine/schema.py` (canonical tables + header synonyms), `engine/ingest.py` (CSV/XLSX, `mappings.json`)
+  - [x] `engine/duckdb_engine.py` (workspace DB, locking) + `engine/sql_guard.py` (read-only, single SELECT, allow-list, limits)
+  - [x] `engine/metrics.py`: every §F1 routine with Lineage + golden tests (expected values computed independently with `Decimal`)
+  - [x] `engine/scenario.py` (<200 ms) + sensitivity, `engine/montecarlo.py` (1,000 runs <1 s, seeded)
+  - [x] `engine/decision_science.py` (MCDA, EV, decision trees, kill criteria), `engine/calibration.py` (Brier)
+  - [x] REST: `/api/data/*`, `/api/metrics/*`, `/api/scenario*` + API tests
+  - [x] Wrap-up: checks, self-review, HANDOVER (Windows checklist with Excel spot-checks), PR, CI
 
 ## Current state
-**M0 is complete.** What works:
-- **Backend** (`backend/`, Python 3.11, FastAPI). Started with `uvicorn --factory app.main:create_app` (no module-level
-  app, so importing never reads `.env`). `GET /api/health` always answers 200 and reports `ok` or `degraded`, with one
-  entry each for `ollama` (reachable, models pulled), `qdrant` (optional), `cloud` (from config only, never shows secrets),
-  `gpu` (NVML through the optional `gpu` extra) and `storage` (workspace folders writable). Probes run concurrently
-  with timeouts and never raise.
-- **Config** (`app/config.py`, pydantic-settings) reads `<repo>/.env`. Relative paths resolve against the repo root,
-  workspace ids are validated (no path tricks), and `effective_deep_provider()` falls back to Ollama unless
-  `CLOUD_ALLOWED=true` and credentials exist.
-- Empty packages with docstrings for `llm/`, `agents/` (+ `prompts/`), `decision/`, `engine/`, `vault/` and `voice/`
-  (PRD §10 layout).
-- **Demo data**: `scripts/generate_demo_data.py` writes Northwind Analytics (seed 42, USD, 2024-11..2026-10) to
-  `sample_data/`: 7 CSVs, one XLSX (a sheet per table), `meta.json` and a data dictionary in `sample_data/README.md`.
-  Money is computed in integer cents, so the cash identities reconcile exactly. At the end: 142 active customers, MRR
-  about $255k, 27 staff, net burn about $176k/month, cash about $1.84M (runway roughly 10 months). `--currency INR`
-  scales by a fixed 84.
-- **Frontend** (`frontend/`, Vite 7, React 18, strict TypeScript, Tailwind 3, shadcn/ui primitives `Button`, `Badge`
-  and `Card`). Design tokens ("Graphite & Signal") are CSS variables in `src/index.css`, mapped in `tailwind.config.ts`.
-  Fonts are bundled locally (`@fontsource`), so the app works offline. The layout follows `Main.dc.html`: top bar
-  (workspace, data status, privacy badge, live service health), Advisor panel, canvas and agent rail, with honest
-  empty states that name the milestone each feature arrives in. The health badge polls `/api/health` every 15 s
-  through the Vite proxy (3000 → 8000) and labels every status in text.
-- **Scripts**: `setup.bat`/`run.bat` and `setup.sh`/`run.sh` (drafts; finalised in M6). Tested `.sh` in the
-  container; the `.bat` files are untested (no Windows here).
-- **CI** (`.github/workflows/ci.yml`): the backend runs ruff and pytest on ubuntu and windows-latest, plus a
-  reproducibility check that the CSV/JSON demo data matches the generator. The frontend runs lint, tsc, vitest and build.
+**M1 is complete** (PR awaiting the founder's Major gate). M0 behaviour is unchanged. What works:
+- **Ingestion** (`app/engine/ingest.py`, `schema.py`): CSV (UTF-8, falls back to Windows-1252) and XLSX (every sheet).
+  Each sheet maps onto one of 7 canonical tables (`pnl`, `bank_balance`, `customers`, `subscriptions`, `pipeline`,
+  `marketing_spend`, `headcount`): explicit choice > saved mapping > file or sheet name > best header match. Headers
+  map through synonyms (e.g. `Period` → `month`, `Line Item` → `account`, `Cost of Sales` → `COGS`). Values are parsed
+  strictly (`$1,234.50`, `(500)`, `Oct 2026`, Excel dates, `25%`). One bad cell rejects the whole file with row-level
+  errors, and the previous data stays. `bank_balance` must have one row per month. Loading replaces the table.
+  Mappings are saved to `data/<ws>/mappings.json`.
+  Every row keeps `_source_file`, `_source_sheet` and `_source_row` (= CSV record / Excel row number, header = 1).
+- **DuckDB** (`duckdb_engine.py`): `data/<ws>/founder.duckdb`. Short-lived connections behind a lock, and **external
+  file access is disabled on every connection**.
+- **SQL guard** (`sql_guard.py`): exactly one SELECT; tables are read from the parsed AST (CTE-aware) and must be
+  canonical tables; no table functions (`read_csv`, `glob`…), file paths, system catalogs or `_internal` tables. It
+  runs DuckDB's canonical re-serialisation of the validated AST (so comments and `;` cannot change it) on a
+  read-only connection with a row limit (+ truncation flag) and a time limit (`interrupt()`).
+- **Metrics** (`metrics.py`): 18 routines, each returning `MetricResult {value, unit, as_of, detail, lineage}`.
+  Lineage = the exact SQL executed, the source files and row ranges, the formula, the named inputs and the period. Definitions
+  and default windows are in the module docstring. Defaults: burn and runway use the **trailing 3 months**, gross
+  margin is the as-of month, MRR is point-in-time, and NRR uses a 12-month lookback.
+- **Scenario** (`scenario.py`): drivers are measured from DuckDB over the trailing 3 months (with lineage) and cached per
+  DB version, then a NumPy recurrence (documented in `RECURRENCE`) is applied. Inputs: price %, churn points, CAC %,
+  acquisition %, marketing %, hires (+ optional cost), other spend, start month, horizon (≤ 36). The response time is about
+  3–10 ms warm and about 150 ms cold. Sensitivity: a 2-variable grid (≤ 11 × 11) of cash at the horizon or runway.
+- **Monte Carlo** (`montecarlo.py`): normal/uniform/triangular distributions on any adjustment; seeded; P10/P50/P90
+  cash fan, runway P10/P50/P90 and P(cash < 0) within the horizon and 12 months. 1,000 runs take about 5 ms warm.
+- **Decision science** (`decision_science.py`): weighted scoring with 2×2 quadrants (Quick win / Big bet / Fill-in /
+  Deprioritise), expected value, decision trees with rollback and policy (e.g. "pilot first"), and kill criteria
+  evaluated on live metrics. **Calibration** (`calibration.py`): a JSON store of predictions, outcomes and Brier per owner.
+- **REST**: `/api/data/{tables,mappings,load-sample,upload,query}`, `/api/metrics` (index), `/api/metrics/summary`
+  (`{metrics, unavailable}`: one metric that cannot be computed does not fail the rest),
+  `/api/metrics/{name}`, `/api/metrics/cash-projection`, `/api/metrics/kill-criteria`, `/api/scenario`,
+  `/api/scenario/sensitivity`, `/api/scenario/montecarlo`. Engine errors map to 409 (no data), 422 (bad input or
+  file), 400 (SQL rejected), 413 (upload too big) and 415 (wrong type). Uploads are kept in `data/<ws>/uploads/`.
+- **Startup**: an empty workspace is loaded with `sample_data/` (`AUTO_LOAD_SAMPLE_DATA=true`; failures only log).
 
-Stubbed or faked: nothing in delivered features. Advisor input, mic and Settings are visibly disabled until M3a, M5
-and M4. Tests use fakes (httpx `MockTransport`, a fake NVML, fake probes).
+Northwind headline numbers (as of 2026-10): MRR $255,344.27 (142 customers), ARR $3,064,131.24, gross burn
+$428,612.47/month, net burn $172,280.47/month (3-month average), cash $1,835,125.06, **runway 10.65 months (zero cash
+2027-09)**, gross margin 72.13 %, blended CAC $26,261.27, LTV:CAC 2.92, CAC payback 20.4 months, NRR 99.2 %.
 
-Known issues:
-- `npm audit` reports 12 moderate advisories, all inside eslint/typescript-eslint (a minimatch ReDoS); they are
-  lint-time only. The critical and high Vite/Vitest advisories were fixed by moving to Vite 7 and Vitest 4.
-- Vite 7 needs Node 20.19+ or 22.12+ (Node 22 LTS recommended).
-- pytest shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
+Stubbed or faked: nothing. Not exposed over REST yet: the decision-science and calibration routines (they are engine
+functions that M3's agents call; only kill criteria have an endpoint). There is no frontend change in M1 (the canvas is M4).
 
-## Next steps (for the M1 session)
-1. Read founder feedback below first, and fix any M0 issues found on Windows.
-2. `app/engine/lineage.py`: the `Lineage` model `{metric, sql, source_files, source_rows/range, formula, computed_at}`.
-3. `app/engine/ingest.py` + column mapping (header synonyms, `data/<ws>/mappings.json`). Load the `sample_data/`
-   tables into `data/<ws>/founder.duckdb`. Use `sample_data/README.md` for the schema and built-in identities.
-4. `app/engine/sql_guard.py` (read-only connection, a single SELECT, a table allow-list, row and time limits).
-5. `app/engine/metrics.py`: every PRD §F1 routine returns value + Lineage. Golden tests come from `sample_data`
-   (compute the expected numbers independently in the tests with `Decimal`, as `tests/test_demo_data.py` does).
-6. `scenario.py` (<200 ms), sensitivity, `montecarlo.py` (1,000 runs <1 s, seeded), `decision_science.py`
-   (MCDA, EV and decision trees, kill criteria) and `calibration.py` (Brier).
-7. REST: `/api/data/*`, `/api/metrics/*`, `/api/scenario`. M1 is a **Major** gate: write a thorough Windows checklist
-   with expected numbers.
+Known issues / notes:
+- The scenario's **projected** base runway (11.23 months, zero cash 2027-10) is longer than the **metric** runway
+  (10.65 months), because the projection keeps acquiring customers (MRR grows) whereas the metric divides today's cash by
+  the trailing average burn. Both are labelled. The UI (M4) should show which one it uses.
+- CAC uses P&L operating-expense accounts whose names contain "sales", "marketing" or "commission". Real charts of
+  accounts may need a mapping UI (M4).
+- If another program (e.g. the DuckDB CLI) holds `founder.duckdb` open, the backend cannot open it and requests fail.
+- The first Monte Carlo call after start-up takes about 1–3 s on Windows (NumPy lazy imports / Defender scan); later calls
+  take about 5 ms.
+- `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
+- `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
+
+## Next steps (for the M2 session)
+0. **Gate check:** M1 is a **Major** gate. Do not start M2 until the Gate log row for M1 says `ACCEPTED`. If the
+   founder reported issues, fix them first (a bug-fix PR).
+1. Read founder feedback below; fix any M1 issues found on Windows (wrong numbers take priority over everything).
+2. M2 (PRD §F2): `app/vault/manager.py` (frontmatter, wikilinks + aliases, backlinks `.index/links.json`, rename-safe
+   updates), `watcher.py` (watchfiles), parsers (PDF via pypdf, CSV/XLSX summary rows, MD/TXT).
+3. `engine/chunking.py` (parent ≈1000 / child ≈250 tokens, tiktoken `cl100k_base`), embeddings behind an interface
+   (Ollama `nomic-embed-text` + fake), Qdrant store + in-memory fallback, BM25 (`rank-bm25`), RRF (k=60).
+4. `/api/vault/*`, `/api/search`; tests with fake embeddings and an in-memory vector store.
+5. Later (M3a): expose decision-science and calibration as Financial Analyst tools; add REST for them if the UI needs it.
 
 ## Windows verification checklist (for the founder)
-**M0 (Light tier).** Run in a terminal (cmd or PowerShell) from the repo folder after checking out the PR branch.
-1. `node --version` should print v22.x (or v20.19 or newer). `py -3.11 --version` should print Python 3.11.x or newer.
-2. `setup.bat`: it should finish with "Setup complete". Warnings about Docker or Ollama are fine if they are not
-   installed. It creates `.env`, `.venv` and `frontend\node_modules`.
-3. `run.bat`: two windows open (backend, frontend) and the browser opens http://127.0.0.1:3000.
-4. The page shows the dark FounderOS layout: Advisor panel on the left, "No decision open yet" in the centre,
-   "Local only" badge top right.
-5. The service-health strip shows Ollama, Qdrant, Cloud, GPU and Storage. With Ollama running and models pulled,
-   Ollama has a green dot and no "(down)". With Docker Desktop running, Qdrant is green. With the NVIDIA driver,
-   the GPU shows `GPU x.x/12.0 GB`. Storage is green.
-6. Open http://127.0.0.1:8000/api/health: JSON with `"status": "ok"` when Ollama, Qdrant and GPU are all up
-   (otherwise `"degraded"` with a reason per dependency).
-7. Stop Ollama (quit it from the tray) and wait 15 s: the badge shows `Ollama (down)` and the page keeps working.
-8. Close the backend window: within 15 s the strip shows "Backend offline" and the privacy badge says
-   "Privacy status unknown".
-9. Optional: `.venv\Scripts\python scripts\generate_demo_data.py`, then `git status sample_data` shows
-   no CSV/JSON changes (the demo data is reproducible on Windows).
-10. Optional: open `sample_data\northwind_financials.xlsx` in Excel: 7 sheets, with figures that look plausible.
-11. Python selection (founder feedback): delete `.venv`, run `setup.bat`. It should print `Using Python 3.12.x via "py -3.12"`
-    and show no 3.13+ warning. Then `run.bat` starts as before.
+**M1 (Major tier, about 30 min).** Check out the PR branch (`git fetch origin` then `git checkout claude/m1-financial-spine`),
+run `setup.bat` once (it installs the new `numpy` and `python-multipart` packages), then `run.bat`. When done, write
+`ACCEPTED` (or the issues) in the Gate log row for M1.
+
+*Start-up and data*
+1. The backend window logs `Loaded sample data from ...\sample_data (7 tables)` on the first start (empty workspace).
+   `data\default\founder.duckdb` now exists.
+2. Open http://127.0.0.1:8000/docs: the new sections are **data**, **metrics** and **scenario**. In **GET /api/data/tables**, click
+   "Try it out" → "Execute": 7 loaded tables (pnl 360 rows, bank_balance 24, customers 198, subscriptions 2535,
+   pipeline 396, marketing_spend 72, headcount 29).
+
+*Numbers: spot-check these against Excel* (open `sample_data\northwind_financials.xlsx`)
+3. http://127.0.0.1:8000/api/metrics/summary (shown as JSON in the browser) lists under `metrics`: `mrr` 255344.27, `net_burn`
+   172280.47, `gross_burn` 428612.47, `runway` 10.65, `gross_margin` 0.7213; `unavailable` is `{}`.
+4. **Burn** (sheet `bank_balance`, rows **23–25** = 2026-08, 2026-09, 2026-10; column F = `cash_out`, C = `customer_receipts`):
+   - Gross burn = `=AVERAGE(F23:F25)` → **428,612.47**
+   - Net burn = `=AVERAGE(F23:F25)-AVERAGE(C23:C25)` → **172,280.47** (same as `=-AVERAGE(G23:G25)`, since there is no
+     financing in those months)
+   - http://127.0.0.1:8000/api/metrics/net_burn shows `lineage.source_rows[0].rows` = `"23-25"`: the same rows.
+5. **Runway** = `=H25/(AVERAGE(F23:F25)-AVERAGE(C23:C25))` (H25 = closing balance **1,835,125.06**) → **10.65 months**.
+   http://127.0.0.1:8000/api/metrics/runway shows `value` 10.65 and `detail.zero_cash_month` **2027-09** (cash runs out
+   during the 11th month after Oct 2026).
+6. **Gross margin, Oct 2026** (sheet `pnl`, rows **347–361** are 2026-10; columns A month, C category, D amount):
+   - Revenue `=SUMIFS(D:D,A:A,"2026-10",C:C,"Revenue")` → **257,844.27** (rows 347–348)
+   - COGS `=SUMIFS(D:D,A:A,"2026-10",C:C,"COGS")` → **71,850.06** (rows 349–351)
+   - Gross margin = (257,844.27 − 71,850.06) / 257,844.27 → **72.13 %**. http://127.0.0.1:8000/api/metrics/gross_margin
+     shows `value` 0.7213 and the lineage rows `347-351`.
+7. Optional, **MRR**: sheet `subscriptions` `=SUMIFS(C:C,A:A,"2026-10")` → **255,344.27** (rows 2395–2536, 142
+   customers). It equals `pnl` row 347 "Subscription revenue".
+
+*Scenario and Monte Carlo* (on /docs, use "Try it out")
+8. **POST /api/scenario** with body `{"price_change_pct": 10, "churn_change_pts": 2}` → `points` has 12 months from
+   2026-11; `base_runway_months` 11.23 and `scenario_runway_months` 10.99; `elapsed_ms` well under 200.
+9. **POST /api/scenario/sensitivity** with body `{}` → a 5×5 `table` of runway months (price −20…+20 % × churn
+   −1…+3 points); `table[2][1]` (3rd row = price 0, 2nd column = churn 0) equals `base_value` 11.23.
+10. **POST /api/scenario/montecarlo** with body `{}` → `runs` 1000, `points` with p10 ≤ p50 ≤ p90, `runway_p50` about
+    11.3, `probability_cash_out_within_12_months` about 0.8. Run it twice: the results are identical (seeded).
+
+*Safety and uploads*
+11. **POST /api/data/query** with `{"sql": "DROP TABLE pnl"}` → 400 "Only SELECT queries are allowed". With
+    `{"sql": "SELECT * FROM read_csv('C:/Windows/win.ini')"}` → 400 "Table functions ... are not allowed".
+    With `{"sql": "SELECT category, sum(amount) FROM pnl GROUP BY 1"}` → 200 with three rows.
+12. **POST /api/data/upload** with `sample_data\northwind_financials.xlsx` → 200 with 7 tables (sheets mapped by
+    name); the metrics in step 3 are unchanged. A `.txt` file gives 415.
+13. Optional: Excel export with your own headers: save a sheet with columns `Period, Line Item, Type, Value` as CSV and
+    upload it. It maps to `pnl` (see `GET /api/data/mappings`). Then **POST /api/data/load-sample** to restore the demo data.
+14. Regression: the M0 page at http://127.0.0.1:3000 still loads, and the health strip works as before.
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
@@ -152,10 +197,11 @@ _Write results from your Windows checks, bugs and change requests here. The next
   Re-test: checklist step 11.
 
 ## Open questions for founder
-1. Demo currency: USD is the default; INR is available with `--currency INR` (fixed rate 84). Should the shipped
-   `sample_data/` be INR instead?
-2. Runway in the demo data is about 10 months at the end of the window. Is that the right level of tension for the
-   demo (for example, so the Dubai scenario pushes it into the amber "under 3 months" band)?
+_None open._
+
+Answered (2026-11-03, founder note at the start of the M1 session):
+1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
+2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
 ## Decisions made
 See PRD §12 (Decision log). Summary of the planning session on 2026-11-02:
@@ -173,6 +219,14 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+- 2026-11-03 (M1 session, 05:48 UTC onwards, local on the founder's PC): engine core (lineage, schema + column
+  mapping, ingest, DuckDB with external access disabled, SQL guard, 18 metric routines); scenario + sensitivity,
+  Monte Carlo, decision science, calibration; REST endpoints; backend tests including golden tests against an
+  independent Decimal re-computation. Push needed the GitHub noreply email (repo-local `user.email`; see Decisions).
+- 2026-11-03 (M1 self-review, `/code-review high`): 10 findings, all fixed with regression tests: money parsing
+  ("Rs. 1,000" read as 0.10; "$(1,000)" lost its sign), duplicate bank months, a CTE-scope bypass in the SQL guard,
+  trailing comments breaking guarded SQL, the summary failing on one metric, a sensitivity 500, interpolated Monte Carlo
+  runway percentiles, undecodable CSV / DECIMAL overflow giving 500s, and a dead registry class. 250 backend tests.
 - 2026-11-02: Planning session. Agreed scope with the founder and wrote PRD v2, GOAL_PROMPT, CLAUDE.md and HANDOVER.md.
 - 2026-11-02: Added the agent design (F3, F4b), decision models (F7) and decision-science routines to the PRD; split M3; started the UI mock-ups in Claude Design.
 - 2026-11-02 (M0 session, 15:47 to ~16:15 UTC): backend scaffold with config and the `/api/health` probes; Northwind
@@ -183,6 +237,21 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M1 session)
+- Months are stored as `YYYY-MM` text, money as `DECIMAL(18,2)`; money sums run in DuckDB, ratios in Python `Decimal`
+  (money rounded to cents and ratios to 4 dp, half-up). The API returns plain JSON numbers.
+- Burn is **operating** burn: net burn = cash_out − customer_receipts (financing excluded), averaged over the trailing
+  3 months. Runway = closing cash ÷ net burn; zero-cash month = as-of month + ceil(runway).
+- Loading a file **replaces** its table. Ingestion is all-or-nothing per file (strict parsing, row-level errors).
+- Every DuckDB connection runs with `enable_external_access=false`; agent SQL goes through the AST-based guard on a
+  read-only connection.
+- Scenario drivers come from DuckDB (with lineage) and the projection is a deterministic NumPy recurrence shared by the
+  scenario, sensitivity and Monte Carlo code; drivers are cached per DB version.
+- Empty workspaces auto-load the Northwind data at startup (`AUTO_LOAD_SAMPLE_DATA`, default true).
+- New backend dependencies: `numpy` (Monte Carlo, named in the PRD) and `python-multipart` (FastAPI uploads).
+- Git: the founder's GitHub account blocks pushes that expose the private email, so this repo has a **repo-local**
+  `user.email` = the GitHub noreply address (`134863931+Sree1959GIT@users.noreply.github.com`). The global config is unchanged.
 
 ## Decisions made (M0 session)
 - Python venv at the repo root (`.venv`); backend installed editable from `backend/pyproject.toml` (extras: `dev`, `gpu`).

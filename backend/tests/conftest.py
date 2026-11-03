@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import Settings
+from app.config import PROJECT_ROOT, Settings
 from app.deps import get_probes
+from app.engine.duckdb_engine import FinanceDB
+from app.engine.ingest import ingest_directory
 from app.main import create_app
 from app.probes import DependencyProbe, DependencyState, DependencyStatus
 
@@ -35,7 +37,9 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     # _env_file=None: never read a developer's real .env during tests.
-    return Settings(_env_file=None, data_dir=tmp_path / "data", vault_path=tmp_path / "vault")
+    return Settings(
+        _env_file=None, data_dir=tmp_path / "data", vault_path=tmp_path / "vault", auto_load_sample_data=False
+    )
 
 
 @pytest.fixture
@@ -53,3 +57,16 @@ def make_client(settings: Settings) -> Iterator[object]:
     yield _make
     for client in clients:
         client.__exit__(None, None, None)
+
+
+@pytest.fixture(scope="session")
+def loaded_db(tmp_path_factory: pytest.TempPathFactory) -> FinanceDB:
+    """The Northwind sample data loaded once per test session. Tests must not write to it."""
+    db = FinanceDB(tmp_path_factory.mktemp("finance") / "default")
+    ingest_directory(db, PROJECT_ROOT / "sample_data")
+    return db
+
+
+@pytest.fixture
+def empty_db(tmp_path: Path) -> FinanceDB:
+    return FinanceDB(tmp_path / "ws")
