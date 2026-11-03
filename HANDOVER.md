@@ -54,7 +54,7 @@
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
 | M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
 | M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | ACCEPTED (SM, 2026-11-03) after re-test R1–R8 on Windows; fix in #4 |
-| M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | AWAITING FOUNDER |
+| M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
 
 ## Current session
 - Started (UTC): 2026-11-03 13:29 (local Windows 11 session, founder's PC); wrapped up ~14:15
@@ -271,6 +271,17 @@ To start again with a fresh demo vault: stop `run.bat`, delete `vault\default`, 
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M2] Fallback warning shows "(None)" instead of the reason
+- Did: stopped the Ollama container, then searched
+- Expected: warning names the reason, e.g. "Ollama not reachable"
+- Got: `semantic search unavailable (None); using keyword search (BM25) only` (the first search had the full ConnectError reason; later searches during the 30 s retry window show None)
+- Priority: low (fix at the start of M3a)
+
+### [Setup] Ollama runs in Docker on the founder's PC; qwen2.5 not pullable yet
+- Ollama is the `ollama/ollama:0.32.1` container from my n8n stack (port 11434, GPU confirmed: 100% GPU). There is no `ollama` command on Windows, so setup.bat warns "Ollama not found" (harmless)
+- `nomic-embed-text` pulled OK. Every `qwen2.5:7b*` tag fails at "pulling manifest: EOF" (other models pull fine), so health shows "Ollama (degraded)"
+- Decision needed before M3a: retry qwen2.5, switch to a newer Qwen, or use another local model; record it in PRD §12
+- Priority: medium (blocks the M3a Ollama run, not M2)
 ### [M1] Projected runway (11.23) differs from runway metric (10.65); growth assumption is hidden
 - Did: ran the M1 Windows checklist. Items 1–12 and 14 all pass; every number matches Excel
 - Expected: when the runway card and the scenario chart show different runways, the reason is visible and I can change it
