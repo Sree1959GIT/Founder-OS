@@ -135,6 +135,8 @@ Known issues:
 9. Optional: `.venv\Scripts\python scripts\generate_demo_data.py`, then `git status sample_data` shows
    no CSV/JSON changes (the demo data is reproducible on Windows).
 10. Optional: open `sample_data\northwind_financials.xlsx` in Excel: 7 sheets, with figures that look plausible.
+11. Python selection (founder feedback): delete `.venv`, run `setup.bat`. It should print `Using Python 3.12.x via "py -3.12"`
+    and show no 3.13+ warning. Then `run.bat` starts as before.
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
@@ -145,6 +147,10 @@ _Write results from your Windows checks, bugs and change requests here. The next
 - Fix wanted: try `py -3.12`, then `py -3.11`, then `python`; warn if the chosen version is 3.13 or newer (later ML/voice wheels may be missing). Update run.bat/README to match
 - Priority: low
 - M0 checklist: items 1–8 passed on RTX 4080 Laptop (Node v24.13.1, Python 3.12 venv); Ollama not installed yet
+- **Resolved (2026-11-03, same PR):** `setup.bat` now tries `py -3.12`, then `py -3.11`, then `python`, and prints
+  the version it chose. `setup.bat`, `run.bat` and `setup.sh` warn when `.venv` is Python 3.13+. The README recommends 3.12.
+  Re-test: checklist step 11.
+
 ## Open questions for founder
 1. Demo currency: USD is the default; INR is available with `--currency INR` (fixed rate 84). Should the shipped
    `sample_data/` be INR instead?
@@ -174,6 +180,9 @@ Second planning round (2026-11-02):
   README. Self-review found 9 issues, all fixed with regression tests. The first CI run caught a Windows-only bug
   (`meta.json` written with CRLF); it was fixed by forcing LF, with a test. 55 backend tests and 5 frontend tests pass, and CI is
   green on ubuntu and windows-latest.
+
+- 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
+  3.13+ warning in setup and run scripts; README updated.
 
 ## Decisions made (M0 session)
 - Python venv at the repo root (`.venv`); backend installed editable from `backend/pyproject.toml` (extras: `dev`, `gpu`).

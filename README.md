@@ -11,7 +11,9 @@ ships a synthetic demo company. Features arrive milestone by milestone; see [`HA
 - Current state and next steps: [`HANDOVER.md`](HANDOVER.md)
 
 ## Requirements
-- Python 3.11+
+- Python 3.12 (recommended) or 3.11. Newer versions (3.13+) start, but setup warns because later ML/voice
+  packages (milestones M2–M5) may not ship wheels for them yet. `setup.bat` picks `py -3.12`, then `py -3.11`, then
+  `python`.
 - Node.js 22 LTS (or 20.19+)
 - Optional: [Ollama](https://ollama.com/download) (local LLM) and Docker Desktop (Qdrant vector search).
   Without them the app still starts and the health badge says what is missing.

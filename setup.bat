@@ -6,21 +6,27 @@ cd /d "%~dp0"
 
 echo == FounderOS setup ==
 
-rem --- Python 3.11+ -------------------------------------------------------------
+rem --- Python: prefer 3.12, then 3.11, then whatever "python" is ------------------
+rem 3.13+ works today, but later ML/voice packages may not ship wheels for it yet.
 set "PY="
-where py >nul 2>nul && (py -3.11 --version >nul 2>nul && set "PY=py -3.11")
+where py >nul 2>nul
+if not errorlevel 1 (
+  py -3.12 --version >nul 2>nul && set "PY=py -3.12"
+  if not defined PY py -3.11 --version >nul 2>nul && set "PY=py -3.11"
+)
 if not defined PY (
   where python >nul 2>nul && set "PY=python"
 )
 if not defined PY (
-  echo [ERROR] Python 3.11+ not found. Install it from https://www.python.org/downloads/ and re-run.
+  echo [ERROR] Python not found. Install Python 3.12 from https://www.python.org/downloads/ and re-run.
   exit /b 1
 )
 %PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
 if errorlevel 1 (
-  echo [ERROR] Python 3.11 or newer is required.
+  echo [ERROR] Python 3.11 or newer is required; found an older one via "%PY%". Install Python 3.12.
   exit /b 1
 )
+for /f "delims=" %%V in ('%PY% --version') do echo Using %%V via "%PY%"
 
 rem --- Node 20+ ----------------------------------------------------------------
 where node >nul 2>nul
@@ -41,6 +47,11 @@ if not exist ".venv\Scripts\python.exe" (
   %PY% -m venv .venv || exit /b 1
 )
 echo Installing backend dependencies ...
+".venv\Scripts\python.exe" -c "import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)"
+if errorlevel 1 (
+  echo [WARN] .venv uses Python 3.13 or newer. Later ML/voice packages may lack wheels for it.
+  echo        Recommended: install Python 3.12, delete the .venv folder and run setup.bat again.
+)
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul || exit /b 1
 ".venv\Scripts\python.exe" -m pip install -e "backend[dev,gpu]" || exit /b 1
 

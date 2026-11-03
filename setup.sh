@@ -7,7 +7,8 @@ echo "== FounderOS setup =="
 
 PY="${PYTHON:-}"
 if [[ -z "$PY" ]]; then
-  for candidate in python3.11 python3.12 python3.13 python3; do
+  # Prefer 3.12, then 3.11. 3.13+ works today, but later ML/voice packages may lack wheels for it.
+  for candidate in python3.12 python3.11 python3; do
     if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
   done
 fi
@@ -19,7 +20,12 @@ command -v node >/dev/null 2>&1 || { echo "[ERROR] Node.js 22 LTS (or 20.19+) is
 
 [[ -f .env ]] || { cp .env.example .env; echo "Created .env from .env.example"; }
 
+echo "Using $("$PY" --version) via $PY"
 [[ -x .venv/bin/python ]] || "$PY" -m venv .venv
+if ! .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)'; then
+  echo "[WARN] .venv uses Python 3.13 or newer. Later ML/voice packages may lack wheels for it." >&2
+  echo "       Recommended: install Python 3.12, delete .venv and run ./setup.sh again." >&2
+fi
 .venv/bin/python -m pip install --upgrade pip >/dev/null
 .venv/bin/python -m pip install -e "backend[dev]"
 
