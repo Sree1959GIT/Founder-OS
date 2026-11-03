@@ -26,3 +26,9 @@ Money columns have two decimals in the currency named in `meta.json`. Months are
 - Payroll lines = active employees' `annual_salary × 1.15 / 12` by department (Customer Success is booked in COGS).
 - Every "Closed Won" opportunity links to the customer it created (`customer_id`, same signup month and channel).
 - Customers with a `signup_month` before 2024-11 were acquired before the data window.
+
+## Sample vault (`vault/`)
+Hand-written Markdown notes for the same company (profile, pricing and churn notes, a hiring decision, a journal
+entry, a Q3 board update and a competitor price list). On first start they are copied into an empty vault
+(`vault/<workspace>/`, `AUTO_LOAD_SAMPLE_VAULT=true`) so search has something to find. They are not generated and
+not part of the golden numbers; the financial engine stays the source of truth for every figure.

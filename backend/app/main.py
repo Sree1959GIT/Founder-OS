@@ -6,6 +6,7 @@ app, so importing this module never reads `.env` or the environment.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,7 +17,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app import __version__
-from app.api import data, health, metrics, scenario
+from app.api import data, health, metrics, scenario, vault
 from app.config import Settings, get_settings
 from app.deps import FinanceServices
 from app.engine.calibration import CalibrationError
@@ -25,6 +26,8 @@ from app.engine.ingest import IngestError, ingest_directory
 from app.engine.metrics import MetricError
 from app.engine.sql_guard import SqlGuardError
 from app.logging_setup import configure_logging
+from app.vault.manager import NoteExistsError, NoteNotFoundError, VaultError, VaultPathError
+from app.vault.service import VaultService
 
 
 def load_sample_data_if_empty(settings: Settings, services: FinanceServices) -> None:
@@ -58,6 +61,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.finance = {}
         services = app.state.finance.setdefault(str(settings.workspace_data_dir()), FinanceServices(settings))
         load_sample_data_if_empty(settings, services)
+        app.state.vaults = {}
+        vault_service = app.state.vaults.setdefault(str(settings.workspace_vault_dir()), VaultService(settings))
+        # Index in a worker thread so startup never waits for parsing or embeddings (PRD R3).
+        indexing = asyncio.get_running_loop().run_in_executor(None, vault_service.ensure_started)
+        if settings.vault_watch:
+            await vault_service.start_watcher()
         logger.info(
             "FounderOS backend {} started (workspace={}, data={})",
             __version__,
@@ -67,6 +76,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await vault_service.stop_watcher()
+            if not indexing.done():
+                logger.info("Shutting down while the vault is still indexing")
             await app.state.http_client.aclose()
 
     app = FastAPI(title="FounderOS", version=__version__, lifespan=lifespan)
@@ -83,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(data.router, prefix="/api")
     app.include_router(metrics.router, prefix="/api")
     app.include_router(scenario.router, prefix="/api")
+    app.include_router(vault.router, prefix="/api")
     _add_error_handlers(app)
     return app
 
@@ -104,3 +117,7 @@ def _add_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(MetricError, handler(422))
     app.add_exception_handler(SqlGuardError, handler(400))
     app.add_exception_handler(CalibrationError, handler(422))
+    app.add_exception_handler(VaultPathError, handler(400))
+    app.add_exception_handler(NoteNotFoundError, handler(404))
+    app.add_exception_handler(NoteExistsError, handler(409))
+    app.add_exception_handler(VaultError, handler(422))

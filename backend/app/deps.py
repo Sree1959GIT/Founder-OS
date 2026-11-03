@@ -13,6 +13,7 @@ from app.engine.duckdb_engine import FinanceDB
 from app.engine.metrics import MetricsEngine
 from app.engine.scenario import ScenarioEngine
 from app.probes import CloudProvidersProbe, DependencyProbe, GpuProbe, OllamaProbe, QdrantProbe, StorageProbe
+from app.vault.service import VaultService
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -58,3 +59,19 @@ def get_finance(request: Request, settings: SettingsDep) -> FinanceServices:
 
 
 FinanceDep = Annotated[FinanceServices, Depends(get_finance)]
+
+
+def get_vault(request: Request, settings: SettingsDep) -> VaultService:
+    """The workspace vault, started on first use and ready for keyword search (sync dependency: runs in a thread)."""
+    registry: dict[str, VaultService] = request.app.state.vaults
+    key = str(settings.workspace_vault_dir())
+    service = registry.get(key)
+    if service is None:
+        service = registry.setdefault(key, VaultService(settings))
+    if not service.ready.is_set():
+        service.ensure_started()
+        service.wait_ready()
+    return service
+
+
+VaultDep = Annotated[VaultService, Depends(get_vault)]

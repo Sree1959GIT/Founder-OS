@@ -32,13 +32,31 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in Settings.model_fields:
         monkeypatch.delenv(name.upper(), raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
+    # Any Settings() built in a test stays offline: no Ollama, no Qdrant, no tiktoken download, no file watcher.
+    for name, value in {
+        "EMBED_PROVIDER": "fake",
+        "VECTOR_STORE": "memory",
+        "TOKENIZER": "approx",
+        "VAULT_WATCH": "false",
+        "AUTO_LOAD_SAMPLE_VAULT": "false",
+    }.items():
+        monkeypatch.setenv(name, value)
 
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     # _env_file=None: never read a developer's real .env during tests.
+    # Vault defaults for tests: fake embeddings, in-memory vectors, offline tokenizer, no watcher, empty vault.
     return Settings(
-        _env_file=None, data_dir=tmp_path / "data", vault_path=tmp_path / "vault", auto_load_sample_data=False
+        _env_file=None,
+        data_dir=tmp_path / "data",
+        vault_path=tmp_path / "vault",
+        auto_load_sample_data=False,
+        auto_load_sample_vault=False,
+        embed_provider="fake",
+        vector_store="memory",
+        tokenizer="approx",
+        vault_watch=False,
     )
 
 
