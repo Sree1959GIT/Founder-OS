@@ -17,7 +17,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app import __version__
-from app.api import data, health, metrics, scenario, vault
+from app.agents.setup import build_orchestrator
+from app.api import chat, data, health, metrics, scenario, vault
 from app.config import Settings, get_settings
 from app.deps import FinanceServices
 from app.engine.calibration import CalibrationError
@@ -67,6 +68,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         indexing = asyncio.get_running_loop().run_in_executor(None, vault_service.ensure_started)
         if settings.vault_watch:
             await vault_service.start_watcher()
+        orchestrator = build_orchestrator(settings, services, vault_service)
+        app.state.event_bus = orchestrator.bus
+        app.state.orchestrator = orchestrator
+        logger.info(
+            "Agents ready: local LLM {}:{} (thinking {}), deep provider {}, team approval {}",
+            orchestrator.router.local.name,
+            orchestrator.router.local.model,
+            "on" if settings.ollama_think else "off",
+            orchestrator.router.cloud.name if orchestrator.router.cloud else "none (local only)",
+            settings.team_approval,
+        )
         logger.info(
             "FounderOS backend {} started (workspace={}, data={})",
             __version__,
@@ -96,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(metrics.router, prefix="/api")
     app.include_router(scenario.router, prefix="/api")
     app.include_router(vault.router, prefix="/api")
+    app.include_router(chat.router, prefix="/api")
     _add_error_handlers(app)
     return app
 

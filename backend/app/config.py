@@ -47,10 +47,29 @@ class Settings(BaseSettings):
     auto_load_sample_data: bool = True
     max_upload_mb: int = Field(default=20, ge=1, le=500)
 
-    # Local LLM (Ollama)
+    # Local LLM (Ollama: an external service, native app or Docker container)
     ollama_base_url: str = "http://localhost:11434"
-    ollama_chat_model: str = "qwen2.5:7b-instruct-q4_K_M"
+    ollama_chat_model: str = "qwen3:8b"
     ollama_embed_model: str = "nomic-embed-text"
+    # Qwen3 "thinking": off for fast replies and clean JSON / tool calls.
+    ollama_think: bool = False
+    # How long Ollama keeps the chat model in VRAM after a call ("" = Ollama's default, 5 minutes).
+    ollama_keep_alive: str = "30m"
+    ollama_num_ctx: int | None = Field(default=8192, ge=2048, le=131072)
+    # ollama: the local provider is OLLAMA_CHAT_MODEL. fake: scripted offline replies (tests, demos without Ollama).
+    llm_provider: Literal["ollama", "fake"] = "ollama"
+    llm_timeout_s: float = Field(default=180.0, gt=0, le=1800)
+
+    # Agents (M3a)
+    # Who approves the Planner's team before it runs: always | cloud_only (any cloud agent) | never.
+    team_approval: Literal["always", "cloud_only", "never"] = "cloud_only"
+    team_approval_timeout_s: float = Field(default=300.0, gt=0, le=3600)
+    max_local_agents: int = Field(default=2, ge=1, le=16)
+    max_cloud_agents: int = Field(default=6, ge=1, le=32)
+    agent_max_steps: int = Field(default=4, ge=1, le=12)
+    # Decision model (F7): llm (OLLAMA_CHAT_MODEL with JSON output) | fake. Below the confidence: escalate.
+    decision_provider: Literal["llm", "fake"] = "llm"
+    decision_min_confidence: float = Field(default=0.75, ge=0, le=1)
 
     # Vector store (Qdrant, Docker)
     qdrant_host: str = "localhost"

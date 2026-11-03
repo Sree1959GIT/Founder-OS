@@ -34,18 +34,29 @@ def settings() -> Settings:
 
 
 async def test_ollama_ok_when_models_pulled(settings: Settings) -> None:
-    tags = {"models": [{"name": "qwen2.5:7b-instruct-q4_K_M"}, {"name": "nomic-embed-text:latest"}]}
+    tags = {"models": [{"name": "qwen3:8b"}, {"name": "nomic-embed-text:latest"}]}
     async with client_for(**{"/api/tags": tags}) as client:
         status = await OllamaProbe(settings, client).check()
     assert status.state is DependencyState.OK
     assert status.required is True
+    assert status.info["loaded"] == [] and status.detail == "Ollama is running"  # /api/ps failing is harmless
+
+
+async def test_ollama_reports_vram_of_loaded_models(settings: Settings) -> None:
+    """The GPU is shared with other apps (n8n models), so health shows what Ollama holds in VRAM."""
+    tags = {"models": [{"name": "qwen3:8b"}, {"name": "nomic-embed-text:latest"}]}
+    ps = {"models": [{"name": "qwen3:8b", "size_vram": 5583457484}, {"name": "gemma4:latest", "size_vram": 0}]}
+    async with client_for(**{"/api/tags": tags, "/api/ps": ps}) as client:
+        status = await OllamaProbe(settings, client).check()
+    assert status.info["loaded"] == [{"name": "qwen3:8b", "vram_gb": 5.2}, {"name": "gemma4:latest", "vram_gb": 0.0}]
+    assert status.detail == "Ollama is running; in VRAM: qwen3:8b 5.2 GB, gemma4:latest 0.0 GB"
 
 
 async def test_ollama_degraded_when_model_missing(settings: Settings) -> None:
     async with client_for(**{"/api/tags": {"models": [{"name": "nomic-embed-text:latest"}]}}) as client:
         status = await OllamaProbe(settings, client).check()
     assert status.state is DependencyState.DEGRADED
-    assert status.info["missing_models"] == ["qwen2.5:7b-instruct-q4_K_M"]
+    assert status.info["missing_models"] == ["qwen3:8b"]
 
 
 async def test_ollama_unavailable_when_down(settings: Settings) -> None:

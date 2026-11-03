@@ -68,16 +68,39 @@ class OllamaProbe:
             )
         wanted = [self._settings.ollama_chat_model, self._settings.ollama_embed_model]
         missing = [m for m in wanted if not _model_present(m, models)]
+        loaded = await self._loaded()
+        in_vram = ", ".join("{} {} GB".format(m["name"], m["vram_gb"]) for m in loaded)
+        vram = f"; in VRAM: {in_vram}" if loaded else ""
         if missing:
             return DependencyStatus(
                 name=self.name,
                 state=DependencyState.DEGRADED,
                 detail=f"Ollama is running but these models are not pulled: {', '.join(missing)}",
-                info={"missing_models": missing},
+                info={"missing_models": missing, "loaded": loaded},
             )
         return DependencyStatus(
-            name=self.name, state=DependencyState.OK, detail="Ollama is running", info={"models": wanted}
+            name=self.name,
+            state=DependencyState.OK,
+            detail=f"Ollama is running{vram}",
+            info={"models": wanted, "loaded": loaded},
         )
+
+    async def _loaded(self) -> list[dict[str, Any]]:
+        """Models Ollama holds in memory (`/api/ps`) and their VRAM. The GPU may be shared with other apps."""
+        try:
+            response = await self._client.get(
+                f"{self._settings.ollama_base_url}/api/ps", timeout=self._settings.health_probe_timeout_s
+            )
+            response.raise_for_status()
+            raw = response.json().get("models", [])
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return []
+        gib = 1024**3
+        return [
+            {"name": str(m.get("name", "")), "vram_gb": round(float(m.get("size_vram") or 0) / gib, 1)}
+            for m in raw
+            if isinstance(m, dict)
+        ]
 
 
 def _model_present(model: str, available: set[str]) -> bool:

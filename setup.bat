@@ -75,21 +75,46 @@ if errorlevel 1 (
 )
 
 rem --- Ollama models (optional) -------------------------------------------------
-set "OLLAMA_CHAT_MODEL=qwen2.5:7b-instruct-q4_K_M"
+rem Ollama is an external service at OLLAMA_BASE_URL: the native app or a Docker container (e.g. "ollama" shared
+rem with an n8n stack). It is detected over HTTP, so it works without the ollama command on PATH.
+set "OLLAMA_BASE_URL=http://localhost:11434"
+set "OLLAMA_CHAT_MODEL=qwen3:8b"
 set "OLLAMA_EMBED_MODEL=nomic-embed-text"
 for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
+  if /i "%%A"=="OLLAMA_BASE_URL" if not "%%B"=="" set "OLLAMA_BASE_URL=%%B"
   if /i "%%A"=="OLLAMA_CHAT_MODEL" if not "%%B"=="" set "OLLAMA_CHAT_MODEL=%%B"
   if /i "%%A"=="OLLAMA_EMBED_MODEL" if not "%%B"=="" set "OLLAMA_EMBED_MODEL=%%B"
 )
-where ollama >nul 2>nul
-if errorlevel 1 (
-  echo [WARN] Ollama not found. Install it from https://ollama.com/download, then run:
-  echo        ollama pull !OLLAMA_CHAT_MODEL!  and  ollama pull !OLLAMA_EMBED_MODEL!
+set "OLLAMA_VERSION="
+for /f "delims=" %%V in ('powershell -NoProfile -Command "try { (Invoke-RestMethod -Uri '!OLLAMA_BASE_URL!/api/version' -TimeoutSec 5).version } catch { }" 2^>nul') do set "OLLAMA_VERSION=%%V"
+if not defined OLLAMA_VERSION (
+  echo [WARN] Ollama is not answering at !OLLAMA_BASE_URL!/api/version.
+  echo        Start the Ollama app or its Docker container ^(or set OLLAMA_BASE_URL in .env^), then pull:
+  echo        !OLLAMA_CHAT_MODEL! and !OLLAMA_EMBED_MODEL!  ^(Docker: docker exec ollama ollama pull ^<model^>^)
 ) else (
-  ollama pull "!OLLAMA_CHAT_MODEL!" || echo [WARN] Could not pull !OLLAMA_CHAT_MODEL!
-  ollama pull "!OLLAMA_EMBED_MODEL!" || echo [WARN] Could not pull !OLLAMA_EMBED_MODEL!
+  echo Ollama !OLLAMA_VERSION! is running at !OLLAMA_BASE_URL!
+  call :ensure_model "!OLLAMA_CHAT_MODEL!"
+  call :ensure_model "!OLLAMA_EMBED_MODEL!"
 )
 
 echo.
 echo Setup complete. Start FounderOS with run.bat
 endlocal
+exit /b 0
+
+rem --- :ensure_model <name>: report the model, pull it with the CLI, or print the docker exec command --------
+:ensure_model
+powershell -NoProfile -Command "try { $n = @((Invoke-RestMethod -Uri '%OLLAMA_BASE_URL%/api/tags' -TimeoutSec 10).models | ForEach-Object { $_.name }); if (($n -contains '%~1') -or ($n -contains '%~1:latest')) { exit 0 } else { exit 1 } } catch { exit 2 }" >nul 2>nul
+if not errorlevel 1 (
+  echo Ollama model %~1 is pulled
+  exit /b 0
+)
+where ollama >nul 2>nul
+if errorlevel 1 (
+  echo [WARN] Ollama model %~1 is not pulled and the ollama command is not on PATH ^(Ollama in Docker?^). Run:
+  echo        docker exec ollama ollama pull %~1
+  exit /b 0
+)
+set "OLLAMA_HOST=%OLLAMA_BASE_URL%"
+ollama pull "%~1" || echo [WARN] Could not pull %~1
+exit /b 0
