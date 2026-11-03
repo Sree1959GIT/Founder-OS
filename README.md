@@ -3,9 +3,11 @@
 A local-first decision copilot for business owners. It combines a Socratic voice advisor, a deterministic
 DuckDB financial engine, an Obsidian-style Markdown brain with hybrid RAG, and a live visual canvas.
 
-**Status:** milestone M1 (financial spine). The backend loads CSV/XLSX financials into DuckDB and serves
+**Status:** milestone M2 (vault and hybrid search). The backend loads CSV/XLSX financials into DuckDB and serves
 deterministic metrics (every number with its lineage), what-if scenarios, sensitivity tables and Monte Carlo
-runs over a REST API. Features arrive milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
+runs over a REST API. It also keeps an Obsidian-compatible Markdown vault with wikilinks and backlinks, and
+searches it (plus PDFs and spreadsheets) with hybrid keyword + semantic retrieval and citations. Features arrive
+milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
 
 - Product spec: [`docs/PRD.md`](docs/PRD.md)
 - How to run a dev session with Claude Code: [`docs/GOAL_PROMPT.md`](docs/GOAL_PROMPT.md)
@@ -84,6 +86,25 @@ There are two runways, and the API labels them differently:
 
   Projection responses list every driver under `assumptions`, each with its own lineage. They also include a
   `reconciliation`, which explains the step from the actual-burn runway to the projected one.
+
+## Vault and search API (M2)
+The vault is a folder of Markdown notes, `vault/<workspace>/` (`profile/`, `notes/`, `decisions/`, `journal/`,
+`sources/`). You can open it as an Obsidian vault or edit the files in any editor: a file watcher re-indexes changes
+within about a second. On first start an empty vault gets the Northwind sample notes (`AUTO_LOAD_SAMPLE_VAULT=true`).
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/search?q=...&k=5&mode=hybrid\|bm25\|dense&folder=` (or `POST` with JSON) | Hybrid search; returns passages with citations `{path, heading, chunk_id}` |
+| `GET /api/vault/status` | Index size, embedder and vector store in use, files that failed to parse |
+| `GET /api/vault/notes` · `GET\|PUT\|DELETE /api/vault/notes/{path}` | List, read (frontmatter, links, backlinks), write `.md`/`.txt`, delete |
+| `POST /api/vault/rename` | Move a file and rewrite every `[[link]]` to it |
+| `POST /api/vault/upload` | Add a PDF, CSV, XLSX, MD or TXT (default folder `sources/`) |
+| `GET /api/vault/links` · `POST /api/vault/reindex` | Link graph (also in `.index/links.json`); manual rescan |
+
+How search works: files are split into ~1000-token passages and ~250-token pieces. Pieces are scored by keyword
+search (BM25) and by meaning (Ollama `nomic-embed-text` vectors in Qdrant, or in memory without Docker). The two
+rankings are merged with Reciprocal Rank Fusion. Without Ollama, search falls back to keywords and says so in
+`warnings`.
 
 ## Development
 

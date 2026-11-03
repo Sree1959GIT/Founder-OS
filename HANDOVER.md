@@ -5,16 +5,16 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Current milestone:** **M2: Vault & hybrid RAG** (IN PROGRESS, branch `claude/m2-vault-search`; gate tier Light). M1 is ACCEPTED (Major gate passed 2026-11-03)
+- **Next milestone:** **M3a: LLM layer, agent framework & core agents**, after the founder merges the M2 PR (M2 is a Light gate: run the checklist below, then merge). M1 is ACCEPTED (Major gate passed 2026-11-03)
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-03 (M2 session started 13:29 UTC)
+- **Last updated:** 2026-11-03 (M2 session, 13:29 to ~14:15 UTC: M2 complete, PR open, awaiting the founder's Light gate)
 
 ## Milestones
 | # | Milestone | Status | Notes |
 |---|---|---|---|
 | M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
-| M2 | Vault & hybrid RAG | IN PROGRESS | Branch `claude/m2-vault-search` |
+| M2 | Vault & hybrid RAG | DONE (PR open, awaiting Light gate) | Branch `claude/m2-vault-search` |
 | M3a | LLM layer, agent framework & core agents | NOT STARTED | |
 | M3b | Specialist agents | NOT STARTED | |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
@@ -56,21 +56,83 @@
 | M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | ACCEPTED (SM, 2026-11-03) after re-test R1–R8 on Windows; fix in #4 |
 
 ## Current session
-- Started (UTC): 2026-11-03 13:29 (local Windows 11 session, founder's PC)
+- Started (UTC): 2026-11-03 13:29 (local Windows 11 session, founder's PC); wrapped up ~14:15
 - Target: **M2: Vault & hybrid RAG** (gate tier: **Light**)
 - Plan:
   - [x] Tidy stale M1 status lines (M1 ACCEPTED)
-  - [ ] `vault/links.py` (wikilinks + aliases, rename rewrite), `vault/parsers.py` (MD/TXT, PDF via pypdf, CSV/XLSX summary rows)
-  - [ ] `vault/manager.py` (frontmatter, safe paths, CRUD, rename-safe link updates, backlinks `.index/links.json`)
-  - [ ] `engine/chunking.py` (parent ~1000 / child ~250 tokens; tiktoken `cl100k_base` with offline fallback)
-  - [ ] `engine/embeddings.py` (Ollama `nomic-embed-text` + fake), `engine/vector_store.py` (Qdrant REST + in-memory)
-  - [ ] `engine/hybrid_rag.py` (BM25 via rank-bm25 + dense, RRF k=60, parent chunks with citations)
-  - [ ] `vault/watcher.py` (watchfiles re-index), sample Northwind vault notes, startup wiring
-  - [ ] REST `/api/vault/*`, `/api/search` + tests (fake embeddings, in-memory store)
-  - [ ] Wrap-up: checks, self-review, HANDOVER (Windows checklist incl. Notepad edit), PR, CI
+  - [x] `vault/links.py` (wikilinks + aliases, rename rewrite), `vault/parsers.py` (MD/TXT, PDF via pypdf, CSV/XLSX summary rows)
+  - [x] `vault/manager.py` (frontmatter, safe paths, CRUD, rename-safe link updates, backlinks `.index/links.json`)
+  - [x] `engine/chunking.py` (parent ~1000 / child ~250 tokens; tiktoken `cl100k_base` with offline fallback)
+  - [x] `engine/embeddings.py` (Ollama `nomic-embed-text` + fake), `engine/vector_store.py` (Qdrant REST + in-memory)
+  - [x] `engine/hybrid_rag.py` (BM25 via rank-bm25 + dense, RRF k=60, parent chunks with citations)
+  - [x] `vault/watcher.py` (watchfiles re-index), sample Northwind vault notes, startup wiring
+  - [x] REST `/api/vault/*`, `/api/search` + tests (fake embeddings, in-memory store)
+  - [x] Wrap-up: checks, self-review, HANDOVER (Windows checklist incl. Notepad edit), PR, CI
 
 ## Current state
-**M1 is complete** (PR awaiting the founder's Major gate). M0 behaviour is unchanged. What works:
+**M2 is complete** (PR awaiting the founder's Light gate). M0 and M1 behaviour is unchanged (all M1 tests pass).
+
+### Vault and search (M2)
+- **Vault** (`app/vault/manager.py`): `vault/<ws>/` with `profile/ notes/ decisions/ journal/ sources/`. API paths are
+  POSIX and relative (`notes/pricing-strategy.md`). `resolve()` rejects `..`, absolute or drive paths, hidden
+  segments (`.index`, `.obsidian`), Windows device names (`CON`, `AUX`...) and characters Windows forbids. Writes are
+  atomic (hidden temp file + `os.replace`). Only `.md`/`.txt` can be written through the API; PDF/CSV/XLSX come in by
+  upload. A PUT with only `frontmatter` (or only `body`) keeps the other part of the note.
+- **Links** (`links.py`): `[[Note]]`, `[[Note|alias]]`, `[[Note#Heading]]`, `[[folder/Note]]`, `[[file.pdf]]`, embeds;
+  links in code are ignored. Resolution is Obsidian-like (case-insensitive name, then path, then frontmatter
+  `aliases`; with duplicate names the linking note's own folder wins). The graph (outgoing, backlinks, unresolved) is
+  written to `vault/<ws>/.index/links.json` and rebuilt from the files after every change.
+- **Rename** (`POST /api/vault/rename`): moves the file and rewrites every link so that each link still points at
+  the same file. Heading and alias parts are kept; links that still resolve (e.g. via an alias) are left alone. It
+  also protects links the move would otherwise capture (a same-name note moving into the linking note's folder).
+- **Parsers** (`parsers.py`): Markdown (YAML frontmatter, heading paths such as `Pricing strategy > Annual plans`),
+  TXT (UTF-8, falls back to Windows-1252 for Notepad "ANSI"), PDF via pypdf (one section per page, `Page N`), and
+  CSV/XLSX as summary rows: a shape line, numeric column min/max (computed in code), then `Row N: col=value; ...`
+  for the first 200 rows per sheet.
+- **Chunking** (`engine/chunking.py`): parents ~1000 tokens and children ~250 tokens, measured with tiktoken
+  `cl100k_base`. tiktoken downloads its vocabulary on first use; offline it falls back to an approximate counter.
+  Children never cross a heading, so each citation names the exact section. Parents pack small sections together.
+- **Embeddings** (`engine/embeddings.py`): `OllamaEmbedder` (`POST /api/embed`, `search_document:`/`search_query:`
+  prefixes for nomic) and a deterministic `FakeEmbedder` (tests, `EMBED_PROVIDER=fake`).
+- **Vector store** (`engine/vector_store.py`): Qdrant over REST (httpx), using one collection per workspace *and*
+  embedding model (`founderos_<ws>_<hash of model>`), so switching models never mixes vectors. Point ids are
+  content-addressed (chunk id + hash), so a restart re-embeds only what changed. Without Qdrant (`VECTOR_STORE=auto`)
+  vectors live in memory and are re-embedded at each start.
+- **Hybrid search** (`engine/hybrid_rag.py`): BM25 over child chunks (rank-bm25 with the Lucene IDF, see Decisions)
+  plus cosine similarity, fused with **RRF k=60** (`score = sum 1/(60 + rank)`). A parent scores as its best child.
+  Results are parent chunks with `citation {path, heading, chunk_id}` plus `child_id`, `snippet`, `bm25_rank` and
+  `dense_rank`. The `folder` filter runs inside the vector store. Modes: `hybrid` (default), `bm25`, `dense`.
+- **Degradation (R3)**: with Ollama down, search is BM25 only, `mode: "bm25"`, and `warnings` says why. Chunks that
+  are not embedded yet are retried at most every 30 s, triggered by searches. Qdrant down at start means the
+  in-memory store is used (`store_note` in status). Qdrant going down later means BM25 with a warning. A file that
+  cannot be parsed is listed in `/api/vault/status` `errors` and never stops indexing.
+- **Watcher** (`watcher.py`): watchfiles (0.4 s debounce) re-indexes changed files, so edits in Obsidian or Notepad
+  are searchable within about 1 s. It ignores hidden folders, Office lock files and unsupported file types, and a
+  folder delete or rename triggers a rescan.
+- **Startup**: the store, tokenizer and index are built in a worker thread, so the API starts at once. Keyword
+  search is ready first, then embedding runs in the background. An empty vault gets the 7 Northwind sample notes
+  from `sample_data/vault/` (`AUTO_LOAD_SAMPLE_VAULT=true`).
+- **REST**: `GET /api/vault/status`, `GET /api/vault/notes[?folder=]`, `GET|PUT|DELETE /api/vault/notes/{path}`,
+  `POST /api/vault/rename`, `POST /api/vault/upload` (multipart `file` + optional `folder`, default `sources`; size
+  limit `MAX_UPLOAD_MB`; 415 for other types), `GET /api/vault/links`, `POST /api/vault/reindex[?full=true]`,
+  `GET /api/search?q=&k=&mode=&folder=` and `POST /api/search` (same fields as JSON). Errors: 400 (unsafe path),
+  404, 409 (exists / create_only), 413, 415, 422.
+- New settings (`.env.example`): `AUTO_LOAD_SAMPLE_VAULT`, `VECTOR_STORE` (auto|qdrant|memory), `EMBED_PROVIDER`
+  (ollama|fake), `TOKENIZER` (tiktoken|approx), `VAULT_WATCH`, `VAULT_WATCH_POLLING`. New dependencies: pyyaml, pypdf,
+  tiktoken, rank-bm25, watchfiles (already installed by uvicorn[standard]).
+
+Known issues / notes (M2):
+- Every change rebuilds the BM25 index and the link graph over the whole vault, and stats every file. This is fine
+  for hundreds of notes; a vault with tens of thousands of notes would need an incremental BM25 (later, if needed).
+- Dense search always returns the nearest chunks, even for unrelated queries; there is no similarity cut-off because
+  it depends on the model. BM25 only returns chunks that contain a query word.
+- With the in-memory store (no Qdrant), the whole vault is re-embedded at every start (seconds for the sample vault).
+- Scanned PDFs have no text layer (no OCR); they are listed under `file_warnings` in status.
+- Live-checked on the founder's PC during the session with Qdrant running and Ollama not running: BM25 fallback with
+  a warning, and the watcher picked up a file written from outside the app.
+
+### Financial engine (M1)
+What works:
 - **Ingestion** (`app/engine/ingest.py`, `schema.py`): CSV (UTF-8, falls back to Windows-1252) and XLSX (every sheet).
   Each sheet maps onto one of 7 canonical tables (`pnl`, `bank_balance`, `customers`, `subscriptions`, `pipeline`,
   `marketing_spend`, `headcount`): explicit choice > saved mapping > file or sheet name > best header match. Headers
@@ -134,95 +196,77 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M2 session)
-0. **Gate check:** M1 is a **Major** gate. Do not start M2 until the Gate log row for M1 says `ACCEPTED`. If the
-   founder reported issues, fix them first (a bug-fix PR).
-1. Read founder feedback below; fix any M1 issues found on Windows (wrong numbers take priority over everything).
-2. M2 (PRD §F2): `app/vault/manager.py` (frontmatter, wikilinks + aliases, backlinks `.index/links.json`, rename-safe
-   updates), `watcher.py` (watchfiles), parsers (PDF via pypdf, CSV/XLSX summary rows, MD/TXT).
-3. `engine/chunking.py` (parent ≈1000 / child ≈250 tokens, tiktoken `cl100k_base`), embeddings behind an interface
-   (Ollama `nomic-embed-text` + fake), Qdrant store + in-memory fallback, BM25 (`rank-bm25`), RRF (k=60).
-4. `/api/vault/*`, `/api/search`; tests with fake embeddings and an in-memory vector store.
-5. Later (M3a): expose decision-science and calibration as Financial Analyst tools; add REST for them if the UI needs it.
+## Next steps (for the M3a session)
+0. **Gate check:** M2 is a **Light** gate. The founder runs the M2 checklist and merges the PR; act on any
+   "Founder feedback" first.
+1. M3a (PRD §4, F3, §8): `app/llm/` provider interface `complete(messages, tools, json_schema, stream)` + `embed()`
+   with Ollama / Gemini / ClaudeAgentSDK / Anthropic / Fake providers, routing table and fallback to Ollama (R2/R3).
+   Consider making `engine/embeddings.OllamaEmbedder` delegate to the new `OllamaProvider.embed` (keep the
+   `Embedder` protocol so the vault code does not change).
+2. Decision-model interface (`app/decision/`: LLM + Fake + decision log), agent registry, LangGraph graph
+   (Planner → `Send` fan-out → Verifier), concurrency caps (2 local / 6 cloud), team-approval policy `cloud_only`.
+3. Agent event protocol over SSE (`/api/events`) and `/api/chat` (streaming).
+4. Core agents: Advisor, Planner, Financial Analyst (tools = M1 metric routines + guarded SQL + decision-science and
+   calibration routines), **Librarian** (tools = `HybridIndex.search` with citations, `VaultManager.read_note`,
+   writes to `decisions/` and `journal/`), Verifier (checks every number against lineage and every claim against a
+   citation). Prompts go in `app/agents/prompts/*.md`; model IDs come from config.
+5. Tests with fakes only (FakeProvider scripted responses, FakeEmbedder, in-memory store).
 
 ## Windows verification checklist (for the founder)
-**M1 (Major tier, about 30 min).** Check out the PR branch (`git fetch origin` then `git checkout claude/m1-financial-spine`),
-run `setup.bat` once (it installs the new `numpy` and `python-multipart` packages), then `run.bat`. When done, write
-`ACCEPTED` (or the issues) in the Gate log row for M1.
+**M2 (Light tier, about 10 min).** In PowerShell, from `D:\Founder-OS`: `git fetch origin`, then
+`git checkout claude/m2-vault-search`, then run `setup.bat` once (it installs the new packages pypdf, tiktoken and
+rank-bm25), then `run.bat`. Every command below works in Windows PowerShell 5.1 and PowerShell 7. Optional for steps
+4–5: Docker Desktop (Qdrant) and Ollama with `nomic-embed-text` (setup pulls it). Without them, search is keyword-only
+and says so. When done, merge the PR, or write the issues under "Founder feedback".
 
-*Start-up and data*
-1. The backend window logs `Loaded sample data from ...\sample_data (7 tables)` on the first start (empty workspace).
-   `data\default\founder.duckdb` now exists.
-2. Open http://127.0.0.1:8000/docs: the new sections are **data**, **metrics** and **scenario**. In **GET /api/data/tables**, click
-   "Try it out" → "Execute": 7 loaded tables (pnl 360 rows, bank_balance 24, customers 198, subscriptions 2535,
-   pipeline 396, marketing_spend 72, headcount 29).
+1. **Start-up log.** On the first start the backend window shows `Copied 7 sample notes into ...\vault\default`,
+   then `Vault indexed: 7 files, 20 chunks`, then `Watching vault ... for changes`. Expected: these 3 lines.
+2. **Status.** `Invoke-RestMethod http://127.0.0.1:8000/api/vault/status | Select-Object files, parents, children, tokenizer, vector_store, embedder, watching`
+   → files **7**, parents **7**, children **20**, tokenizer `tiktoken:cl100k_base`, vector_store `qdrant` (Docker
+   running) or `memory`, embedder `ollama:nomic-embed-text`, watching **True**.
+3. **Notes and backlinks.** `(Invoke-RestMethod http://127.0.0.1:8000/api/vault/notes).notes | Format-Table path, title, backlinks -AutoSize`
+   → 7 rows. Backlinks: customer-churn **3**, pricing-strategy **3**, company **2**, hire-two-sdrs **2**,
+   journal **1**, board-update **1**, competitor-pricing.csv **0**.
+4. **Keyword search with citations** (works without Ollama).
+   `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='annual prepayment discount'; mode='bm25'; k=3}).results | Format-Table rank, path, heading -AutoSize`
+   → 1 `notes/pricing-strategy.md` `Pricing strategy > Annual plans`; 2 `sources/board-update-2026-q3.md`
+   `Board update, Q3 2026 > Asks of the board`; 3 `journal/2026-10-28.md`.
+   `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='Fabrikam Enterprise dedicated support'; mode='bm25'; k=1}).results[0].citation`
+   → path `sources/competitor-pricing.csv`, heading `Sheet competitor-pricing`, chunk_id `sources/competitor-pricing.csv#p0`
+   (the CSV is searchable).
+5. **Hybrid search and fallback** (needs Ollama running).
+   `$r = Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='why are logistics customers churning'; k=3}; $r.mode; $r.warnings; $r.results | Format-Table rank, path, heading, bm25_rank, dense_rank -AutoSize`
+   → mode **hybrid**, no warnings, and `notes/customer-churn.md` in the top 3 (status `embedded` = **20**).
+   Then quit Ollama (tray icon → Quit) and run the same line → mode **bm25** and a warning `semantic search
+   unavailable (...); using keyword search (BM25) only`. Start Ollama again, wait 30 s, and run it twice → **hybrid**.
+6. **Edit a note in Notepad: search picks it up.**
+   `notepad .\vault\default\notes\pricing-strategy.md`. Add this line at the end, save (Ctrl+S), close:
+   `Flamingo bundle: test pricing for the Growth tier. See [[board-update-2026-q3]].` Then (within a few seconds):
+   `(Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='flamingo bundle'; mode='bm25'}).results[0] | Select-Object path, heading`
+   → `notes/pricing-strategy.md`, `Pricing strategy > Annual plans`. The new link counts too:
+   `(Invoke-RestMethod http://127.0.0.1:8000/api/vault/notes/sources/board-update-2026-q3.md).backlinks`
+   → `notes/pricing-strategy.md` and `profile/company.md` (it was only company before).
+7. **Create a note through the API.**
+   `Invoke-RestMethod -Method Put -Uri http://127.0.0.1:8000/api/vault/notes/notes/dubai-office.md -ContentType 'application/json' -Body '{"content": "# Dubai office\nShould we open a [[Northwind]] office in Dubai?"}' | Select-Object title, @{n='link';e={$_.links[0].resolved}}`
+   → title `Dubai office`, link `profile/company.md` (resolved through the alias). The file is in `vault\default\notes\`.
+8. **Rename keeps links working.**
+   `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/vault/rename -ContentType 'application/json' -Body '{"from_path": "notes/customer-churn.md", "to_path": "notes/churn-review.md"}'`
+   → updated_files `journal/2026-10-28.md, notes/pricing-strategy.md, profile/company.md`, links_rewritten **3**.
+   `Select-String -Path .\vault\default\journal\2026-10-28.md -Pattern 'churn-review'` → the line now shows
+   `[[churn-review]]`. Rename it back the same way (swap the two paths) → the same 3 files.
+9. **Upload a PDF.** With any text PDF on the PC (for example a page printed with "Microsoft Print to PDF"):
+   `curl.exe -F "file=@C:\path\to\your.pdf" http://127.0.0.1:8000/api/vault/upload` → `{"path":"sources/your.pdf",...,"error":null}`.
+   Searching a distinctive word from that PDF returns `sources/your.pdf` with heading `Page 1` (or the page it is on).
+   A `.exe` gives HTTP 415.
+10. **Path safety.** `try { Invoke-RestMethod "http://127.0.0.1:8000/api/vault/notes/..%2F..%2F.env" } catch { $_.Exception.Response.StatusCode.value__ }`
+    → **400**. `try { Invoke-RestMethod -Method Put -Uri http://127.0.0.1:8000/api/vault/notes/CON.md -ContentType 'application/json' -Body '{"content":"x"}' } catch { $_.Exception.Response.StatusCode.value__ }`
+    → **400**.
+11. **Link index on disk.** `(Get-Content .\vault\default\.index\links.json -Raw | ConvertFrom-Json).unresolved`
+    → empty (no broken links in the sample vault).
+12. **Regression (M1).** `(Invoke-RestMethod http://127.0.0.1:8000/api/metrics/runway).value` → **10.65**; the page at
+    http://127.0.0.1:3000 still loads with the health strip.
 
-*Numbers: spot-check these against Excel* (open `sample_data\northwind_financials.xlsx`)
-3. http://127.0.0.1:8000/api/metrics/summary (shown as JSON in the browser) lists under `metrics`: `mrr` 255344.27, `net_burn`
-   172280.47, `gross_burn` 428612.47, `runway` 10.65, `gross_margin` 0.7213; `unavailable` is `{}`.
-4. **Burn** (sheet `bank_balance`, rows **23–25** = 2026-08, 2026-09, 2026-10; column F = `cash_out`, C = `customer_receipts`):
-   - Gross burn = `=AVERAGE(F23:F25)` → **428,612.47**
-   - Net burn = `=AVERAGE(F23:F25)-AVERAGE(C23:C25)` → **172,280.47** (same as `=-AVERAGE(G23:G25)`, since there is no
-     financing in those months)
-   - http://127.0.0.1:8000/api/metrics/net_burn shows `lineage.source_rows[0].rows` = `"23-25"`: the same rows.
-5. **Runway** = `=H25/(AVERAGE(F23:F25)-AVERAGE(C23:C25))` (H25 = closing balance **1,835,125.06**) → **10.65 months**.
-   http://127.0.0.1:8000/api/metrics/runway shows `value` 10.65 and `detail.zero_cash_month` **2027-09** (cash runs out
-   during the 11th month after Oct 2026).
-6. **Gross margin, Oct 2026** (sheet `pnl`, rows **347–361** are 2026-10; columns A month, C category, D amount):
-   - Revenue `=SUMIFS(D:D,A:A,"2026-10",C:C,"Revenue")` → **257,844.27** (rows 347–348)
-   - COGS `=SUMIFS(D:D,A:A,"2026-10",C:C,"COGS")` → **71,850.06** (rows 349–351)
-   - Gross margin = (257,844.27 − 71,850.06) / 257,844.27 → **72.13 %**. http://127.0.0.1:8000/api/metrics/gross_margin
-     shows `value` 0.7213 and the lineage rows `347-351`.
-7. Optional, **MRR**: sheet `subscriptions` `=SUMIFS(C:C,A:A,"2026-10")` → **255,344.27** (rows 2395–2536, 142
-   customers). It equals `pnl` row 347 "Subscription revenue".
-
-*Scenario and Monte Carlo* (on /docs, use "Try it out")
-8. **POST /api/scenario** with body `{"price_change_pct": 10, "churn_change_pts": 2}` → `points` has 12 months from
-   2026-11; `base_runway_months` 11.23 and `scenario_runway_months` 10.99; `elapsed_ms` well under 200.
-9. **POST /api/scenario/sensitivity** with body `{}` → a 5×5 `table` of runway months (price −20…+20 % × churn
-   −1…+3 points); `table[2][1]` (3rd row = price 0, 2nd column = churn 0) equals `base_value` 11.23.
-10. **POST /api/scenario/montecarlo** with body `{}` → `runs` 1000, `points` with p10 ≤ p50 ≤ p90, `runway_p50` about
-    11.3, `probability_cash_out_within_12_months` about 0.8. Run it twice: the results are identical (seeded).
-
-*Safety and uploads*
-11. **POST /api/data/query** with `{"sql": "DROP TABLE pnl"}` → 400 "Only SELECT queries are allowed". With
-    `{"sql": "SELECT * FROM read_csv('C:/Windows/win.ini')"}` → 400 "Table functions ... are not allowed".
-    With `{"sql": "SELECT category, sum(amount) FROM pnl GROUP BY 1"}` → 200 with three rows.
-12. **POST /api/data/upload** with `sample_data\northwind_financials.xlsx` → 200 with 7 tables (sheets mapped by
-    name); the metrics in step 3 are unchanged. A `.txt` file gives 415.
-13. Optional: Excel export with your own headers: save a sheet with columns `Period, Line Item, Type, Value` as CSV and
-    upload it. It maps to `pnl` (see `GET /api/data/mappings`). Then **POST /api/data/load-sample** to restore the demo data.
-14. Regression: the M0 page at http://127.0.0.1:3000 still loads, and the health strip works as before.
-
-*Re-test after the projected-runway fix (2026-11-03).* `git pull` on `claude/m1-financial-spine`, restart `run.bat`
-(no new packages), then run these in a **PowerShell** window (they work in Windows PowerShell 5.1 and PowerShell 7):
-- R1. Two runways, named apart:
-  `Invoke-RestMethod http://127.0.0.1:8000/api/metrics/runway | Select-Object label, value` → `Runway (actual burn)`, **10.65**.
-  `$p = Invoke-RestMethod http://127.0.0.1:8000/api/metrics/cash-projection; $p | Select-Object growth_mode, base_runway_months, base_zero_cash_month`
-  → `trend`, **11.23**, `2027-10`. `$p.labels` shows the four runway labels for the UI.
-- R2. The assumptions behind the projection: `$p.assumptions | Format-Table name, value, unit, used, window, label -AutoSize`
-  → 12 rows, all `used = True`; e.g. `new_customers` **5.33** (`2026-08..2026-10`), `churn` **0.0167**, `marketing`
-  **47910**, `cash` **1835125.06** (`2026-10`). Row lineage:
-  `($p.assumptions | Where-Object name -eq 'new_customers').lineage.source_rows` → table `customers`, rows `184-199`.
-- R3. **Excel** check of two assumptions (`northwind_financials.xlsx`): sheet `customers` (column G = `signup_month`)
-  `=COUNTIF(G:G,"2026-08")+COUNTIF(G:G,"2026-09")+COUNTIF(G:G,"2026-10")` → **16** (rows 184–199), /3 = **5.33**
-  new customers per month. Sheet `marketing_spend` `=SUM(C65:C73)/3` → **47,910.00** per month.
-- R4. Reconciliation: `$p.reconciliation | Format-List` → `runway_actual_burn_months` 10.65, `actual_net_burn`
-  172280.47, `run_rate_runway_months` 10.71, `run_rate_net_burn` 171309.02, `basis_gap_net_burn` 971.45,
-  `basis_gap_months` 0.06, `tolerance_months` 0.53, `within_tolerance` True, `growth_gap_months` 0.52, and an
-  `explanation` sentence that walks 10.65 → 10.71 → 11.23.
-- R5. No new customers:
-  `Invoke-RestMethod "http://127.0.0.1:8000/api/metrics/cash-projection?growth_mode=none" | Select-Object growth_mode, base_runway_months, base_zero_cash_month`
-  → `none`, **9.69**, `2027-08` (shorter than 10.65: churn keeps eroding MRR while marketing is still spent).
-  With `growth_mode=flat` → **10.71**, `2027-09` (today's run-rate, reconciles with 10.65). With `growth_mode=rocket` →
-  an error (HTTP 422).
-- R6. Scenario with a growth mode:
-  `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/scenario -ContentType 'application/json' -Body '{"growth_mode": "none", "price_change_pct": 10}' | Select-Object growth_mode, base_runway_months, scenario_runway_months, scenario_zero_cash_month`
-  → `none`, **9.69**, **10.68**, `2027-09`.
-- R7. Monte Carlo with a growth mode:
-  `$mc = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/scenario/montecarlo -ContentType 'application/json' -Body '{"adjustments": {"growth_mode": "flat"}}'; $mc | Select-Object growth_mode, runway_label, runway_p10, runway_p50, runway_p90`
-  → `flat`, `Projected runway (with growth assumptions)`, **10.14**, **10.59**, **10.96**; `$mc.assumptions.Count` → 12.
-- R8. Regression: steps 3–10 above give the same numbers as before (the default `growth_mode` is `trend`).
+To start again with a fresh demo vault: stop `run.bat`, delete `vault\default`, and start again.
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
@@ -287,6 +331,14 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+- 2026-11-03 (M2 session, 13:29 to ~14:15 UTC, local on the founder's PC): vault manager, links, parsers, chunking,
+  embeddings, Qdrant/in-memory stores, hybrid RAG with RRF, watcher, `/api/vault/*` and `/api/search`, sample vault.
+  Tests found an in-memory payload bug and the BM25 negative-IDF problem (both fixed). The self-review
+  (`/code-review high`) found 10 issues, all fixed with regression tests: vectors were not tied to the embedding model,
+  a parser exception could stop indexing, an empty snapshot could wipe stored vectors, a vector-sync race, a
+  frontmatter-only PUT erased the body, rename could capture unrelated links, the folder filter ran after the vector
+  top-N, `status()` was not locked, image saves triggered rescans, and startup blocked on Qdrant/tiktoken.
+  327 backend tests.
 - 2026-11-03 (M1 session, 05:48 UTC onwards, local on the founder's PC): engine core (lineage, schema + column
   mapping, ingest, DuckDB with external access disabled, SQL guard, 18 metric routines); scenario + sensitivity,
   Monte Carlo, decision science, calibration; REST endpoints; backend tests including golden tests against an
@@ -308,6 +360,20 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M2 session)
+- Vault code lives in `app/vault/` (manager, links, parsers, watcher, service); retrieval lives in `app/engine/`
+  (chunking, embeddings, vector_store, hybrid_rag), as in the PRD §10 layout.
+- Qdrant is used over its REST API with httpx (no `qdrant-client` dependency); tests run against a fake Qdrant
+  server (`httpx.MockTransport`). There is one collection per workspace and embedding model.
+- BM25 uses the **Lucene IDF** `log(1 + (N - n + 0.5)/(n + 0.5))` instead of rank-bm25's classic IDF. The classic IDF
+  goes negative for words found in more than half the notes, so in a small vault notes that plainly contain the
+  query word disappeared from keyword results (found during the session; regression test added).
+- tiktoken `cl100k_base` counts tokens; when its vocabulary cannot be downloaded (offline first run), an approximate
+  counter is used, so the app never needs the network.
+- Children never cross a heading, so citations are section-precise. Parents still pack small sections (~1000 tokens).
+- Sample vault notes ship in `sample_data/vault/` and are copied into an empty vault at startup
+  (`AUTO_LOAD_SAMPLE_VAULT`). They are hand-written narrative; the financial engine stays the source of every number.
 
 ## Decisions made (M1 session)
 - Months are stored as `YYYY-MM` text, money as `DECIMAL(18,2)`; money sums run in DuckDB, ratios in Python `Decimal`
