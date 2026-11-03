@@ -35,7 +35,9 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     # _env_file=None: never read a developer's real .env during tests.
-    return Settings(_env_file=None, data_dir=tmp_path / "data", vault_path=tmp_path / "vault")
+    return Settings(
+        _env_file=None, data_dir=tmp_path / "data", vault_path=tmp_path / "vault", auto_load_sample_data=False
+    )
 
 
 @pytest.fixture

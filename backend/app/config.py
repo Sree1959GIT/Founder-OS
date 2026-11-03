@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     vault_path: Path = Path("vault")
 
+    # Financial data
+    sample_data_dir: Path = Path("sample_data")
+    # Load the Northwind demo data into an empty workspace at startup (turn off once you use your own files).
+    auto_load_sample_data: bool = True
+    max_upload_mb: int = Field(default=20, ge=1, le=500)
+
     # Local LLM (Ollama)
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "qwen2.5:7b-instruct-q4_K_M"
@@ -94,6 +100,9 @@ class Settings(BaseSettings):
     def workspace_data_dir(self, workspace_id: str | None = None) -> Path:
         """`<DATA_DIR>/<workspace_id>`: DuckDB file, mappings and logs for one workspace."""
         return self._resolve(self.data_dir) / self._workspace(workspace_id)
+
+    def sample_data_path(self) -> Path:
+        return self._resolve(self.sample_data_dir)
 
     def workspace_vault_dir(self, workspace_id: str | None = None) -> Path:
         """`<VAULT_PATH>/<workspace_id>`: the Markdown vault for one workspace."""
