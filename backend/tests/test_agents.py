@@ -208,6 +208,18 @@ async def test_librarian_must_cite_returned_sources(finance: Any, vault: FakeVau
     assert "notes/pricing-strategy.md" in {c.path for c in result.citations}
 
 
+async def test_numbers_in_a_planner_brief_are_not_lineage(finance: Any) -> None:
+    """Review finding: the Planner (an LLM) wrote "$14,500/month" into a brief, and the analyst could repeat it."""
+    provider = FakeProvider(["Each hire costs $14,500 a month.", "Each hire costs $14,500 a month."])
+    brief = "Check if we can afford 3 hires at $14,500/month each"
+    result = await make_runner(provider, finance, None).run(inst("financial_analyst", brief), "Can we hire?")
+    assert result.verified is False and result.issues == ["number without lineage: $14,500"]
+    # The founder's own numbers may be repeated.
+    ok = FakeProvider(["You asked about $14,500 a month per hire; I need data to check it."])
+    founder = await make_runner(ok, finance, None).run(inst("financial_analyst", "b"), "Can we pay $14,500 each?")
+    assert founder.verified
+
+
 def test_rule_intent_and_metric() -> None:
     assert rule_intent("What's our runway?") == "finance"
     assert rule_intent("Should we hire two SDRs?") == "decision"
@@ -234,7 +246,43 @@ async def test_planner_uses_rules_then_decision_model() -> None:
     assert [i.type for i in finance_plan.team] == ["financial_analyst"] and finance_plan.team[0].provider == "fake"
     fuzzy = await plan("Tell me about Fabrikam", router, decisions)
     assert fuzzy.intent == "knowledge" and fuzzy.planner.startswith("decision model")
+    assert fuzzy.intent_decision_id is not None  # review finding: the id was dropped for finance/knowledge
     assert (await plan("hi", router, decisions)).team == []
+
+
+async def test_low_confidence_intent_gets_the_default_team() -> None:
+    """Review finding: DECISION_MIN_CONFIDENCE had no effect; a p=0.3 "chitchat" produced an empty team."""
+    unsure = DecisionService(FakeDecisionProvider({}, probability=0.3), min_confidence=0.75)
+    p = await plan("Tell me about Fabrikam", LLMRouter(FakeProvider()), unsure)
+    assert p.intent == "decision" and [i.type for i in p.team] == ["financial_analyst", "librarian"]
+    assert "unsure" in p.planner and p.intent_decision_id is not None
+
+
+async def test_planner_survives_non_object_json() -> None:
+    """Review finding: a JSON array from the planner raised AttributeError and failed the whole run."""
+    p = await plan(
+        "Should we hire?",
+        LLMRouter(FakeProvider(['[{"agent_type": "librarian"}]'])),
+        DecisionService(FakeDecisionProvider()),
+    )
+    assert p.planner.endswith("default team") and len(p.team) == 2
+
+
+async def test_advisor_stream_cut_off_is_not_padded_with_a_template() -> None:
+    """Review finding: a stream that broke mid-reply got the whole template answer appended."""
+    from app.agents.runtime import Plan, advise
+    from app.llm.base import LLMError, StreamChunk
+
+    class Breaking(FakeProvider):
+        async def _stream(self, messages, tools, json_schema):  # type: ignore[no-untyped-def]
+            yield StreamChunk(delta="Your runway is")
+            raise LLMError("connection dropped")
+
+    chunks = [c async for c in advise(LLMRouter(Breaking()), "q", Plan(intent="finance", planner="rules"), [])]
+    text = "".join(c.delta for c in chunks)
+    assert text == "Your runway is (The reply was cut off; see the findings.)"
+    assert chunks[-1].completion is not None and chunks[-1].completion.provider == "fake"
+    assert "assembled without" not in text
 
 
 async def test_planner_decision_team_from_llm_and_default() -> None:
@@ -364,8 +412,11 @@ async def test_cloud_only_policy_waits_only_for_cloud_teams(finance: Any) -> Non
 
 async def test_approval_timeout_rejects(finance: Any) -> None:
     orch = orchestrator(FakeProvider(), finance, None, approval_policy="always", approval_timeout_s=0.05)
-    result = await orch.start("What's our runway?").task  # type: ignore[misc]
+    run = orch.start("What's our runway?")
+    result = await run.task  # type: ignore[misc]
     assert result.status == "rejected"
+    # Review finding: a timed-out approval still looked open and /approve answered 200.
+    assert run.approval.is_set() and not orch.approve(run.run_id)
 
 
 async def test_cancel_a_run(finance: Any) -> None:
@@ -388,6 +439,20 @@ async def test_cancel_a_run(finance: Any) -> None:
     with pytest.raises(asyncio.CancelledError):
         await run.task  # type: ignore[misc]
     assert orch.bus.history(run.run_id)[-1].data["status"] == "cancelled"
+
+
+async def test_event_stream_survives_keepalive_timeouts() -> None:
+    """Review finding: the /api/events keep-alive cancelled the generator; the stream died after 15 quiet seconds."""
+    bus = EventBus()
+    stream = bus.stream(keepalive_s=0.01).__aiter__()
+    assert await stream.__anext__() is None
+    assert await stream.__anext__() is None
+    bus.emit("run.started", "r1")
+    event = await stream.__anext__()
+    while event is None:
+        event = await stream.__anext__()
+    assert event.type == "run.started"
+    await stream.aclose()
 
 
 async def test_event_bus_replays_and_filters() -> None:

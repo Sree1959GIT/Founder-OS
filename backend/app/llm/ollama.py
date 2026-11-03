@@ -7,11 +7,14 @@ come back without a reasoning preamble. Set `OLLAMA_THINK=true` to turn it on.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
+from loguru import logger
 
 from app.llm.base import (
     Completion,
@@ -84,6 +87,10 @@ class OllamaProvider(LLMProvider):
         self.temperature = temperature
         self._timeout = httpx.Timeout(timeout_s, connect=5.0)
         self._transport = transport
+        self.ensure_loaded_before_calls = True
+        self.load_timeout_s = 1200.0
+        self._load_lock = asyncio.Lock()
+        self._loaded_at = -1e9  # monotonic time the model was last seen in memory
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self.base_url, timeout=self._timeout, transport=self._transport)
@@ -124,9 +131,34 @@ class OllamaProvider(LLMProvider):
             return LLMUnavailable(f"Ollama not reachable at {self.base_url} ({type(exc).__name__}: {exc})")
         return LLMError(f"Ollama returned an unreadable response ({type(exc).__name__}: {exc})")
 
+    def _is_this_model(self, entry: dict[str, Any]) -> bool:
+        names = {str(entry.get("name", "")), str(entry.get("model", ""))}
+        return self.model in names or (":" not in self.model and f"{self.model}:latest" in names)
+
+    async def ensure_loaded(self) -> None:
+        """Load the chat model first when Ollama has unloaded it (idle `keep_alive`, restart, another app's model).
+
+        Without this, a cold load slower than the chat timeout is aborted by every call and never completes. The
+        `/api/ps` check is cached for 60 s; concurrent callers share one load. Errors are left to the chat call.
+        """
+        if not self.ensure_loaded_before_calls or time.monotonic() - self._loaded_at < 60:
+            return
+        async with self._load_lock:
+            if time.monotonic() - self._loaded_at < 60:
+                return
+            try:
+                if not any(self._is_this_model(m) for m in await self.loaded_models()):
+                    logger.info("Ollama has not loaded {}; loading it first (can take minutes)", self.model)
+                    seconds = await self.warm_up(self.load_timeout_s)
+                    logger.info("Ollama model {} loaded in {} s", self.model, seconds)
+                self._loaded_at = time.monotonic()
+            except LLMError as exc:
+                logger.debug("Could not check or load {}: {}", self.model, exc)
+
     async def _complete(
         self, messages: list[Message], tools: list[ToolSpec] | None, json_schema: dict[str, Any] | None
     ) -> Completion:
+        await self.ensure_loaded()
         timer = Timer()
         try:
             async with self._client() as client:
@@ -153,6 +185,7 @@ class OllamaProvider(LLMProvider):
     async def _stream(
         self, messages: list[Message], tools: list[ToolSpec] | None, json_schema: dict[str, Any] | None
     ) -> AsyncIterator[StreamChunk]:
+        await self.ensure_loaded()
         timer = Timer()
         parts: list[str] = []
         calls: list[ToolCall] = []
@@ -231,6 +264,7 @@ class OllamaProvider(LLMProvider):
                 response.raise_for_status()
         except (httpx.HTTPError, ValueError) as exc:
             raise self._error(exc) from exc
+        self._loaded_at = time.monotonic()
         return round(timer.ms / 1000, 1)
 
     async def loaded_models(self) -> list[dict[str, Any]]:

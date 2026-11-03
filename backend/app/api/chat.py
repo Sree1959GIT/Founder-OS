@@ -23,6 +23,7 @@ from app.agents.registry import REGISTRY
 router = APIRouter(tags=["agents"])
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+KEEPALIVE_S = 15.0
 
 
 def get_orchestrator(request: Request) -> AgentOrchestrator:
@@ -113,14 +114,11 @@ async def events(
     """Agent events for the Agent Activity panel (SSE, never ends; a comment line every 15 s keeps it open)."""
 
     async def stream() -> AsyncIterator[str]:
-        events_iter = bus.subscribe(run_id=run_id, since=since).__aiter__()
-        while True:
-            try:
-                event = await asyncio.wait_for(events_iter.__anext__(), timeout=15.0)
-            except TimeoutError:
+        async for event in bus.stream(run_id=run_id, since=since, keepalive_s=KEEPALIVE_S):
+            if event is None:
                 yield ": keep-alive\n\n"
-                continue
-            yield sse(event.type, event.model_dump(mode="json"), event.seq)
+            else:
+                yield sse(event.type, event.model_dump(mode="json"), event.seq)
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 

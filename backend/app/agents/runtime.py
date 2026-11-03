@@ -173,18 +173,33 @@ async def plan(message: str, router: LLMRouter, decisions: DecisionService) -> P
     if intent is None:
         try:
             decision = await decisions.choose(INTENT_QUESTION, INTENT_OPTIONS, {"message": message}, kind="intent")
-            intent, how, decision_id = decision.choice, f"decision model ({decision.provider})", decision.id  # type: ignore[assignment]
         except DecisionError as exc:
-            logger.info("Intent decision failed, using knowledge search: {}", exc)
-            intent, how = "knowledge", "rules (decision model unavailable)"
+            logger.info("Intent decision failed, using the default team: {}", exc)
+            return _default_decision_plan(message, router, "rules (decision model unavailable); default team", None)
+        decision_id = decision.id
+        if decision.probability < decisions.min_confidence:
+            # Unsure what the founder means: the safe choice is to look at both the numbers and the notes.
+            how = f"decision model unsure ({decision.choice} p={decision.probability:.2f}); default team"
+            return _default_decision_plan(message, router, how, decision_id)
+        intent, how = decision.choice, f"decision model ({decision.provider}, p={decision.probability:.2f})"  # type: ignore[assignment]
     assert intent is not None
     if intent == "chitchat":
         return Plan(intent=intent, planner=how, intent_decision_id=decision_id)
     if intent == "finance":
-        return Plan(intent=intent, team=_team([("financial_analyst", message)], router), planner=how)
+        team = _team([("financial_analyst", message)], router)
+        return Plan(intent=intent, team=team, planner=how, intent_decision_id=decision_id)
     if intent == "knowledge":
-        return Plan(intent=intent, team=_team([("librarian", message)], router), planner=how)
+        team = _team([("librarian", message)], router)
+        return Plan(intent=intent, team=team, planner=how, intent_decision_id=decision_id)
     return await _plan_decision(message, router, how, decision_id)
+
+
+def _default_decision_plan(message: str, router: LLMRouter, how: str, decision_id: str | None) -> Plan:
+    tasks = [
+        ("financial_analyst", f"Numbers that matter for this decision: {message}"),
+        ("librarian", f"What the notes and past decisions say about: {message}"),
+    ]
+    return Plan(intent="decision", team=_team(tasks, router), planner=how, intent_decision_id=decision_id)
 
 
 async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id: str | None) -> Plan:
@@ -210,6 +225,8 @@ async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id:
     messages = [Message.system(REGISTRY["planner"].prompt()), Message.user(message)]
     try:
         data = (await router.complete(REGISTRY["planner"].privacy, messages, json_schema=schema)).json()
+        if not isinstance(data, dict):
+            raise LLMError(f"the plan was not a JSON object: {str(data)[:100]}")
         tasks = [
             (str(t["agent_type"]), str(t["brief"]).strip() or message)
             for t in data.get("tasks", [])[:4]
@@ -226,15 +243,9 @@ async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id:
             planner=f"{how}; team by LLM",
             intent_decision_id=decision_id,
         )
-    except (LLMError, KeyError, TypeError, ValueError) as exc:
+    except (LLMError, KeyError, TypeError, ValueError, AttributeError) as exc:
         logger.info("Planner LLM failed, using the default decision team: {}", exc)
-        tasks = [
-            ("financial_analyst", f"Numbers that matter for this decision: {message}"),
-            ("librarian", f"What the notes and past decisions say about: {message}"),
-        ]
-        return Plan(
-            intent="decision", team=_team(tasks, router), planner=f"{how}; default team", intent_decision_id=decision_id
-        )
+        return _default_decision_plan(message, router, f"{how}; default team", decision_id)
 
 
 class AgentRunner:
@@ -328,7 +339,8 @@ class AgentRunner:
             result.numbers,
             result.citations,
             needs_citations=spec.name == "librarian" and searched and bool(result.citations),
-            context=f"{inst.brief}\n{user_message}",
+            # Only the founder's own words may supply numbers: a Planner-written brief is LLM text (PRD R1).
+            context=user_message,
         )
         result.verified = report.ok
         result.issues = report.issues
@@ -463,15 +475,26 @@ async def advise(
         + f"\n\nTeam findings:\n{findings}"
     )
     messages = [Message.system(spec.prompt()), Message.user(context)]
+    sent: list[str] = []
     try:
         async for chunk in router.stream(spec.privacy, messages):
+            sent.append(chunk.delta)
             yield chunk
     except LLMError as exc:
+        provider = router.primary(spec.privacy)
+        if any(sent):
+            # The founder already saw part of the reply: end it honestly instead of appending a second answer.
+            logger.warning("Advisor stream broke after {} chunks: {}", len(sent), exc)
+            note = " (The reply was cut off; see the findings.)"
+            yield StreamChunk(delta=note)
+            text = "".join(sent) + note
+            yield StreamChunk(done=True, completion=Completion(text=text, provider=provider.name, model=provider.model))
+            return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
         text = template_answer(results)
         yield StreamChunk(delta=text)
         yield StreamChunk(
-            done=True, completion=Completion(text=text, provider="rules", model="", fallback_from="ollama")
+            done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)
         )
 
 

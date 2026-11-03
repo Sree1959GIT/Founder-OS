@@ -109,6 +109,18 @@ class EventBus:
         return [e for e in self._history if e.seq > since and (run_id is None or e.run_id == run_id)]
 
     async def subscribe(self, run_id: str | None = None, since: int = 0) -> AsyncIterator[AgentEvent]:
+        async for event in self.stream(run_id, since):
+            if event is not None:
+                yield event
+
+    async def stream(
+        self, run_id: str | None = None, since: int = 0, keepalive_s: float | None = None
+    ) -> AsyncIterator[AgentEvent | None]:
+        """Replay history after `since`, then live events. Yields None after `keepalive_s` without an event.
+
+        The timeout wraps `queue.get()` (safe to cancel), never the generator itself: cancelling a pending
+        `__anext__()` would close the generator and end the stream.
+        """
         queue: asyncio.Queue[AgentEvent] = asyncio.Queue(maxsize=1000)
         self._subscribers.add(queue)
         try:
@@ -117,7 +129,11 @@ class EventBus:
                 last = event.seq
                 yield event
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=keepalive_s)
+                except TimeoutError:
+                    yield None
+                    continue
                 if event.seq <= last or (run_id is not None and event.run_id != run_id):
                     continue
                 last = event.seq

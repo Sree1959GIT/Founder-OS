@@ -26,12 +26,27 @@ def test_numbers_match_lineage_within_rounding() -> None:
     assert verify_numbers("A 10 % price rise", [], context="What if we raise prices 10 %?") == []
 
 
+def test_tolerance_follows_the_written_precision() -> None:
+    """Review finding: "$1.2M" for 1,234,567 is correct rounding but was 2.8 % off, above the 1 % tolerance."""
+    assert verify_numbers("ARR is $1.2M.", [1234567.0]) == []
+    assert verify_numbers("ARR is $1.3M.", [1234567.0]) == ["$1.3M"]
+    assert verify_numbers("Runway is 11 months.", [10.65]) == []  # "11" covers 10.5-11.5
+    assert verify_numbers("Runway is 11.0 months.", [10.65]) == ["11.0"]
+    assert verify_numbers("Margin is 72 %.", [0.7213]) == []
+
+
 def test_citation_rules() -> None:
     cites = [Citation(path="notes/pricing-strategy.md", heading="Pricing", chunk_id="notes/pricing-strategy.md#p0")]
     assert verify_citations("Annual plans get 15 % off [notes/pricing-strategy.md].", cites) == []
-    assert verify_citations("See [notes/made-up.md].", cites) == ["notes/made-up.md was not returned by a search"]
+    assert verify_citations("See [notes/made-up.md].", cites) == [
+        "the answer cites no vault source",
+        "notes/made-up.md was not returned by a search",
+    ]
     assert verify_citations("Some claim.", []) == ["the answer cites no vault source"]
-    report = verify("Annual plans get 15 % off.", [15.0], cites, needs_citations=True)
+    report = verify("Annual plans get 15 % off [notes/pricing-strategy.md].", [15.0], cites, needs_citations=True)
     assert report.ok and report.issues == []
+    # Review finding: a claim that names no source passed because the check looked at the returned citations.
+    uncited = verify("Annual plans get 15 % off.", [15.0], cites, needs_citations=True)
+    assert uncited.issues == ["the answer cites no vault source"]
     bad = verify("Runway is 99 months.", KNOWN, [], needs_citations=False)
     assert not bad.ok and bad.unverified_numbers == ["99"] and bad.issues == ["number without lineage: 99"]

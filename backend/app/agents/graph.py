@@ -69,6 +69,9 @@ class ChatResult(BaseModel):
     decision_type: str | None = None
     reversibility: str | None = None
     planner: str
+    intent_decision_id: str | None = Field(
+        default=None, description="Decision-log id of the intent choice (to record a correction for Laya)"
+    )
     team: list[AgentInstance]
     approved: bool
     agents: list[AgentResult]
@@ -171,6 +174,8 @@ class AgentOrchestrator:
                 approved = bool(run.approved)
             except TimeoutError:
                 approved = False
+                run.approved = False
+                run.approval.set()  # closed: /api/runs no longer shows it as waiting, and /approve returns 409
             run.timings["approval_wait"] = _ms(started) - run.timings["plan"]
         if not approved:
             self.bus.emit("team.rejected", run.run_id, reason="not approved")
@@ -309,6 +314,7 @@ class AgentOrchestrator:
             decision_type=the_plan.decision_type,
             reversibility=the_plan.reversibility,
             planner=the_plan.planner,
+            intent_decision_id=the_plan.intent_decision_id,
             team=the_plan.team,
             approved=approved,
             agents=results,

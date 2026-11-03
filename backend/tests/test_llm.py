@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -32,6 +33,13 @@ def recorder(handler: Any) -> tuple[httpx.MockTransport, list[dict[str, Any]]]:
     return httpx.MockTransport(respond), seen
 
 
+def ollama(*args: Any, **kwargs: Any) -> OllamaProvider:
+    """An Ollama provider that skips the load check, so tests see only the call under test."""
+    provider = OllamaProvider(*args, **kwargs)
+    provider.ensure_loaded_before_calls = False
+    return provider
+
+
 # --- Ollama ---------------------------------------------------------------------------------------------------
 async def test_ollama_tool_call_with_thinking_off() -> None:
     def handler(request: httpx.Request, body: dict[str, Any]) -> httpx.Response:
@@ -43,7 +51,7 @@ async def test_ollama_tool_call_with_thinking_off() -> None:
         return httpx.Response(200, json={"message": message, "prompt_eval_count": 155, "eval_count": 21})
 
     transport, seen = recorder(handler)
-    provider = OllamaProvider("http://ollama:11434/", "qwen3:8b", transport=transport)
+    provider = ollama("http://ollama:11434/", "qwen3:8b", transport=transport)
     completion = await provider.complete([Message.user("What's our runway?")], tools=[TOOL])
     assert completion.tool_calls[0].name == "get_metric" and completion.tool_calls[0].arguments == {"name": "runway"}
     assert completion.usage.input_tokens == 155 and completion.provider == "ollama" and completion.model == "qwen3:8b"
@@ -59,7 +67,7 @@ async def test_ollama_json_schema_uses_format_and_zero_temperature() -> None:
 
     transport, seen = recorder(handler)
     schema = {"type": "object", "properties": {"choice": {"type": "string"}}}
-    completion = await OllamaProvider("http://o", "qwen3:8b", transport=transport).complete(
+    completion = await ollama("http://o", "qwen3:8b", transport=transport).complete(
         [Message.user("x")], json_schema=schema
     )
     assert completion.json() == {"choice": "finance"}
@@ -70,7 +78,7 @@ async def test_ollama_tool_messages_round_trip() -> None:
     transport, seen = recorder(lambda r, b: httpx.Response(200, json={"message": {"content": "ok"}}))
     call = ToolCall(name="get_metric", arguments={"name": "runway"})
     messages = [Message.user("q"), Message.assistant("", [call]), Message.tool(call, '{"value": 10.65}')]
-    await OllamaProvider("http://o", "m", transport=transport).complete(messages)
+    await ollama("http://o", "m", transport=transport).complete(messages)
     sent = seen[0]["body"]["messages"]
     assert sent[1]["tool_calls"] == [{"function": {"name": "get_metric", "arguments": {"name": "runway"}}}]
     assert sent[2] == {"role": "tool", "content": '{"value": 10.65}', "tool_name": "get_metric"}
@@ -85,10 +93,7 @@ async def test_ollama_streams_ndjson() -> None:
     content = "\n".join(json.dumps(x) for x in lines).encode()
     transport, seen = recorder(lambda r, b: httpx.Response(200, content=content))
     chunks = [
-        c
-        async for c in await OllamaProvider("http://o", "m", transport=transport).complete(
-            [Message.user("q")], stream=True
-        )
+        c async for c in await ollama("http://o", "m", transport=transport).complete([Message.user("q")], stream=True)
     ]
     assert [c.delta for c in chunks if c.delta] == ["Runway ", "is 10.65 months."]
     assert chunks[-1].done and chunks[-1].completion is not None
@@ -100,7 +105,7 @@ async def test_ollama_errors_are_typed() -> None:
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
-    down = OllamaProvider("http://o", "m", transport=httpx.MockTransport(refuse))
+    down = ollama("http://o", "m", transport=httpx.MockTransport(refuse))
     with pytest.raises(LLMUnavailable, match="not reachable"):
         await down.complete([Message.user("q")])
     with pytest.raises(LLMUnavailable):
@@ -110,7 +115,7 @@ async def test_ollama_errors_are_typed() -> None:
     )
     with pytest.raises(LLMUnavailable, match="not pulled"):
         await missing.complete([Message.user("q")])
-    broken = OllamaProvider("http://o", "m", transport=httpx.MockTransport(lambda r: httpx.Response(500, text="boom")))
+    broken = ollama("http://o", "m", transport=httpx.MockTransport(lambda r: httpx.Response(500, text="boom")))
     with pytest.raises(LLMError) as info:
         await broken.complete([Message.user("q")])
     assert not isinstance(info.value, LLMUnavailable)
@@ -123,7 +128,7 @@ async def test_ollama_embed_and_loaded_models() -> None:
         return httpx.Response(200, json={"embeddings": [[0.1, 0.2]] * len(body["input"])})
 
     transport, seen = recorder(handler)
-    provider = OllamaProvider("http://o", "m", embed_model="nomic-embed-text", transport=transport)
+    provider = ollama("http://o", "m", embed_model="nomic-embed-text", transport=transport)
     assert await provider.embed(["a", "b"]) == [[0.1, 0.2], [0.1, 0.2]]
     assert seen[0]["body"]["model"] == "nomic-embed-text"
     assert (await provider.loaded_models())[0]["name"] == "qwen3:8b"
@@ -133,12 +138,37 @@ async def test_ollama_embed_and_loaded_models() -> None:
 async def test_ollama_warm_up_loads_with_the_chat_context_size() -> None:
     """A cold load from a slow disk took 217 s on the founder's PC; chat calls with a 180 s timeout aborted it."""
     transport, seen = recorder(lambda r, b: httpx.Response(200, json={"done": True}))
-    seconds = await OllamaProvider("http://o", "qwen3:8b", num_ctx=8192, transport=transport).warm_up()
+    seconds = await ollama("http://o", "qwen3:8b", num_ctx=8192, transport=transport).warm_up()
     assert seconds >= 0 and seen[0]["path"] == "/api/generate"
     assert seen[0]["body"] == {"model": "qwen3:8b", "keep_alive": "30m", "options": {"num_ctx": 8192}}
-    down = OllamaProvider("http://o", "m", transport=httpx.MockTransport(lambda r: httpx.Response(404, text="no")))
+    down = ollama("http://o", "m", transport=httpx.MockTransport(lambda r: httpx.Response(404, text="no")))
     with pytest.raises(LLMUnavailable):
         await down.warm_up()
+
+
+async def test_ollama_loads_an_unloaded_model_before_chatting() -> None:
+    """After keep_alive expiry the model is unloaded; a 180 s chat call would abort a 217 s cold load forever."""
+    loaded: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request, body: dict[str, Any]) -> httpx.Response:
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": loaded})
+        if request.url.path == "/api/generate":
+            loaded.append({"name": "qwen3:8b", "model": "qwen3:8b"})
+            return httpx.Response(200, json={"done": True})
+        return httpx.Response(200, json={"message": {"content": "hi"}})
+
+    transport, seen = recorder(handler)
+    provider = OllamaProvider("http://o", "qwen3:8b", transport=transport)
+    await asyncio.gather(provider.complete([Message.user("a")]), provider.complete([Message.user("b")]))
+    paths = [s["path"] for s in seen]
+    assert paths.count("/api/generate") == 1 and paths[:2] == ["/api/ps", "/api/generate"]
+    assert paths.count("/api/chat") == 2
+    await provider.complete([Message.user("c")])  # checked within the last 60 s: no new /api/ps call
+    assert [s["path"] for s in seen].count("/api/ps") == 1
+    provider._loaded_at = -1e9  # a minute later, and the model is still loaded: no reload
+    await provider.complete([Message.user("d")])
+    assert [s["path"] for s in seen].count("/api/generate") == 1
 
 
 # --- cloud providers -------------------------------------------------------------------------------------------

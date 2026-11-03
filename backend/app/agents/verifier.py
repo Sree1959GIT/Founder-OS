@@ -1,11 +1,12 @@
 """Verifier (PRD F3): deterministic checks on agent answers.
 
-1. Every number in the text must match a number the agent's tools produced (each tool result carries lineage), within
-   rounding: 1 % relative, and a percentage may be written for a ratio (72.13 % for 0.7213) and vice versa.
-   Years, YYYY-MM months and small counting words ("3 months", "2 options") are not treated as financial figures.
-   Numbers that appear in the brief or the founder's message may be repeated.
-2. A Librarian answer must cite at least one source, and every `*.md`/`*.pdf`/`*.csv` path it mentions must be one
-   its searches returned.
+1. Every number in the text must match a number the model was shown by its tools (each tool result carries lineage),
+   within the written rounding ("$1.2M" covers 1,150,000-1,250,000) or 1 % relative, whichever is wider. A
+   percentage may be written for a ratio (72.13 % for 0.7213). Years, YYYY-MM months and small counting words
+   ("3 months", "2 options") are not treated as financial figures. Numbers in the founder's own message may be
+   repeated; numbers in a Planner-written brief may not (that is LLM text).
+2. A Librarian answer must name at least one source path that its searches returned, and every
+   `*.md`/`*.pdf`/`*.csv` path it names must be one of them.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ class Figure:
     text: str
     value: float
     percent: bool
+    rounding: float = 0.0  # half a unit of the last written digit, after scaling ("$1.2M" -> 50,000)
 
 
 def extract_figures(text: str) -> list[Figure]:
@@ -52,43 +54,48 @@ def extract_figures(text: str) -> list[Figure]:
         is_int = "." not in raw and "," not in raw
         if not suffix and not m.group("cur") and is_int and (value <= SMALL_INT_MAX or 1900 <= value <= 2100):
             continue
-        value *= _SCALE.get(suffix, 1.0)
+        scale = _SCALE.get(suffix, 1.0)
+        decimals = len(raw.split(".")[1]) if "." in raw else 0
+        value *= scale
         if m.group("sign"):
             value = -value
-        figures.append(Figure(m.group(0).strip(), value, suffix in ("%", "percent")))
+        figures.append(Figure(m.group(0).strip(), value, suffix in ("%", "percent"), 0.5 * 10**-decimals * scale))
     return figures
 
 
-def _close(a: float, b: float) -> bool:
+def _close(a: float, b: float, rounding: float = 0.0) -> bool:
+    """Equal within the written rounding (e.g. "$1.2M" for 1,234,567) or REL_TOL, whichever is wider."""
     if a == b:
         return True
     scale = max(abs(a), abs(b))
-    return scale > 0 and abs(a - b) / scale <= REL_TOL
+    return abs(a - b) <= rounding + 1e-9 or (scale > 0 and abs(a - b) / scale <= REL_TOL)
 
 
 def number_supported(figure: Figure, known: list[float]) -> bool:
-    candidates = [figure.value, abs(figure.value)]
+    r = figure.rounding
+    candidates = [(figure.value, r), (abs(figure.value), r)]
     if figure.percent:
-        candidates.append(figure.value / 100)
+        candidates.append((figure.value / 100, r / 100))
     else:
-        candidates.append(figure.value * 100)  # "0.72" written for a 72 % value is rare but harmless
-    return any(_close(c, k) or _close(c, abs(k)) for c in candidates for k in known)
+        candidates.append((figure.value * 100, r * 100))  # "0.72" written for a 72 % value is rare but harmless
+    return any(_close(c, k, tol) or _close(c, abs(k), tol) for c, tol in candidates for k in known)
 
 
 def verify_numbers(text: str, known: list[float], context: str = "") -> list[str]:
-    """Figures in `text` that match neither a tool result nor a number in `context` (brief / user message)."""
+    """Figures in `text` that match neither a tool result nor a number in `context` (the founder's message)."""
     allowed = list(known) + [f.value for f in extract_figures(context)]
     return [f.text for f in extract_figures(text) if not number_supported(f, allowed)]
 
 
 def verify_citations(text: str, citations: list[Citation]) -> list[str]:
+    """The answer must name at least one source path, and every path it names must have been returned."""
     issues: list[str] = []
-    cited = {c.path for c in citations}
-    if text.strip() and not cited:
+    returned = {c.path for c in citations}
+    named = set(PATH_RE.findall(text))
+    if text.strip() and not named & returned:
         issues.append("the answer cites no vault source")
-    for path in sorted(set(PATH_RE.findall(text))):
-        if path not in cited:
-            issues.append(f"{path} was not returned by a search")
+    for path in sorted(named - returned):
+        issues.append(f"{path} was not returned by a search")
     return issues
 
 
