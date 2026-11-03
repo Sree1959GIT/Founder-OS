@@ -6,6 +6,7 @@ import re
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +55,19 @@ class Settings(BaseSettings):
     # Vector store (Qdrant, Docker)
     qdrant_host: str = "localhost"
     qdrant_port: int = Field(default=6333, ge=1, le=65535)
+
+    # Vault and search (M2)
+    # Copy the Northwind sample notes (sample_data/vault/) into an empty vault at startup.
+    auto_load_sample_vault: bool = True
+    # auto: Qdrant when reachable at startup, else in memory. qdrant: Qdrant only. memory: never use Qdrant.
+    vector_store: Literal["auto", "qdrant", "memory"] = "auto"
+    # ollama: OLLAMA_EMBED_MODEL. fake: deterministic offline hashing embedder (tests and demos without Ollama).
+    embed_provider: Literal["ollama", "fake"] = "ollama"
+    # tiktoken (cl100k_base, falls back to approx when it cannot load) or approx.
+    tokenizer: Literal["tiktoken", "approx"] = "tiktoken"
+    # Re-index when vault files change on disk. Polling helps on network drives.
+    vault_watch: bool = True
+    vault_watch_polling: bool = False
 
     # Cloud providers for deep-work agents
     deep_provider: DeepProvider = DeepProvider.OLLAMA
