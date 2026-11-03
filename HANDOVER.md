@@ -138,7 +138,13 @@ Known issues:
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-
+### [M0] setup.bat picks Python 3.14 when 3.11 is not installed
+- Did: ran setup.bat on Windows 11 with Python 3.12 and 3.14 installed (no 3.11); `python` on PATH is 3.14.5
+- Expected: setup.bat chooses a supported version (3.12 or 3.11)
+- Got: it only tries `py -3.11`, then falls back to `python` (3.14). Worked around by running `py -3.12 -m venv .venv` before setup.bat
+- Fix wanted: try `py -3.12`, then `py -3.11`, then `python`; warn if the chosen version is 3.13 or newer (later ML/voice wheels may be missing). Update run.bat/README to match
+- Priority: low
+- M0 checklist: items 1–8 passed on RTX 4080 Laptop (Node v24.13.1, Python 3.12 venv); Ollama not installed yet
 ## Open questions for founder
 1. Demo currency: USD is the default; INR is available with `--currency INR` (fixed rate 84). Should the shipped
    `sample_data/` be INR instead?
