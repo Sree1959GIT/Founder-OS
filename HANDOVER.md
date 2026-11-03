@@ -53,6 +53,7 @@
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
 | M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
+| M1 Financial spine | [Sree1959GIT/Founder-OS#3](https://github.com/Sree1959GIT/Founder-OS/pull/3) | **Major** | AWAITING FOUNDER (write `ACCEPTED` or the issues here) |
 
 ## Current session
 - Started (UTC): 2026-11-03 05:48 (local Windows 11 session, founder's PC)
