@@ -362,7 +362,7 @@ FROM prev LEFT JOIN cur USING (month, customer_id)"""
                 note="Not burning cash: runway is unlimited at the current rate",
                 detail={"zero_cash_month": None},
             )
-        runway = _q(cash / burn)
+        runway = _q(max(cash, Decimal(0)) / burn)  # already out of cash: 0 months
         zero_month = shift_month(m, math.ceil(runway)) if cash > 0 else m
         return self._result(
             t,

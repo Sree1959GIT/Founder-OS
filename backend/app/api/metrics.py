@@ -9,6 +9,7 @@ from app.deps import FinanceDep
 from app.engine.decision_science import KillCheck, KillCriterion, evaluate_kill_criteria
 from app.engine.lineage import MetricResult
 from app.engine.metrics import METRICS, SUMMARY_METRICS
+from app.engine.scenario import DEFAULT_HORIZON, MAX_HORIZON, Adjustments, ScenarioResult
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -44,6 +45,16 @@ def index(finance: FinanceDep) -> MetricsIndex:
 def summary(finance: FinanceDep, month: str | None = MonthQuery) -> list[MetricResult]:
     """The headline numbers for the dashboard, computed on one connection."""
     return finance.metrics.compute_many(list(SUMMARY_METRICS), month)
+
+
+@router.get("/cash-projection", response_model=ScenarioResult)
+def cash_projection(
+    finance: FinanceDep,
+    month: str | None = MonthQuery,
+    horizon: int = Query(DEFAULT_HORIZON, ge=1, le=MAX_HORIZON),
+) -> ScenarioResult:
+    """The base-case cash-flow projection (no adjustments): `points[].base_cash`, runway and zero-cash month."""
+    return finance.scenario.run(Adjustments(), month, horizon)
 
 
 @router.post("/kill-criteria", response_model=list[KillCheck])

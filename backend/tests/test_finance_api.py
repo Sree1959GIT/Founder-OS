@@ -88,6 +88,14 @@ def test_metrics_index_and_summary(client: TestClient) -> None:
     assert summary["gross_margin"] == 0.7213
 
 
+def test_cash_projection_endpoint(client: TestClient) -> None:
+    body = client.get("/api/metrics/cash-projection").json()
+    assert len(body["points"]) == 12
+    assert body["base_zero_cash_month"] == "2027-10"
+    assert all(p["delta"] == 0 for p in body["points"])
+    assert len(client.get("/api/metrics/cash-projection", params={"horizon": 24}).json()["points"]) == 24
+
+
 def test_kill_criteria_endpoint(client: TestClient) -> None:
     body = {"criteria": [{"name": "Runway", "metric": "runway", "operator": "<", "threshold": 6}]}
     (check,) = client.post("/api/metrics/kill-criteria", json=body).json()
