@@ -57,18 +57,18 @@
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
 
 ## Current session
-- Started (UTC): 2026-11-03 13:29 (local Windows 11 session, founder's PC); wrapped up ~14:15
-- Target: **M2: Vault & hybrid RAG** (gate tier: **Light**)
+- Started (UTC): 2026-11-03 16:16 (local Windows 11 session, founder's PC), branch `claude/m3a-agents`
+- Target: **M3a: LLM layer, agent framework & core agents** (gate tier: **Medium**)
 - Plan:
-  - [x] Tidy stale M1 status lines (M1 ACCEPTED)
-  - [x] `vault/links.py` (wikilinks + aliases, rename rewrite), `vault/parsers.py` (MD/TXT, PDF via pypdf, CSV/XLSX summary rows)
-  - [x] `vault/manager.py` (frontmatter, safe paths, CRUD, rename-safe link updates, backlinks `.index/links.json`)
-  - [x] `engine/chunking.py` (parent ~1000 / child ~250 tokens; tiktoken `cl100k_base` with offline fallback)
-  - [x] `engine/embeddings.py` (Ollama `nomic-embed-text` + fake), `engine/vector_store.py` (Qdrant REST + in-memory)
-  - [x] `engine/hybrid_rag.py` (BM25 via rank-bm25 + dense, RRF k=60, parent chunks with citations)
-  - [x] `vault/watcher.py` (watchfiles re-index), sample Northwind vault notes, startup wiring
-  - [x] REST `/api/vault/*`, `/api/search` + tests (fake embeddings, in-memory store)
-  - [x] Wrap-up: checks, self-review, HANDOVER (Windows checklist incl. Notepad edit), PR, CI
+  - [ ] Founder feedback: "(None)" fallback warning; Ollama in Docker (setup.bat HTTP detection, `docker exec` hints)
+  - [ ] Decisions: chat model `qwen3:8b` with thinking off; Ollama is an external service; EmbeddingGemma vs nomic → M3c
+  - [ ] `app/llm/` (base, Ollama, Anthropic API, Gemini, Claude Agent SDK, Fake, router with fallback to Ollama)
+  - [ ] `app/decision/` (interface, LLM + Fake providers, JSONL decision log, confidence escalation)
+  - [ ] `app/agents/` (registry, prompts, tools with lineage/citations, runner, Planner, Financial Analyst, Librarian,
+        Verifier, Advisor, LangGraph graph with `Send` fan-out, concurrency caps, team approval)
+  - [ ] Event bus + `/api/events` (SSE), `/api/chat` (streaming SSE or JSON), `/api/runs/*`, `/api/agents`
+  - [ ] Health: Ollama loaded models + VRAM in use
+  - [ ] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
 **M2 is complete** (PR awaiting the founder's Light gate). M0 and M1 behaviour is unchanged (all M1 tests pass).

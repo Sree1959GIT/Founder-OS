@@ -274,9 +274,12 @@ class HybridIndex:
             if stale:
                 self.store.delete(stale)
                 stored.difference_update(stale)
+            if not missing and self._dense_error:
+                # Nothing to embed proves nothing: check the embedder itself before clearing a query-time error.
+                self.embedder.embed_query("ping")
             self._stored_ids = stored
             self._embedded_ids = set(stored)
-            if missing and self._dense_error:
+            if self._dense_error:
                 logger.info("Vault: dense search available again ({} chunks embedded)", len(missing))
             self._dense_error = None
         except (EmbeddingError, VectorStoreError) as exc:
@@ -339,9 +342,10 @@ class HybridIndex:
     ) -> tuple[list[str] | None, str | None]:
         if self.store is None:
             return None, self._store_warning or "no vector store configured; using keyword search (BM25) only"
-        if self._dense_error:
+        error = self._dense_error  # read once: the retry thread may clear it concurrently
+        if error:
             self._maybe_retry_dense()
-            return None, f"semantic search unavailable ({self._dense_error}); using keyword search (BM25) only"
+            return None, f"semantic search unavailable ({error}); using keyword search (BM25) only"
         wanted = {point_id(c.id, c.content_hash) for c in allowed.values()}
         pending = len(wanted - self._embedded_ids)
         warning = None
