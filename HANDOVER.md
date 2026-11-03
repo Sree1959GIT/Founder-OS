@@ -7,7 +7,7 @@
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** **M2: Vault & hybrid RAG**, but only after the founder writes `ACCEPTED` for M1 in the Gate log (Major gate)
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-03 (M1 bug-fix session: projected-runway feedback fixed in PR #3, awaiting the founder's **re-test**)
+- **Last updated:** 2026-11-03 (M1 bug-fix session: projected-runway feedback fixed in PR #4 (#3 was already merged), awaiting the founder's **re-test**)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -53,7 +53,7 @@
 |---|---|---|---|
 | Planning | (committed directly before the branch rename) | n/a | ACCEPTED |
 | M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
-| M1 Financial spine | [Sree1959GIT/Founder-OS#3](https://github.com/Sree1959GIT/Founder-OS/pull/3) | **Major** | AWAITING FOUNDER (re-test). ISSUES FOUND 2026-11-03 (projection growth assumption) were fixed in the same PR: run checklist steps R1–R8 |
+| M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | AWAITING FOUNDER (re-test). ISSUES FOUND 2026-11-03 (projection growth assumption) on #3, fixed in #4: run checklist steps R1–R8 |
 
 ## Current session
 - Started (UTC): 2026-11-03 05:48 (local Windows 11 session, founder's PC)
@@ -235,7 +235,7 @@ _Write results from your Windows checks, bugs and change requests here. The next
   3. A reconciliation test: with no growth, projection runway agrees with the runway metric (10.65) within a stated tolerance, or the remaining gap is explained in the response
   4. Clear naming in API responses and docs: "runway (actual burn)" vs "projected runway (with growth assumptions)", ready for M4 labels
 - Priority: high (blocks M1 acceptance)
-- **Resolved (2026-11-03, same PR #3; re-test: checklist steps R1–R8):**
+- **Resolved (2026-11-03, PR #4; re-test: checklist steps R1–R8):**
   1. `ScenarioResult` and `MonteCarloResult` return `assumptions`: all 12 drivers (starting cash, MRR, churn, new
      customers/month, MRR per new customer, acquisition cost, marketing, other revenue, variable COGS ratio,
      commission ratio, fixed costs, cost per hire) with value, label, unit, window, `used`/`note` and their own lineage
