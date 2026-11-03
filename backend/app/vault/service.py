@@ -91,9 +91,8 @@ class VaultService:
             if self.settings.auto_load_sample_vault:
                 self.seed_sample_vault()
             self.index.refresh(dense=False)
-            logger.info(
-                "Vault indexed: {}", {k: v for k, v in self.index.status().items() if k in ("files", "children")}
-            )
+            stats = self.index.status()
+            logger.info("Vault indexed: {} files, {} chunks", stats["files"], stats["children"])
         except Exception as exc:  # PRD R3: the API still answers (empty results + status shows the error)
             logger.exception("Vault indexing failed: {}", exc)
         finally:

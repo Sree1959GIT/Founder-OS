@@ -91,7 +91,7 @@ class InMemoryVectorStore:
         matrix = np.stack([v for _, (v, _) in items])
         scores = matrix @ query
         order = np.argsort(-scores)[:limit]
-        return [VectorHit(items[i][0], float(scores[i]), items[i][1]) for i in order]
+        return [VectorHit(items[i][0], float(scores[i]), dict(items[i][1][1])) for i in order]
 
 
 class QdrantVectorStore:

@@ -13,6 +13,7 @@ response says so in `warnings`. Chunks that could not be embedded are retried at
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import threading
 import time
@@ -76,6 +77,18 @@ _STOPWORDS = frozenset(
 )
 
 
+class LuceneBM25(BM25Okapi):
+    """BM25Okapi with the Lucene IDF `log(1 + (N - n + 0.5) / (n + 0.5))`, which is always positive.
+
+    rank-bm25's classic IDF goes negative for terms found in more than half the documents, so in a small vault (or a
+    one-note vault) a note that plainly contains the query word could score <= 0 and vanish from keyword results.
+    """
+
+    def _calc_idf(self, nd: dict[str, int]) -> None:
+        for word, freq in nd.items():
+            self.idf[word] = math.log(1 + (self.corpus_size - freq + 0.5) / (freq + 0.5))
+
+
 def bm25_tokens(text: str) -> list[str]:
     return [t for t in (m.lower() for m in _TOKEN_RE.findall(text)) if t not in _STOPWORDS]
 
@@ -99,7 +112,7 @@ class _Snapshot:
     children: list[ChildChunk]
     parents: dict[str, ParentChunk]
     titles: dict[str, str]
-    bm25: BM25Okapi | None
+    bm25: LuceneBM25 | None
 
 
 class HybridIndex:
@@ -190,7 +203,7 @@ class HybridIndex:
         parents = {p.id: p for doc in self._docs.values() for p in doc.parents}
         titles = {doc.path: doc.title for doc in self._docs.values()}
         corpus = [bm25_tokens(c.embed_text) for c in children]
-        bm25 = BM25Okapi(corpus) if corpus and any(corpus) else None
+        bm25 = LuceneBM25(corpus) if corpus and any(corpus) else None
         self._snapshot = _Snapshot(children, parents, titles, bm25)
         self.last_indexed_at = time.time()
 

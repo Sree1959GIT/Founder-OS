@@ -37,7 +37,9 @@ def make_filter(root: Path) -> Callable[[Change, str], bool]:
 def changed_paths(root: Path, changes: set[tuple[Change, str]]) -> set[str]:
     """Vault-relative POSIX paths for a batch of watchfiles changes."""
     rels: set[str] = set()
-    for _, path in changes:
+    for change, path in changes:
+        if change == Change.modified and os.path.isdir(path):
+            continue  # Windows reports the parent folder on every save; the file event is enough
         try:
             rels.add(Path(os.path.relpath(path, root)).as_posix())
         except ValueError:

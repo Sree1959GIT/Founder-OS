@@ -32,6 +32,15 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in Settings.model_fields:
         monkeypatch.delenv(name.upper(), raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
+    # Any Settings() built in a test stays offline: no Ollama, no Qdrant, no tiktoken download, no file watcher.
+    for name, value in {
+        "EMBED_PROVIDER": "fake",
+        "VECTOR_STORE": "memory",
+        "TOKENIZER": "approx",
+        "VAULT_WATCH": "false",
+        "AUTO_LOAD_SAMPLE_VAULT": "false",
+    }.items():
+        monkeypatch.setenv(name, value)
 
 
 @pytest.fixture
