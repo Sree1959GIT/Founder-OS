@@ -41,6 +41,7 @@
 | M1 Financial engine | **Major** (are the numbers right?) |
 | M2 Vault & search | Light |
 | M3a Agent framework | Medium (first run with real Ollama) |
+| M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | AWAITING FOUNDER |
 | M3b Specialist agents | Medium |
 | M3c Laya / Jev | Light |
 | M4 Canvas UI | **Major** (first full demo) |
