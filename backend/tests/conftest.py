@@ -39,6 +39,8 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "TOKENIZER": "approx",
         "VAULT_WATCH": "false",
         "AUTO_LOAD_SAMPLE_VAULT": "false",
+        "LLM_PROVIDER": "fake",
+        "DECISION_PROVIDER": "fake",
     }.items():
         monkeypatch.setenv(name, value)
 
@@ -57,6 +59,8 @@ def settings(tmp_path: Path) -> Settings:
         vector_store="memory",
         tokenizer="approx",
         vault_watch=False,
+        llm_provider="fake",
+        decision_provider="fake",
     )
 
 

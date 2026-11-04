@@ -12,6 +12,7 @@ response says so in `warnings`. Chunks that could not be embedded are retried at
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import math
 import re
@@ -28,8 +29,15 @@ from rank_bm25 import BM25Okapi
 from app.engine.chunking import ChildChunk, ParentChunk, Tokenizer, chunk_document
 from app.engine.embeddings import Embedder, EmbeddingError
 from app.engine.vector_store import VectorPoint, VectorStore, VectorStoreError, point_id
+from app.vault.decisions import (
+    DecisionRecord,
+    build_record,
+    frontmatter_section,
+    frontmatter_text,
+    without_links,
+)
 from app.vault.manager import VaultManager
-from app.vault.parsers import ParseError, parse_file
+from app.vault.parsers import ParseError, Section, parse_file
 
 RRF_K = 60
 MAX_INDEX_BYTES = 25 * 1024 * 1024
@@ -76,6 +84,36 @@ _STOPWORDS = frozenset(
     ]
 )
 
+# Words that say how a question is asked, not what it is about. They never make a past decision "on topic".
+_NOT_TOPICAL = (
+    "about after again all already am any before can could decide decided decision decisions did do does doing done "
+    "far five four get had how i if last list make may me might month months more most my need next not note notes "
+    "now one past previous prior quarter quarters say says second should show so still tell than their them then there "
+    "these they think third three two us vault want why work working would year years"
+)
+_DECISION_WORDS = ("decide", "decided", "decision", "decisions")
+MAX_PAST_DECISIONS = 3
+
+
+def stem(token: str) -> str:
+    """A light English stemmer, so "SDR" finds "SDRs" and "hiring" finds "hire". Numbers stay as they are."""
+    if not token.isalpha() or len(token) < 4:
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        token = token[:-1]
+    for suffix in ("ing", "ed"):
+        base = token[: -len(suffix)]
+        if token.endswith(suffix) and len(base) >= 3 and re.search(r"[aeiouy]", base):
+            token = base
+            if len(token) > 3 and token[-1] == token[-2] and token[-1] not in "aeiouylsz":
+                token = token[:-1]  # running -> run
+            break
+    if token.endswith("e") and len(token) >= 4:
+        token = token[:-1]  # hire, hires, hiring and hired all become "hir"
+    return token
+
 
 class LuceneBM25(BM25Okapi):
     """BM25Okapi with the Lucene IDF `log(1 + (N - n + 0.5) / (n + 0.5))`, which is always positive.
@@ -96,7 +134,30 @@ def folder_prefixes(path: str) -> list[str]:
 
 
 def bm25_tokens(text: str) -> list[str]:
-    return [t for t in (m.lower() for m in _TOKEN_RE.findall(text)) if t not in _STOPWORDS]
+    return [stem(t) for t in (m.lower() for m in _TOKEN_RE.findall(text)) if t not in _STOPWORDS]
+
+
+_NOT_TOPICAL_STEMS = frozenset(bm25_tokens(_NOT_TOPICAL))
+
+
+def topic_terms(text: str) -> list[str]:
+    return list(dict.fromkeys(t for t in bm25_tokens(text) if t not in _NOT_TOPICAL_STEMS))
+
+
+def decision_matches(terms: list[str], name_words: set[str], body_words: set[str]) -> tuple[int, int] | None:
+    """(matches in the note's name and tags, matches anywhere), or None when the note is not on this topic.
+
+    Dense search always returns something, so "on topic" is decided here by words: two matches in the note's name,
+    every word of the question (two or more), or most of them including one in its name (or three anywhere). "Should
+    we hire a designer?" does not match a note on hiring SDRs. Years and other bare numbers are not topics.
+    """
+    terms = [t for t in terms if not t.isdigit()]
+    named = sum(t in name_words for t in terms)
+    matched = sum(t in name_words or t in body_words for t in terms)
+    all_of_them = matched == len(terms) and matched >= 2
+    if named >= 2 or all_of_them or (matched * 2 > len(terms) and (named >= 1 or matched >= 3)):
+        return named, matched
+    return None
 
 
 @dataclass
@@ -109,6 +170,9 @@ class IndexedDoc:
     parents: list[ParentChunk] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     error: str | None = None
+    frontmatter: dict[str, Any] = field(default_factory=dict)
+    decision: DecisionRecord | None = None
+    body: str = ""
 
 
 @dataclass
@@ -119,6 +183,9 @@ class _Snapshot:
     parents: dict[str, ParentChunk]
     titles: dict[str, str]
     bm25: LuceneBM25 | None
+    metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+    decisions: dict[str, DecisionRecord] = field(default_factory=dict)
+    decision_words: dict[str, tuple[set[str], set[str]]] = field(default_factory=dict)
 
 
 class HybridIndex:
@@ -174,8 +241,21 @@ class HybridIndex:
         kind = path.suffix.lower().lstrip(".")
         try:
             parsed = parse_file(path)
-            parents = chunk_document(rel, parsed.title, parsed.sections, self.tokenizer)
-            doc = IndexedDoc(rel, parsed.title, kind, stamp, file_hash, parents, parsed.warnings)
+            record = frontmatter_section(parsed)
+            sections: list[Section] = [record, *parsed.sections] if record else parsed.sections
+            parents = chunk_document(rel, parsed.title, sections, self.tokenizer)
+            doc = IndexedDoc(
+                rel,
+                parsed.title,
+                kind,
+                stamp,
+                file_hash,
+                parents,
+                parsed.warnings,
+                frontmatter=parsed.frontmatter,
+                decision=build_record(rel, parsed),
+                body=parsed.body,
+            )
         except Exception as exc:  # one odd file (bad CSV, AES-encrypted PDF...) must never stop the index
             message = str(exc) if isinstance(exc, ParseError) else f"cannot parse ({type(exc).__name__}: {exc})"
             doc = IndexedDoc(rel, path.stem, kind, stamp, file_hash, error=message)
@@ -211,7 +291,31 @@ class HybridIndex:
         titles = {doc.path: doc.title for doc in self._docs.values()}
         corpus = [bm25_tokens(c.embed_text) for c in children]
         bm25 = LuceneBM25(corpus) if corpus and any(corpus) else None
-        self._snapshot = _Snapshot(children, parents, titles, bm25)
+        decisions = {doc.path: doc.decision for doc in self._docs.values() if doc.decision}
+        self._snapshot = _Snapshot(
+            children,
+            parents,
+            titles,
+            bm25,
+            metadata={doc.path: doc.frontmatter for doc in self._docs.values() if doc.frontmatter},
+            decisions=decisions,
+            decision_words={
+                path: (
+                    # No digits: the 2026 of a dated file name must not match a year in the question.
+                    {
+                        word
+                        for word in bm25_tokens(" ".join([record.title, PurePosixPath(path).stem, *record.tags]))
+                        if not word.isdigit()
+                    },
+                    set(
+                        bm25_tokens(
+                            f"{without_links(self._docs[path].body)}\n{frontmatter_text(self._docs[path].frontmatter)}"
+                        )
+                    ),
+                )
+                for path, record in decisions.items()
+            },
+        )
         self.last_indexed_at = time.time()
 
     def refresh(self, paths: Iterable[str] | None = None, *, dense: bool = True, full: bool = False) -> bool:
@@ -274,9 +378,12 @@ class HybridIndex:
             if stale:
                 self.store.delete(stale)
                 stored.difference_update(stale)
+            if not missing and self._dense_error:
+                # Nothing to embed proves nothing: check the embedder itself before clearing a query-time error.
+                self.embedder.embed_query("ping")
             self._stored_ids = stored
             self._embedded_ids = set(stored)
-            if missing and self._dense_error:
+            if self._dense_error:
                 logger.info("Vault: dense search available again ({} chunks embedded)", len(missing))
             self._dense_error = None
         except (EmbeddingError, VectorStoreError) as exc:
@@ -325,9 +432,28 @@ class HybridIndex:
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
         }
 
+    def past_decisions(
+        self, query: str, limit: int = MAX_PAST_DECISIONS, today: dt.date | None = None
+    ) -> list[DecisionRecord]:
+        """Decision notes on the topic of `query`, best first (or the latest, for "what have we decided?")."""
+        snap = self._snapshot
+        today = today or dt.date.today()
+        terms = topic_terms(query)
+        scored: list[tuple[tuple[int, int], DecisionRecord]] = []
+        if terms:
+            for path, record in snap.decisions.items():
+                match = decision_matches(terms, *snap.decision_words[path])
+                if match is not None:
+                    scored.append((match, record))
+        elif any(word in _TOKEN_RE.findall(query.lower()) for word in _DECISION_WORDS):
+            scored = [((0, 0), record) for record in snap.decisions.values()]
+        scored.sort(key=lambda item: (item[0], item[1].decided or "", item[1].path), reverse=True)
+        return [record.with_review_state(today) for _, record in scored[:limit]]
+
     @staticmethod
     def _bm25_ranking(query: str, snap: _Snapshot, allowed: dict[str, ChildChunk], candidates: int) -> list[str]:
-        tokens = bm25_tokens(query)
+        # "What do my notes say about X?" is about X: question words only count when nothing else is left.
+        tokens = topic_terms(query) or bm25_tokens(query)
         if snap.bm25 is None or not tokens:
             return []
         scores = snap.bm25.get_scores(tokens)
@@ -339,9 +465,10 @@ class HybridIndex:
     ) -> tuple[list[str] | None, str | None]:
         if self.store is None:
             return None, self._store_warning or "no vector store configured; using keyword search (BM25) only"
-        if self._dense_error:
+        error = self._dense_error  # read once: the retry thread may clear it concurrently
+        if error:
             self._maybe_retry_dense()
-            return None, f"semantic search unavailable ({self._dense_error}); using keyword search (BM25) only"
+            return None, f"semantic search unavailable ({error}); using keyword search (BM25) only"
         wanted = {point_id(c.id, c.content_hash) for c in allowed.values()}
         pending = len(wanted - self._embedded_ids)
         warning = None
@@ -391,6 +518,8 @@ class HybridIndex:
                     "child_id": child.id,
                     "text": parent.text,
                     "snippet": child.text,
+                    "metadata": snap.metadata.get(parent.path, {}),
+                    "decision": snap.decisions.get(parent.path),
                     "bm25_rank": ranks[child_id].get("bm25"),
                     "dense_rank": ranks[child_id].get("dense"),
                     "citation": {"path": parent.path, "heading": child.heading, "chunk_id": parent.id},

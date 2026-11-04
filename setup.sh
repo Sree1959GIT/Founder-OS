@@ -44,13 +44,26 @@ env_value() {  # env_value KEY DEFAULT: read KEY from .env, else DEFAULT
   value="$(grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- || true)"
   echo "${value:-$2}"
 }
-CHAT_MODEL="$(env_value OLLAMA_CHAT_MODEL qwen2.5:7b-instruct-q4_K_M)"
+OLLAMA_URL="$(env_value OLLAMA_BASE_URL http://localhost:11434)"
+CHAT_MODEL="$(env_value OLLAMA_CHAT_MODEL qwen3:8b)"
 EMBED_MODEL="$(env_value OLLAMA_EMBED_MODEL nomic-embed-text)"
-if command -v ollama >/dev/null 2>&1; then
-  ollama pull "$CHAT_MODEL" || echo "[WARN] Could not pull $CHAT_MODEL"
-  ollama pull "$EMBED_MODEL" || echo "[WARN] Could not pull $EMBED_MODEL"
+# Ollama is an external service (native app or Docker container): detect it over HTTP, not by the CLI.
+if curl -fsS -m 5 "$OLLAMA_URL/api/version" >/dev/null 2>&1; then
+  echo "Ollama is running at $OLLAMA_URL"
+  TAGS="$(curl -fsS -m 10 "$OLLAMA_URL/api/tags" 2>/dev/null || true)"
+  for model in "$CHAT_MODEL" "$EMBED_MODEL"; do
+    case "$model" in *:*) wanted="\"name\":\"$model\"" ;; *) wanted="\"name\":\"$model:latest\"" ;; esac
+    if printf '%s' "$TAGS" | grep -qF "$wanted"; then
+      echo "Ollama model $model is pulled"
+    elif command -v ollama >/dev/null 2>&1; then
+      OLLAMA_HOST="$OLLAMA_URL" ollama pull "$model" || echo "[WARN] Could not pull $model"
+    else
+      echo "[WARN] Ollama model $model is not pulled and the ollama command is missing. Run:"
+      echo "       docker exec ollama ollama pull $model"
+    fi
+  done
 else
-  echo "[WARN] Ollama not found. Install it, then: ollama pull $CHAT_MODEL && ollama pull $EMBED_MODEL"
+  echo "[WARN] Ollama is not answering at $OLLAMA_URL. Start it (app or Docker), then pull $CHAT_MODEL and $EMBED_MODEL"
 fi
 
 echo "Setup complete. Start FounderOS with ./run.sh"

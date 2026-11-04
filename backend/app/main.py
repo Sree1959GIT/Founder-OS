@@ -17,7 +17,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app import __version__
-from app.api import data, health, metrics, scenario, vault
+from app.agents.setup import build_orchestrator
+from app.api import chat, data, health, metrics, scenario, vault
 from app.config import Settings, get_settings
 from app.deps import FinanceServices
 from app.engine.calibration import CalibrationError
@@ -25,6 +26,8 @@ from app.engine.duckdb_engine import NoDataError
 from app.engine.ingest import IngestError, ingest_directory
 from app.engine.metrics import MetricError
 from app.engine.sql_guard import SqlGuardError
+from app.llm.base import LLMError
+from app.llm.ollama import OllamaProvider
 from app.logging_setup import configure_logging
 from app.vault.manager import NoteExistsError, NoteNotFoundError, VaultError, VaultPathError
 from app.vault.service import VaultService
@@ -42,6 +45,16 @@ def load_sample_data_if_empty(settings: Settings, services: FinanceServices) -> 
         logger.info("Loaded sample data from {} ({} tables)", source, len(reports))
     except Exception as exc:  # a broken sample folder must not stop the backend
         logger.error("Could not load sample data: {}", exc)
+
+
+async def warm_up_chat_model(provider: OllamaProvider) -> None:
+    """Background task: load the chat model so the first question does not wait minutes. Never raises (PRD R3)."""
+    logger.info("Loading {} into Ollama in the background (first load can take minutes)", provider.model)
+    try:
+        seconds = await provider.warm_up()
+        logger.info("Ollama model {} is loaded ({} s)", provider.model, seconds)
+    except LLMError as exc:
+        logger.warning("Could not preload {}: {} (agents use rules until Ollama answers)", provider.model, exc)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -67,6 +80,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         indexing = asyncio.get_running_loop().run_in_executor(None, vault_service.ensure_started)
         if settings.vault_watch:
             await vault_service.start_watcher()
+        orchestrator = build_orchestrator(settings, services, vault_service)
+        app.state.event_bus = orchestrator.bus
+        app.state.orchestrator = orchestrator
+        logger.info(
+            "Agents ready: local LLM {}:{} (thinking {}), deep provider {}, team approval {}",
+            orchestrator.router.local.name,
+            orchestrator.router.local.model,
+            "on" if settings.ollama_think else "off",
+            orchestrator.router.cloud.name if orchestrator.router.cloud else "none (local only)",
+            settings.team_approval,
+        )
+        warmup = (
+            asyncio.create_task(warm_up_chat_model(orchestrator.router.local))
+            if settings.ollama_warmup and isinstance(orchestrator.router.local, OllamaProvider)
+            else None
+        )
         logger.info(
             "FounderOS backend {} started (workspace={}, data={})",
             __version__,
@@ -76,6 +105,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if warmup is not None:
+                warmup.cancel()
             await vault_service.stop_watcher()
             if not indexing.done():
                 logger.info("Shutting down while the vault is still indexing")
@@ -96,6 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(metrics.router, prefix="/api")
     app.include_router(scenario.router, prefix="/api")
     app.include_router(vault.router, prefix="/api")
+    app.include_router(chat.router, prefix="/api")
     _add_error_handlers(app)
     return app
 

@@ -90,6 +90,25 @@ def test_embedder_down_falls_back_to_bm25_then_recovers(tmp_path: Path) -> None:
     assert index.search("annual prepayment discount")["mode"] == "hybrid"
 
 
+def test_embedder_down_after_indexing_keeps_the_reason(tmp_path: Path) -> None:
+    """Founder feedback [M2]: during the retry window the warning said "(None)" instead of the reason."""
+    embedder = FakeEmbedder()
+    index = make_index(tmp_path, embedder=embedder)  # everything embedded, then "Ollama stops"
+    embedder.fail = True
+    index.retry_s = 0.0
+    first = index.search("churn")
+    assert first["mode"] == "bm25" and "fake embedder is set to fail" in first["warnings"][0]
+    for _ in range(5):
+        index.sync_vectors()  # nothing is missing, but the embedder must still be checked
+        result = index.search("churn")
+        assert result["mode"] == "bm25"
+        assert "(None)" not in result["warnings"][0] and "fake embedder is set to fail" in result["warnings"][0]
+    assert "fail" in index.status()["dense_error"]
+    embedder.fail = False
+    index.sync_vectors()
+    assert index.status()["dense_error"] is None and index.search("churn")["mode"] == "hybrid"
+
+
 def test_no_store_means_bm25_with_warning(tmp_path: Path) -> None:
     root = tmp_path / "v"
     shutil.copytree(SAMPLE_VAULT, root)
