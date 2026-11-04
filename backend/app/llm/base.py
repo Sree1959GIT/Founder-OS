@@ -32,6 +32,7 @@ class ToolCall(BaseModel):
     id: str = Field(default_factory=lambda: f"call_{uuid.uuid4().hex[:12]}")
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    signature: str | None = Field(default=None, description="Gemini's thoughtSignature, replayed with the call")
 
 
 class Message(BaseModel):

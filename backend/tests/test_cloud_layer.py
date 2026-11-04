@@ -145,6 +145,68 @@ async def test_web_search_returns_the_pages_behind_the_answer() -> None:
 
 
 # --- settings to routes ----------------------------------------------------------------------------------------------
+def test_gemini_replays_parallel_results_in_one_turn_with_the_signature() -> None:
+    call_a = ToolCall(id="a", name="f", arguments={}, signature="sig-a")
+    call_b = ToolCall(id="b", name="g", arguments={})
+    contents = GeminiProvider._contents(
+        [
+            Message.user("q"),
+            Message.assistant("", tool_calls=[call_a, call_b]),
+            Message.tool(call_a, "1"),
+            Message.tool(call_b, "2"),
+        ]
+    )
+    assert [c["role"] for c in contents] == ["user", "model", "user"]
+    assert len(contents[2]["parts"]) == 2
+    assert contents[1]["parts"][0]["thoughtSignature"] == "sig-a" and "thoughtSignature" not in contents[1]["parts"][1]
+
+
+async def test_gemini_keeps_the_signature_it_was_given() -> None:
+    def reply(request: httpx.Request) -> httpx.Response:
+        part = {"functionCall": {"name": "f", "args": {}}, "thoughtSignature": "sig"}
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [part]}}]})
+
+    provider = GeminiProvider(KEY, "m", transport=httpx.MockTransport(reply))
+    completion = await provider.complete(
+        [Message.user("q")], tools=[ToolSpec(name="f", description="d", parameters={})]
+    )
+    assert completion.tool_calls[0].signature == "sig"
+
+
+async def test_anthropic_gets_no_tool_blocks_in_a_request_with_no_tools() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "ok"}], "usage": {}})
+
+    provider = AnthropicAPIProvider(KEY, "m", transport=httpx.MockTransport(reply))
+    call = ToolCall(id="a", name="f", arguments={})
+    history = [Message.user("q"), Message.assistant("", tool_calls=[call]), Message.tool(call, "result")]
+    await provider.complete(history)
+    assert "tool_use" not in json.dumps(bodies[0]) and "tool_result" not in json.dumps(bodies[0])
+    assert "result" in json.dumps(bodies[0]["messages"])
+    await provider.complete(history, tools=[ToolSpec(name="f", description="d", parameters={})])
+    assert "tool_use" in json.dumps(bodies[1])
+
+
+@pytest.mark.parametrize("row", ["| Acme | 12000 |", "Acme, Pro, 12000", "Acme,12000", "Acme | $1.2M", "Acme\t12k"])
+def test_short_data_rows_never_reach_the_cloud(row: str) -> None:
+    assert "Acme" not in filter_text(f"Our customers:\n{row}\nThat is all.")
+
+
+@pytest.mark.parametrize(
+    "line", ["In Q3, 12 customers left, 400 stayed.", "Pricing, churn and the pipeline.", "MRR is $400,000."]
+)
+def test_prose_with_numbers_is_kept(line: str) -> None:
+    assert filter_text(line) == line
+
+
+def test_a_tool_result_that_cannot_be_parsed_is_withheld() -> None:
+    cut = '{"rows":[{"customer":"Acme","mrr":12000,"note":"long'
+    assert "Acme" not in filter_tool_result(cut) and "withheld" in filter_tool_result(cut)
+
+
 def test_each_provider_needs_its_own_key() -> None:
     assert build_cloud_provider(settings(cloud_allowed=True, deep_provider="openai")) is None
     openai = build_cloud_provider(settings(cloud_allowed=True, deep_provider="openai", openai_api_key="k"))

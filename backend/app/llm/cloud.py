@@ -78,10 +78,18 @@ class AnthropicAPIProvider(LLMProvider):
         self._transport = transport
 
     @staticmethod
-    def _messages(messages: list[Message]) -> list[dict[str, Any]]:
+    def _messages(messages: list[Message], *, has_tools: bool = True) -> list[dict[str, Any]]:
+        """`has_tools=False`: the API refuses tool blocks in a request that defines no tools, so they become text."""
         out: list[dict[str, Any]] = []
         for m in messages:
             if m.role == "system":
+                continue
+            if not has_tools and m.role == "tool":
+                out.append({"role": "user", "content": f"Result of {m.name or 'the tool'}: {m.content}"})
+                continue
+            if not has_tools and m.role == "assistant" and m.tool_calls:
+                called = ", ".join(c.name for c in m.tool_calls)
+                out.append({"role": "assistant", "content": f"{m.content} (I called: {called})".strip()})
                 continue
             if m.role == "tool":
                 block = {"type": "tool_result", "tool_use_id": m.tool_call_id or "", "content": m.content}
@@ -107,7 +115,6 @@ class AnthropicAPIProvider(LLMProvider):
         body: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self._max_tokens,
-            "messages": self._messages(messages),
         }
         system = _system_text(messages)
         if system:
@@ -118,6 +125,7 @@ class AnthropicAPIProvider(LLMProvider):
             body["tool_choice"] = {"type": "tool", "name": JSON_TOOL}
         if specs:
             body["tools"] = specs
+        body["messages"] = self._messages(messages, has_tools=bool(specs))
         headers = {"x-api-key": self._key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         try:
             async with httpx.AsyncClient(
@@ -225,10 +233,17 @@ class GeminiProvider(LLMProvider):
                 continue
             if m.role == "tool":
                 part = {"functionResponse": {"name": m.name or "tool", "response": {"content": m.content}}}
-                out.append({"role": "user", "parts": [part]})
+                if out and out[-1]["role"] == "user" and "functionResponse" in out[-1]["parts"][0]:
+                    out[-1]["parts"].append(part)  # parallel results share one turn, as many as there were calls
+                else:
+                    out.append({"role": "user", "parts": [part]})
             elif m.role == "assistant":
                 parts: list[dict[str, Any]] = [{"text": m.content}] if m.content else []
-                parts += [{"functionCall": {"name": c.name, "args": c.arguments}} for c in m.tool_calls]
+                for c in m.tool_calls:
+                    call: dict[str, Any] = {"functionCall": {"name": c.name, "args": c.arguments}}
+                    if c.signature:
+                        call["thoughtSignature"] = c.signature  # Gemini 3 refuses a replayed call without it
+                    parts.append(call)
                 out.append({"role": "model", "parts": parts or [{"text": ""}]})
             else:
                 out.append({"role": "user", "parts": [{"text": m.content}]})
@@ -272,7 +287,13 @@ class GeminiProvider(LLMProvider):
                     texts.append(str(part["text"]))
                 elif "functionCall" in part:
                     call = part["functionCall"]
-                    calls.append(ToolCall(name=str(call["name"]), arguments=dict(call.get("args") or {})))
+                    calls.append(
+                        ToolCall(
+                            name=str(call["name"]),
+                            arguments=dict(call.get("args") or {}),
+                            signature=part.get("thoughtSignature"),
+                        )
+                    )
             meta = data.get("usageMetadata", {})
         except LLMError:
             raise

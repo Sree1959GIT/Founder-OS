@@ -202,7 +202,11 @@ class ConversationManager:
 
     def _finished(self, session: Session, run_id: str, event: AgentEvent) -> None:
         status = event.data.get("status")
-        recap = {"cancelled": "That run was cancelled.", "failed": "That run failed."}.get(
+        recap = {
+            "cancelled": "That run was cancelled.",
+            "failed": "That run failed.",
+            "rejected": "The team was not approved, so nothing ran.",
+        }.get(
             str(status),
             "The answer is ready."
             if event.data.get("verified")
@@ -211,6 +215,14 @@ class ConversationManager:
         self._say(session, recap, "recap")
         if session.run_id == run_id:
             self._offer_next(session)
+        self._close_offers(session, keep=session.run_id if session.run_id != run_id else None)
+
+    @staticmethod
+    def _close_offers(session: Session, keep: str | None = None) -> None:
+        """An amendment changes one run. Once that run has ended or been replaced, the offer is over."""
+        for amendment in session.amendments.values():
+            if amendment.status == "offered" and amendment.run_id != keep:
+                amendment.status = "expired"
 
     def _offer_next(self, session: Session) -> None:
         head = next((q for q in session.queue if q.status in ("queued", "offered")), None)
@@ -266,6 +278,9 @@ class ConversationManager:
         if running is None:
             return await self._turn_when_idle(session, text)
         classified = await self.classifier.classify(text, running.message)
+        running = self._running(session)  # the run may have ended while the classifier was thinking
+        if running is None:
+            return await self._turn_when_idle(session, text)
         self._emit(session, "turn.classified", kind=classified.kind, by=classified.by, text=text)
         match classified.kind:
             case "backchannel":
@@ -340,6 +355,7 @@ class ConversationManager:
         if not accept:
             return {"accepted": False, "run_id": session.run_id}
         self.orchestrator.cancel(amendment.run_id)
+        self._close_offers(session)
         run = self._start_run(session, amendment.edited_message, amendment_of=amendment.run_id)
         return {"accepted": True, "run_id": run.run_id, "replaces": amendment.run_id}
 

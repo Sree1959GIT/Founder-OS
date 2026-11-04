@@ -23,13 +23,14 @@ from app.llm.base import Message
 
 ROWS_REMOVED = "[{n} data rows removed by the privacy filter]"
 EMAIL_REMOVED = "[email removed]"
+RESULT_WITHHELD = "This tool result was too long to filter, so it was not sent. Ask for less."
 # Fields of tool results that hold raw data or how to find it.
 _RAW_KEYS = frozenset({"rows", "sql", "source_rows", "source_files", "sources", "inputs", "points"})
 # Lists of numbers that are summaries by construction, not data rows.
 _SUMMARY_LISTS = frozenset({"metrics", "assumptions", "options", "owners", "decisions", "results"})
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}\b)")
-_NUMERIC_CELL = re.compile(r"^[\s$€£₹(-]*\d[\d.]*\s*[%)]?\s*$")
+_NUMERIC_CELL = re.compile(r"^[\s$€£₹(-]*\d[\d.]*\s*[kKmMbB]?\s*[%)]?\s*$")
 _WORD = re.compile(r"[A-Za-z]{2,}")
 _MAX_WORDS_IN_A_ROW = 8
 
@@ -45,15 +46,19 @@ class FilterReport:
 
 
 def _looks_like_a_row(line: str) -> bool:
-    """A CSV or table line with at least two numeric cells. "We have 3, 4 or 5 options" has too many words to be one."""
+    """A delimited line with a number standing alone in a cell: "Acme, 12000" or "| Acme | $1.2M |".
+
+    Strict on purpose: a filter that lets a data row through is worse than one that drops a list of numbers. "In Q3, 12
+    customers left" stays, because no cell is only a number.
+    """
     cleaned = _THOUSANDS.sub("", line.strip().strip("|"))
     separator = next((s for s in ("|", "\t", ",", ";") if s in cleaned), None)
     if separator is None:
         return False
     cells = cleaned.split(separator)
-    if len(cells) < 3 or len(_WORD.findall(cleaned)) > _MAX_WORDS_IN_A_ROW:
+    if len(cells) < 2 or len(_WORD.findall(cleaned)) > _MAX_WORDS_IN_A_ROW:
         return False
-    return sum(1 for cell in cells if _NUMERIC_CELL.match(cell)) >= 2
+    return any(_NUMERIC_CELL.match(cell) for cell in cells)
 
 
 def filter_text(text: str, report: FilterReport | None = None) -> str:
@@ -121,8 +126,9 @@ def filter_tool_result(content: str, report: FilterReport | None = None) -> str:
     report = report if report is not None else FilterReport()
     try:
         data = json.loads(content)
-    except ValueError:  # cut at MAX_TOOL_CHARS, or not JSON: all that can be judged is its text
-        return filter_text(content, report)
+    except ValueError:  # cut at MAX_TOOL_CHARS, or not JSON: its fields cannot be judged, so it does not leave the PC
+        report.rows_removed += 1
+        return json.dumps({"withheld": RESULT_WITHHELD})
     return json.dumps(_scrub(data, report), ensure_ascii=False, default=str)
 
 

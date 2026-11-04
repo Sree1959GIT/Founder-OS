@@ -291,10 +291,11 @@ def memo_slug(title: str) -> str:
 
 
 def _clean_figures(text: str, known: list[Fact], context: str) -> str:
+    """Removes whole figures only, longest first: taking out "15" must not touch a backed "$1,150"."""
     unbacked = set(verify_numbers(text, known, context))
-    for figure in extract_figures(text):
-        if figure.text in unbacked:
-            text = text.replace(figure.text, FIGURE_REMOVED)
+    wanted = {figure.text for figure in extract_figures(text) if figure.text in unbacked}
+    for figure in sorted(wanted, key=len, reverse=True):
+        text = re.sub(rf"(?<![\d,.]){re.escape(figure)}(?![\d,]|\.\d)", FIGURE_REMOVED, text)
     return text
 
 
@@ -409,7 +410,7 @@ def write_memo(
         raise ValueError(f"could not find a free file name for {base}")
     ctx.vault.apply_changes({written})
     if ctx.finance is not None:
-        for prediction in draft.predictions:
+        for prediction in [p for p in draft.predictions if p.statement != PLACEHOLDER_PREDICTION]:
             ctx.finance.calibration.add(
                 PredictionIn(
                     statement=prediction.statement[:500],

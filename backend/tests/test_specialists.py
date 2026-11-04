@@ -450,6 +450,20 @@ def test_memo_names_and_figures() -> None:
     assert without_unbacked_figures(draft, [Fact(1000.0)], "").context == f"Costs {FIGURE_REMOVED} of $1,000."
 
 
+def test_removing_a_figure_never_touches_a_backed_one() -> None:
+    assert (
+        without_unbacked_figures(MemoDraft(context="Revenue was $1,150 and 1,500 more."), [Fact(1150.0)], "").context
+        == f"Revenue was $1,150 and {FIGURE_REMOVED} more."
+    )
+    kept = without_unbacked_figures(MemoDraft(context="$48,123 then $48."), [Fact(48123.0)], "").context
+    assert kept.startswith("$48,123 then ") and FIGURE_REMOVED in kept
+
+
+async def test_a_placeholder_is_not_stored_as_a_forecast(finance: Any, vault: Any) -> None:
+    result = await runner(FakeProvider([LLMUnavailable("down")]), finance, vault).run(instance("memo_writer"), DUBAI)
+    assert result.memo is not None and finance.calibration.list() == []
+
+
 async def test_a_memo_needs_a_vault(finance: Any) -> None:
     result = await runner(FakeProvider([json.dumps(GOOD_MEMO)]), finance, None).run(instance("memo_writer"), DUBAI)
     assert result.status == "failed" and result.memo is None and not result.verified

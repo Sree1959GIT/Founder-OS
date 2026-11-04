@@ -24,21 +24,28 @@ TURN_QUESTION = (
     "new_question: a separate request. stop: stop the work."
 )
 
-_STOP = re.compile(r"^(please\s+)?(stop|cancel|abort|halt|never ?mind|forget it)\b[\w\s]{0,20}[.!]*$", re.I)
+# A whole turn, about the work itself: "Cancel the Acme contract" and "Stop hiring contractors" are requests.
+_STOP = re.compile(
+    r"^(please\s+)?(stop|cancel|abort|halt|never ?mind|forget it)"
+    r"(\s+(it|that|this|the run|the team|the work|everything|now|please))*[\s.!]*$",
+    re.I,
+)
 _BACKCHANNEL = re.compile(
     r"^(ok|okay|k|thanks|thank you|thx|got it|cool|great|nice|sure|yes|yep|right|good|fine|mm+|hm+|uh[- ]huh|"
     r"go on|go ahead|continue|sounds good|understood)[\s.!,]*(thanks|thank you)?[\s.!]*$",
     re.I,
 )
+# About this work, not the business: "How long is our runway?" and "the status of the Acme deal" are questions.
 _STATUS = re.compile(
-    r"\b(status|progress|how long|how far|how much longer|still (working|running)|are you (done|finished)|"
-    r"is it (done|finished)|who is working|who's working|what are you (doing|working on)|what's happening|"
-    r"where are (we|you)|which agents)\b",
+    r"^(what('s| is) the )?(status|progress)( update)?\s*\??$|^where are (we|you)( at| now)?\s*\??$|"
+    r"\b(how long (will|does|is) (this|it|that)|how much longer|how far along|still (working|running)|"
+    r"are you (done|finished)|is it (done|finished)|who is working|who's working|"
+    r"what are you (doing|working on)|what's happening|which agents)\b",
     re.I,
 )
 _AMENDMENT = re.compile(
-    r"^(actually|instead|wait|correction|sorry|no,)\b|\b(i meant|assume|change (it|that|this|the)|make (it|that)|"
-    r"rather than|use .{1,40} instead|not .{1,40} but)\b",
+    r"^(actually|instead|wait|correction|sorry|no,|make (it|that)|change (it|that|this|the))\b|"
+    r"\b(i meant|assume|rather than|use .{1,40} instead|not .{1,40} but)\b",
     re.I,
 )
 _QUESTION = re.compile(

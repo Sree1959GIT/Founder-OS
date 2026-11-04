@@ -17,7 +17,7 @@ from app.agents.events import EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.tools import ToolContext
 from app.config import Settings
-from app.conversation.classifier import TurnClassifier, by_rules
+from app.conversation.classifier import Classified, TurnClassifier, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.conversation.manager import (
     ASSUMPTION_QUESTION,
@@ -87,6 +87,16 @@ def client(settings: Settings) -> Iterator[TestClient]:
         ("Actually, cancel that.", "stop"),
         ("never mind", "stop"),
         ("The Dubai thing worries me", None),
+        ("What is the status?", "answerable_now"),
+        ("how long does this take", "answerable_now"),
+        ("where are we?", "answerable_now"),
+        # A review caught these: business questions and requests that sound like the work's status or a stop.
+        ("How long is our runway?", "new_question"),
+        ("What's the status of the Acme deal?", "new_question"),
+        ("Where are we on hiring?", "new_question"),
+        ("Can we make it to December?", "new_question"),
+        ("Cancel the Acme contract", None),
+        ("Stop hiring contractors", None),
     ],
 )
 def test_clear_turns_need_no_model(text: str, kind: str | None) -> None:
@@ -292,6 +302,56 @@ async def test_an_idle_turn_never_waits_for_a_model_and_old_idle_sessions_make_r
     for i in range(MAX_SESSIONS + 5):
         manager.session(f"other{i}")
     assert len(manager.sessions) == MAX_SESSIONS
+
+
+async def test_a_rejected_team_is_not_called_an_answer(finance: Any) -> None:
+    manager, _ = lane(finance)
+    session = manager.session("s")
+    event = SimpleNamespace(data={"status": "rejected", "verified": True})
+    manager._finished(session, "run_x", event)  # type: ignore[arg-type]
+    assert session.narration == ["The team was not approved, so nothing ran."]
+
+
+async def test_only_one_amendment_can_replace_a_run(finance: Any) -> None:
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    first = await manager.turn(session_id, "Actually, assume two hires")
+    second = await manager.turn(session_id, "Actually, assume three hires")
+    accepted = manager.answer_amendment(session_id, first.amendment_id or "", True)
+    with pytest.raises(ConversationError):
+        manager.answer_amendment(session_id, second.amendment_id or "", True)  # would orphan the new run
+    assert manager.sessions[session_id].run_id == accepted["run_id"]
+    with pytest.raises(asyncio.CancelledError):
+        await run.task
+    provider.release.set()
+    await manager.orchestrator.runs[accepted["run_id"]].task
+
+
+async def test_an_offer_ends_with_its_run(finance: Any) -> None:
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    offer = await manager.turn(session_id, "Actually, assume two hires")
+    provider.release.set()
+    await run.task
+    await _until(lambda: not manager.sessions[session_id].narrators)
+    with pytest.raises(ConversationError):
+        manager.answer_amendment(session_id, offer.amendment_id or "", True)
+
+
+async def test_a_run_ending_while_the_classifier_thinks_does_not_lose_the_turn(finance: Any) -> None:
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+
+    class EndsTheRun(TurnClassifier):
+        async def classify(self, text: str, running_message: str) -> Classified:
+            provider.release.set()
+            await run.task
+            return Classified(kind="new_question", by="default")
+
+    manager.classifier = EndsTheRun()
+    outcome = await manager.turn(session_id, "The Dubai thing worries me")
+    assert outcome.run_id != run.run_id and manager.sessions[session_id].queue == []
+    await manager.orchestrator.runs[outcome.run_id or ""].task
 
 
 # --- API --------------------------------------------------------------------------------------------------------------
