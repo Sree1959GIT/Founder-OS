@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.events import Artifact, ArtifactKind, Citation
-from app.agents.verifier import extract_figures
+from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields
 from app.engine.decision_science import EVOption, ScoringRequest, expected_values, weighted_scoring
 from app.engine.duckdb_engine import NoDataError
 from app.engine.lineage import Lineage
@@ -41,28 +41,57 @@ class ToolOutcome:
     content: dict[str, Any]
     artifacts: list[Artifact] = field(default_factory=list)
     citations: list[Citation] = field(default_factory=list)
-    numbers: list[float] = field(default_factory=list)
+    facts: list[Fact] = field(default_factory=list)
     error: str | None = None
+
+    @property
+    def numbers(self) -> list[float]:
+        return [f.value for f in self.facts]
 
     def for_model(self) -> str:
         payload = {"error": self.error} if self.error else self.content
         return json.dumps(payload, ensure_ascii=False, default=str)[:MAX_TOOL_CHARS]
 
 
-def collect_numbers(value: Any) -> list[float]:
-    """Every number inside a JSON-like value (dict keys excluded; SQL text and ids are strings, so skipped)."""
-    found: list[float] = []
-    if isinstance(value, bool):
-        return found
-    if isinstance(value, int | float):
-        found.append(float(value))
-    elif isinstance(value, dict):
-        for item in value.values():
-            found.extend(collect_numbers(item))
-    elif isinstance(value, list | tuple):
-        for item in value:
-            found.extend(collect_numbers(item))
-    return found
+def quoted_facts(text: str) -> list[Fact]:
+    """Figures in a passage from a note: backed by its citation, with no field to say what they mean."""
+    return [Fact(f.value) for f in extract_figures(text)]
+
+
+class DecisionImpact(BaseModel):
+    """What a what-if does, computed in code from the scenario. The answer states these, not raw totals."""
+
+    new_hires: int
+    cost_per_hire_monthly: float | None = Field(description="Loaded monthly cost per person")
+    cost_is_company_average: bool = Field(
+        True, description="True: the average of the company's own payroll, not a quote for this role"
+    )
+    monthly_cost_delta: float = Field(description="new_hires x cost_per_hire_monthly + spend_change_monthly")
+    base_runway_months: float | None
+    scenario_runway_months: float | None
+    runway_change_months: float | None
+    as_of: str
+    currency: str
+    growth_mode: str
+
+    def sentence(self) -> str:
+        """The impact in words. The same numbers the tool returned, written by code."""
+        cost = f"{self.monthly_cost_delta:,.2f} {self.currency} a month"
+        if self.new_hires and self.cost_per_hire_monthly is not None:
+            people = "1 hire" if abs(self.new_hires) == 1 else f"{abs(self.new_hires)} hires"
+            verb = "Adding" if self.new_hires > 0 else "Removing"
+            each = f"{self.cost_per_hire_monthly:,.2f} {self.currency}"
+            kind = "average loaded cost" if self.cost_is_company_average else "stated cost"
+            lead = f"{verb} {people} at the {kind} per hire of {each} a month changes costs by {cost}"
+        else:
+            lead = f"This changes costs by {cost}"
+        if self.scenario_runway_months is None or self.base_runway_months is None:
+            return f"{lead}."
+        change = "" if self.runway_change_months is None else f" ({self.runway_change_months:+.2f} months)"
+        return (
+            f"{lead}, moving projected runway from {self.base_runway_months:.2f} to "
+            f"{self.scenario_runway_months:.2f} months{change}."
+        )
 
 
 @dataclass
@@ -106,6 +135,14 @@ def _list_metrics(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     return ToolOutcome({"metrics": {name: d.label for name, d in METRICS.items()}})
 
 
+def _metric_facts(content: dict[str, Any]) -> list[Fact]:
+    """The metric's value is what the metric's name says; its inputs are what their own field names say."""
+    facts: list[Fact] = []
+    if isinstance(content.get("value"), int | float):
+        facts.append(fact_for(content["metric"], content["value"], label=content["label"], unit=content["unit"]))
+    return facts + facts_from_fields(content.get("detail")) + facts_from_fields(content["lineage"]["inputs"])
+
+
 def _get_metric(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     name = str(args.get("name", "")).strip().lower()
     result = ctx.finance.metrics.compute(name, args.get("month") or None, args.get("window") or None)
@@ -121,7 +158,7 @@ def _get_metric(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "lineage": _lineage_summary(result.lineage),
     }
     card = _artifact(ctx, "metric_card", result.label, data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
+    return ToolOutcome(content, artifacts=[card], facts=_metric_facts(content))
 
 
 def _metrics_summary(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -133,7 +170,47 @@ def _metrics_summary(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "unavailable": unavailable,
     }
     cards = [_artifact(ctx, "metric_card", r.label, d, lineage=[r.lineage]) for r, d in zip(results, rows, strict=True)]
-    return ToolOutcome(content, artifacts=cards, numbers=collect_numbers(content))
+    facts = [
+        fact_for(r["metric"], r["value"], label=r["label"], unit=r["unit"])
+        for r in content["metrics"]
+        if isinstance(r["value"], int | float)
+    ]
+    return ToolOutcome(content, artifacts=cards, facts=facts)
+
+
+def _decision_impact(result: Any, adjustments: Adjustments, change: float | None) -> DecisionImpact | None:
+    """Computed here so the model never multiplies.
+
+    None when the what-if changes no cost, when it also moves another lever (the runway change would not be the cost's
+    alone), or when there is no payroll to average: a cost of 0.00 would read as a free hire.
+    """
+    spend = Decimal(str(adjustments.spend_change_monthly))
+    if not adjustments.new_hires and not spend:
+        return None
+    others = adjustments.model_dump(
+        exclude={"new_hires", "cost_per_hire_monthly", "spend_change_monthly", "growth_mode"}
+    )
+    if any(value != Adjustments.model_fields[name].default for name, value in others.items()):
+        return None
+    measured = next((a.value for a in result.assumptions if a.name == "cost_per_hire"), None)
+    stated = adjustments.cost_per_hire_monthly
+    each = stated if stated is not None else measured
+    per_hire = None if each is None else Decimal(str(each))
+    if adjustments.new_hires and not per_hire:
+        return None
+    delta = (per_hire or Decimal(0)) * adjustments.new_hires + spend
+    return DecisionImpact(
+        new_hires=adjustments.new_hires,
+        cost_per_hire_monthly=None if per_hire is None else float(per_hire),
+        cost_is_company_average=stated is None,
+        monthly_cost_delta=float(delta.quantize(Decimal("0.01"))),
+        base_runway_months=None if result.base_runway_months is None else float(result.base_runway_months),
+        scenario_runway_months=None if result.scenario_runway_months is None else float(result.scenario_runway_months),
+        runway_change_months=change,
+        as_of=result.as_of,
+        currency=result.currency,
+        growth_mode=result.growth_mode,
+    )
 
 
 def _run_scenario(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -152,8 +229,11 @@ def _run_scenario(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "final_month": data["points"][-1] if data["points"] else None,
         "labels": result.labels,
     }
+    impact = _decision_impact(result, adjustments, content["runway_change_months"])
+    if impact is not None:
+        content["impact"] = impact.model_dump()
     card = _artifact(ctx, "scenario", "What-if scenario", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
+    return ToolOutcome(content, artifacts=[card], facts=facts_from_fields(content, unit=""))
 
 
 def _run_monte_carlo(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -174,7 +254,7 @@ def _run_monte_carlo(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         )
     }
     card = _artifact(ctx, "monte_carlo", "Monte Carlo cash range", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
+    return ToolOutcome(content, artifacts=[card], facts=facts_from_fields(content))
 
 
 def _run_sql(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -182,26 +262,32 @@ def _run_sql(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     data = result.model_dump(mode="json")
     content = {"columns": result.columns, "rows": data["rows"][:20], "row_count": result.row_count}
     card = _artifact(ctx, "table", "Query result", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], numbers=collect_numbers(content))
+    facts = [
+        column_fact(str(column), value)
+        for row in content["rows"]
+        for column, value in (row.items() if isinstance(row, dict) else zip(result.columns, row, strict=False))
+        if isinstance(value, int | float) and not isinstance(value, bool)
+    ]
+    return ToolOutcome(content, artifacts=[card], facts=facts)
 
 
 def _weighted_scoring(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     result = weighted_scoring(ScoringRequest(**args))
     data = result.model_dump(mode="json")
     card = _artifact(ctx, "priority_matrix", "Priority matrix", data)
-    return ToolOutcome(data, artifacts=[card], numbers=collect_numbers(data))
+    return ToolOutcome(data, artifacts=[card], facts=facts_from_fields(data))
 
 
 def _expected_value(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     options = [EVOption(**o) for o in args.get("options", [])]
     rows = [r.model_dump(mode="json") for r in expected_values(options)]
     card = _artifact(ctx, "table", "Expected value", {"options": rows})
-    return ToolOutcome({"options": rows}, artifacts=[card], numbers=collect_numbers(rows))
+    return ToolOutcome({"options": rows}, artifacts=[card], facts=facts_from_fields(rows))
 
 
 def _calibration_scores(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     rows = [s.model_dump(mode="json") for s in ctx.finance.calibration.scores()]
-    return ToolOutcome({"owners": rows}, numbers=collect_numbers(rows))
+    return ToolOutcome({"owners": rows}, facts=facts_from_fields(rows))
 
 
 # --- vault ------------------------------------------------------------------------------------------------------
@@ -267,8 +353,8 @@ def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         for c, r in zip(citations, result["results"], strict=True)
     ]
     # A figure quoted from a returned passage is backed by that passage's citation.
-    quoted = [f.value for h in hits for f in extract_figures(json.dumps(h, ensure_ascii=False))]
-    return ToolOutcome(content, artifacts=cards, citations=citations, numbers=quoted)
+    quoted = [fact for h in hits for fact in quoted_facts(json.dumps(h, ensure_ascii=False))]
+    return ToolOutcome(content, artifacts=cards, citations=citations, facts=quoted)
 
 
 def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -280,8 +366,8 @@ def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         _artifact(ctx, "citation", f"Past decision: {r.title}", row, citations=[c])
         for r, row, c in zip(records, rows, citations, strict=True)
     ]
-    quoted = [f.value for row in rows for f in extract_figures(json.dumps(row, ensure_ascii=False))]
-    return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, numbers=quoted)
+    quoted = [fact for row in rows for fact in quoted_facts(json.dumps(row, ensure_ascii=False))]
+    return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, facts=quoted)
 
 
 def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -295,8 +381,8 @@ def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "frontmatter": frontmatter,
         "body": str(note.get("body", ""))[:4000],
     }
-    quoted = [f.value for f in extract_figures(f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}")]
-    return ToolOutcome(content, citations=[citation], numbers=quoted)
+    quoted = quoted_facts(f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}")
+    return ToolOutcome(content, citations=[citation], facts=quoted)
 
 
 def _write_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -340,7 +426,8 @@ TOOLS: dict[str, Tool] = {
             _spec(
                 "get_metric",
                 "Compute one financial metric from the company's data. Returns the value, unit and lineage. "
-                "'runway' is Runway (actual burn).",
+                "'runway' is Runway (actual burn). 'headcount_cost' is the whole company's monthly payroll, "
+                "never the cost of a hire: use run_scenario with new_hires for that.",
                 {
                     "name": {"type": "string", "enum": sorted(METRICS)},
                     "month": _MONTH,
@@ -361,7 +448,9 @@ TOOLS: dict[str, Tool] = {
         Tool(
             _spec(
                 "run_scenario",
-                "What-if projection: base vs scenario cash and projected runway (with growth assumptions).",
+                "What-if projection: base vs scenario cash and projected runway (with growth assumptions). For a "
+                "hire or a spending change, `impact` gives cost_per_hire_monthly, monthly_cost_delta and "
+                "runway_change_months, computed in code.",
                 {**_ADJ, "horizon": {"type": "integer", "description": "Months to project (1-36, default 12)"}},
             ),
             _run_scenario,

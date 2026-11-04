@@ -522,7 +522,8 @@ async def test_only_the_librarian_searches_first(vault: Any) -> None:
     finance = SimpleNamespace(metrics=SimpleNamespace(available_months=lambda: []))
     provider = FakeProvider(["ok"])
     the_runner = AgentRunner(LLMRouter(provider), EventBus(), "r", lambda aid: ToolContext(finance, vault, aid))
-    assert (await the_runner.run(analyst, SDR_QUESTION)).tool_calls == []
+    calls = (await the_runner.run(analyst, SDR_QUESTION)).tool_calls
+    assert "search_vault" not in [call["tool"] for call in calls]
 
 
 # --- routing ---------------------------------------------------------------------------------------------------------
@@ -586,7 +587,7 @@ async def test_the_whole_run_answers_with_the_past_decision(vault: Any, loaded_d
 # --- the eval ---------------------------------------------------------------------------------------------------------
 def test_the_offline_eval_passes_on_the_sample_vault() -> None:
     cases = load_cases()
-    assert 5 <= len(cases) <= 8
+    assert 5 <= len(cases) <= 9
     results = run_offline(cases)
     assert len(results) == 2 * len(cases)
     assert [r.line() for r in results if not r.passed] == []

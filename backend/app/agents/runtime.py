@@ -21,8 +21,17 @@ from pydantic import BaseModel, Field
 
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
-from app.agents.tools import TOOLS, ToolContext, ToolOutcome, run_tool, specs_for
-from app.agents.verifier import PATH_RE, named_paths, verify
+from app.agents.tools import TOOLS, DecisionImpact, ToolContext, ToolOutcome, run_tool, specs_for
+from app.agents.verifier import (
+    PATH_RE,
+    ClaimIssue,
+    Fact,
+    extract_figures,
+    named_paths,
+    number_supported,
+    repair_claims,
+    verify,
+)
 from app.decision.base import DecisionError, DecisionService
 from app.engine.hybrid_rag import bm25_tokens
 from app.engine.lineage import Lineage
@@ -122,7 +131,8 @@ class AgentResult(BaseModel):
     citations: list[Citation] = Field(default_factory=list, description="Only the sources the answer names")
     retrieved: list[Citation] = Field(default_factory=list, description="Everything the agent's tools returned")
     past_decisions: list[DecisionRecord] = Field(default_factory=list, description="On record for this topic")
-    numbers: list[float] = Field(default_factory=list, exclude=True)
+    decision_impact: DecisionImpact | None = Field(default=None, description="From run_scenario, computed in code")
+    facts: list[Fact] = Field(default_factory=list, exclude=True)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     verified: bool | None = None
     issues: list[str] = Field(default_factory=list)
@@ -132,6 +142,10 @@ class AgentResult(BaseModel):
     fallback_from: str | None = None
     usage: Usage = Field(default_factory=Usage)
     elapsed_ms: float = 0.0
+
+    @property
+    def numbers(self) -> list[float]:
+        return [f.value for f in self.facts]
 
     @property
     def lineage(self) -> list[Lineage]:
@@ -306,6 +320,7 @@ class AgentRunner:
             Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}"),
         ]
         await self._search_first(spec, inst, user_message, messages, result)
+        await self._scenario_first(spec, inst, user_message, messages, result)
         try:
             await self._loop(spec, inst, messages, result)
         except LLMError as exc:
@@ -331,6 +346,7 @@ class AgentRunner:
                 result.issues.append(f"retry failed: {exc}")
             _surface_decisions(result)
             self._verify(spec, inst, user_message, result)
+        _replace_wrong_claims(result, user_message)
         _keep_used_sources(result)
         result.elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         self._emit(
@@ -374,6 +390,22 @@ class AgentRunner:
         messages.append(Message.assistant("", [call]))
         messages.append(Message.tool(call, outcome.for_model()))
 
+    async def _scenario_first(
+        self, spec: AgentType, inst: AgentInstance, user_message: str, messages: list[Message], result: AgentResult
+    ) -> None:
+        """A hire is a what-if. Run it before the model's first turn.
+
+        Seen live, 4 runs of 4: asked "the cost of hiring a designer", the model fetched `headcount_cost`, the whole
+        company's payroll, and never ran a scenario.
+        """
+        hires = hires_in_message(user_message)
+        if spec.name != "financial_analyst" or hires is None:
+            return
+        call = ToolCall(name="run_scenario", arguments={"new_hires": hires})
+        outcome = await self._call_tool(spec, inst, call, result)
+        messages.append(Message.assistant("", [call]))
+        messages.append(Message.tool(call, outcome.for_model()))
+
     async def _data_context(self, spec: AgentType) -> str:
         """Tell the Financial Analyst which months exist, so it does not invent a `month` argument."""
         if spec.name != "financial_analyst":
@@ -399,7 +431,7 @@ class AgentRunner:
         cited = not honest_blank and (bool(result.past_decisions) or (searched and bool(result.retrieved)))
         report = verify(
             result.text,
-            result.numbers,
+            result.facts,
             result.retrieved,
             needs_citations=spec.name == "librarian" and cited,
             # Only the founder's own words may supply numbers: a Planner-written brief is LLM text (PRD R1).
@@ -416,7 +448,10 @@ class AgentRunner:
         self._emit("agent.step", inst.id, step=f"running {call.name}({_args_preview(call.arguments)})")
         outcome = await run_tool(call.name, self.ctx_factory(inst.id), call.arguments, spec.tools)
         result.tool_calls.append({"tool": call.name, "arguments": call.arguments, "error": outcome.error})
-        result.numbers.extend(outcome.numbers)
+        result.facts.extend(outcome.facts)
+        # The first scenario is the founder's: later ones are the model exploring.
+        if result.decision_impact is None and not outcome.error and isinstance(outcome.content.get("impact"), dict):
+            result.decision_impact = DecisionImpact(**outcome.content["impact"])
         for citation in outcome.citations:
             if citation not in result.retrieved:
                 result.retrieved.append(citation)
@@ -451,7 +486,9 @@ class AgentRunner:
     async def _rules(self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult) -> None:
         """No LLM: run the obvious tool and answer with a template built only from its result."""
         result.provider, result.model = "rules", ""
-        if spec.name == "financial_analyst":
+        if spec.name == "financial_analyst" and result.decision_impact is not None:
+            result.text = result.decision_impact.sentence()
+        elif spec.name == "financial_analyst":
             metric = rule_metric(f"{inst.brief} {user_message}")
             if metric is None:
                 outcome = await self._call_tool(spec, inst, ToolCall(name="metrics_summary"), result)
@@ -479,6 +516,72 @@ class AgentRunner:
             )
         if not result.text:
             result.status, result.error = "failed", "the language model is unavailable and no rule applies"
+
+
+_NUMBER_WORDS = {
+    "a": 1,
+    "an": 1,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+_HIRES_RE = re.compile(
+    r"\bhir(?:e|ing)\s+(?:(?:another|more|new|additional)\s+)?"
+    # "hire a few", "hiring a good idea" and "hire 20% more" do not say how many people.
+    r"(a(?!\s+(?:couple|few|lot|bit|good|bad|great|smart|wise)\b)|an|one|two|three|four|five|six|seven|eight|nine|ten"
+    r"|\d{1,3}(?!\s*%))\b"
+    r"|\bhir(?:e|ing)\s+(another)\b",
+    re.I,
+)
+
+
+def hires_in_message(message: str) -> int | None:
+    """How many people the founder is thinking of hiring, when they say. "Should we hire more?" says nothing."""
+    match = _HIRES_RE.search(message)
+    if match is None:
+        return None
+    if match.group(2):
+        return 1
+    word = match.group(1).lower()
+    return int(word) if word.isdigit() else _NUMBER_WORDS[word]
+
+
+def _written_by_code(impact: DecisionImpact | None) -> Callable[[list[ClaimIssue]], str]:
+    """What replaces a sentence whose figure had the wrong meaning: the impact, or the figure with its own label."""
+
+    def write(issues: list[ClaimIssue]) -> str:
+        if impact is not None:
+            return impact.sentence()
+        written = dict.fromkeys(i.fact.sentence() for i in issues if i.fact is not None)
+        return " ".join(written) or "A statement here was removed: its figure did not match what it described."
+
+    return write
+
+
+def _replace_wrong_claims(result: AgentResult, user_message: str) -> None:
+    """Sent back once and still wrong: not verified, and the sentence is replaced by one written in code."""
+    result.text, _ = repair_claims(result.text, result.facts, user_message, _written_by_code(result.decision_impact))
+
+
+def team_impact(results: list[AgentResult]) -> DecisionImpact | None:
+    return next((r.decision_impact for r in results if r.decision_impact is not None), None)
+
+
+def impact_stated(text: str, impact: DecisionImpact) -> bool:
+    """The answer gives the runway change (or the new runway) and the cost, as those figures."""
+    figures = extract_figures(text)
+    runway = [v for v in (impact.runway_change_months, impact.scenario_runway_months) if v is not None]
+    cost = [v for v in (impact.cost_per_hire_monthly, impact.monthly_cost_delta) if v]
+    said_runway = not runway or any(number_supported(f, runway) for f in figures)
+    said_cost = not cost or any(number_supported(f, cost) for f in figures)
+    return said_runway and said_cost
 
 
 def _decisions_context(result: AgentResult) -> str:
@@ -613,16 +716,24 @@ def _args_preview(arguments: dict[str, Any]) -> str:
 
 def findings_for_advisor(results: list[AgentResult]) -> str:
     blocks: list[str] = []
+    impact = team_impact(results)
     for r in results:
-        flag = "" if r.verified else f" [UNVERIFIED: {'; '.join(r.issues)}]"
+        # A wrong-meaning sentence is already replaced, so naming its figure again would only bring it back.
+        kept = [i for i in r.issues if not i.startswith("wrong meaning")]
+        replaced = ["a sentence was replaced by one written in code"] if len(kept) < len(r.issues) else []
+        flag = "" if r.verified else f" [UNVERIFIED: {'; '.join(kept + replaced)}]"
         if r.status != "done":
             blocks.append(f"- {r.name}: failed ({r.error}).")
             continue
         blocks.append(f"- {r.name}{flag}: {r.text}")
-        for art in r.artifacts:
+        # With a computed impact, a raw total such as total payroll only invites being called the decision's cost.
+        for art in [] if impact is not None else r.artifacts:
             if art.kind == "metric_card":
                 d = art.data
                 blocks.append(f"  * {d.get('label')}: {d.get('value')} {d.get('unit')} (as of {d.get('as_of')})")
+    if impact is not None:
+        blocks.append("Impact of this decision, computed in code (state this; no other total is its cost):")
+        blocks.append(f"- {impact.sentence()}")
     records = _team_decisions(results)
     if records:
         blocks.append("Past decisions on this topic, already on record (lead with these):")
@@ -646,10 +757,63 @@ def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
     return "".join(parts)
 
 
+class _SentenceGate:
+    """Checks the Advisor's reply one sentence at a time, before the founder sees it (the reply streams)."""
+
+    def __init__(self, facts: list[Fact], message: str, impact: DecisionImpact | None, issues: list[str]) -> None:
+        self.facts, self.message, self.impact, self.issues = facts, message, impact, issues
+        self.pending = ""
+        self.written: set[str] = set()
+
+    def _checked(self, text: str) -> str:
+        fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
+        self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
+        if not failed:
+            return text
+        trailing = text[len(text.rstrip()) :]
+        return fixed + trailing
+
+    def feed(self, delta: str) -> str:
+        """Any sentences `delta` completed, checked. The unfinished one waits."""
+        self.pending += delta
+        last_end = None
+        for match in re.finditer(r"[.!?]\s+", self.pending):
+            last_end = match.end()
+        if last_end is None:
+            return ""
+        ready, self.pending = self.pending[:last_end], self.pending[last_end:]
+        return self._checked(ready)
+
+    def flush(self) -> str:
+        ready, self.pending = self.pending, ""
+        return self._checked(ready) if ready else ""
+
+
+def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) -> str:
+    impact = team_impact(results) if plan_.intent == "decision" else None
+    if impact is None:
+        return ""
+    if not impact_stated(answer, impact):
+        return f" {impact.sentence()}"
+    # Seen live: "Hiring a designer costs $11,423.62". That is the company's average, not a quote for this role.
+    if impact.cost_per_hire_monthly and impact.cost_is_company_average and "average" not in answer.lower():
+        each = f"{impact.cost_per_hire_monthly:,.2f} {impact.currency}"
+        return f" The {each} is the company's average loaded monthly cost per person, not a quote for this role."
+    return ""
+
+
 async def advise(
-    router: LLMRouter, user_message: str, plan_: Plan, results: list[AgentResult]
+    router: LLMRouter,
+    user_message: str,
+    plan_: Plan,
+    results: list[AgentResult],
+    issues: list[str] | None = None,
 ) -> AsyncIterator[StreamChunk]:
-    """The Advisor streams its reply. Without an LLM it yields a template answer built from the findings."""
+    """The Advisor streams its reply, sentence by sentence, each one checked before it goes out.
+
+    A sentence that attaches a figure to the wrong quantity or unit is replaced by one written in code and added to
+    `issues`. Without an LLM it yields a template answer built from the findings.
+    """
     spec = REGISTRY["advisor"]
     findings = findings_for_advisor(results)
     context = (
@@ -664,24 +828,36 @@ async def advise(
     # Only when there is one: told about past decisions in general, the model invented one ("you decided in August").
     decisions_rule = (PROMPTS_DIR / "advisor_past_decisions.md").read_text(encoding="utf-8")
     system = spec.prompt() + (decisions_rule if _team_decisions(results) else "")
+    if team_impact(results) is not None:
+        system += (PROMPTS_DIR / "advisor_decision_impact.md").read_text(encoding="utf-8")
     messages = [Message.system(system), Message.user(context)]
     sent: list[str] = []
+    facts = [fact for r in results for fact in r.facts]
+    gate = _SentenceGate(facts, user_message, team_impact(results), issues if issues is not None else [])
     try:
         async for chunk in router.stream(spec.privacy, messages):
-            sent.append(chunk.delta)
+            ready = gate.feed(chunk.delta) if chunk.delta else ""
+            if ready:
+                sent.append(ready)
+                yield StreamChunk(delta=ready)
             if chunk.done and chunk.completion is not None:
-                if chunk.delta:
-                    yield StreamChunk(delta=chunk.delta)
+                ready = gate.flush()
+                if ready:
+                    sent.append(ready)
+                    yield StreamChunk(delta=ready)
                 note = advisor_decision_note("".join(sent), results)
+                note += advisor_impact_note("".join(sent) + note, plan_, results)
                 if note:
                     sent.append(note)
                     yield StreamChunk(delta=note)
                 text = "".join(sent)
                 yield StreamChunk(done=True, completion=chunk.completion.model_copy(update={"text": text}))
-                continue
-            yield chunk
     except LLMError as exc:
         provider = router.primary(spec.privacy)
+        ready = gate.flush()
+        if ready:
+            sent.append(ready)
+            yield StreamChunk(delta=ready)
         if any(sent):
             # The founder already saw part of the reply: end it honestly instead of appending a second answer.
             logger.warning("Advisor stream broke after {} chunks: {}", len(sent), exc)
@@ -692,6 +868,7 @@ async def advise(
             return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
         text = template_answer(results)
+        text += advisor_impact_note(text, plan_, results)
         yield StreamChunk(delta=text)
         yield StreamChunk(
             done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)

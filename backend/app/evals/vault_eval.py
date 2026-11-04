@@ -6,6 +6,10 @@ search, so ranking is deterministic.
 - `careless`: a fake LLM searches, ignores what it finds and names no source. This is the failure the founder saw, and
   the code must still surface a past decision, and must not cite what the answer did not use.
 
+A case with `impact` is a decision: the Financial Analyst and the Advisor run over the sample finance data, and the
+code-computed impact must match. In `careless` the fake LLM writes the sentence the founder saw, and it must not reach
+the answer.
+
 Live (`scripts/eval_vault.py --live`): the same questions through `POST /api/chat` on a running backend, so with
 the real model and embeddings. Model output varies, so a failure there is a prompt to read the answer, not a proof.
 """
@@ -27,9 +31,14 @@ from app.agents.registry import REGISTRY
 from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, advise
 from app.agents.tools import ToolContext
 from app.config import PROJECT_ROOT
+from app.engine.calibration import CalibrationStore
 from app.engine.chunking import ApproxTokenizer
+from app.engine.duckdb_engine import FinanceDB
 from app.engine.embeddings import FakeEmbedder
 from app.engine.hybrid_rag import HybridIndex
+from app.engine.ingest import ingest_directory
+from app.engine.metrics import MetricsEngine
+from app.engine.scenario import ScenarioEngine
 from app.llm.base import LLMUnavailable, ToolCall
 from app.llm.fake import FakeProvider
 from app.llm.router import LLMRouter
@@ -38,6 +47,10 @@ from app.vault.manager import VaultManager
 QUESTIONS_PATH = Path(__file__).with_name("vault_questions.json")
 SAMPLE_VAULT = PROJECT_ROOT / "sample_data" / "vault"
 CARELESS_ANSWER = "No specific figures on this are available."
+# Seen live, the founder's RT6: total payroll as the cost of a designer, and runway reduced by an amount of money.
+WRONG_MEANING_ANSWER = (
+    "The financial impact of hiring a designer would be a monthly cost of $308,437.67, reducing runway by that amount."
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +61,8 @@ class EvalCase:
     facts: list[list[str]]  # every group must match; any phrase in a group will do
     past_decisions: list[str] = field(default_factory=list)
     not_cited: list[str] = field(default_factory=list)
+    impact: dict[str, float] = field(default_factory=dict)  # expected fields of `decision_impact`
+    not_in_answer: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -92,6 +107,18 @@ def score(
         if not any(phrase.lower() in lowered for phrase in group)
     ]
     return problems
+
+
+def impact_problems(case: EvalCase, impact: dict[str, Any] | None, answer: str) -> list[str]:
+    """The impact fields must be the expected numbers, and the answer must not use the numbers it should not."""
+    problems: list[str] = []
+    if case.impact and impact is None:
+        problems.append("no decision impact")
+    for name, expected in case.impact.items():
+        value = (impact or {}).get(name)
+        if impact is not None and (value is None or abs(float(value) - expected) > 0.005):
+            problems.append(f"impact {name} = {value}, expected {expected}")
+    return problems + [f"answer contains {phrase}" for phrase in case.not_in_answer if phrase in answer]
 
 
 # --- offline ----------------------------------------------------------------------------------------------------
@@ -148,6 +175,54 @@ def _check(case: EvalCase, mode: str, result: AgentResult, advisor_answer: str) 
     return EvalResult(case.id, mode, problems, f"cites {sorted(used_in_text) or 'nothing'}")
 
 
+def sample_finance(root: Path) -> Any:
+    db = FinanceDB(root / "default")
+    ingest_directory(db, PROJECT_ROOT / "sample_data")
+    return SimpleNamespace(
+        db=db,
+        metrics=MetricsEngine(db),
+        scenario=ScenarioEngine(db),
+        calibration=CalibrationStore(root / "calibration"),
+    )
+
+
+def wrong_meaning_llm() -> FakeProvider:
+    """Fetches total payroll and calls it the cost of the hire, every time it is asked."""
+
+    def respond(messages: list[Any], tools: Any, schema: Any) -> Any:
+        return WRONG_MEANING_ANSWER
+
+    call = ToolCall(name="get_metric", arguments={"name": "headcount_cost"})
+    return FakeProvider([[call]], default=respond)
+
+
+async def _ask_decision(provider: FakeProvider, finance: Any, question: str) -> tuple[AgentResult, str, list[str]]:
+    """The Financial Analyst and then the Advisor, on the sample finance data."""
+    router = LLMRouter(provider)
+    runner = AgentRunner(router, EventBus(), "run_eval", lambda agent_id: ToolContext(finance, None, agent_id))
+    title = REGISTRY["financial_analyst"].title
+    instance = AgentInstance(type="financial_analyst", name=title, brief=question, provider=provider.name)
+    result = await runner.run(instance, question)
+    plan = Plan(intent="decision", team=[instance], planner="eval")
+    issues: list[str] = []
+    parts = [chunk.delta async for chunk in advise(router, question, plan, [result], issues)]
+    return result, "".join(parts), issues
+
+
+async def _run_decision_case(case: EvalCase, finance: Any) -> list[EvalResult]:
+    results: list[EvalResult] = []
+    for mode, provider in (("rules", _down_llm()), ("careless", wrong_meaning_llm())):
+        result, answer, issues = await _ask_decision(provider, finance, case.question)
+        impact = None if result.decision_impact is None else result.decision_impact.model_dump()
+        problems = impact_problems(case, impact, f"{result.text}\n{answer}")
+        if mode == "careless" and (result.verified or not issues):
+            problems.append(f"the wrong claim was not flagged (verified={result.verified}, advisor issues={issues})")
+        if mode == "rules" and not result.verified:
+            problems.append(f"the code-written answer failed verification: {result.issues}")
+        results.append(EvalResult(case.id, mode, problems, answer[:90]))
+    return results
+
+
 async def run_offline_async(cases: list[EvalCase] | None = None) -> list[EvalResult]:
     results: list[EvalResult] = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -157,7 +232,11 @@ async def run_offline_async(cases: list[EvalCase] | None = None) -> list[EvalRes
         index = HybridIndex(manager, FakeEmbedder(), None, ApproxTokenizer())  # keyword search: deterministic ranking
         index.refresh(dense=False)
         vault = SimpleNamespace(vault=manager, index=index, ensure_started=lambda: None, wait_ready=lambda: True)
+        finance = sample_finance(Path(tmp) / "finance")
         for case in cases if cases is not None else load_cases():
+            if case.impact:
+                results += await _run_decision_case(case, finance)
+                continue
             modes: dict[str, Callable[[], FakeProvider]] = {
                 "rules": _down_llm,
                 "careless": lambda question=case.question: _careless_llm(question),
@@ -185,6 +264,7 @@ def check_live_reply(case: EvalCase, reply: dict[str, Any]) -> EvalResult:
         cited=cited,
         past_decisions=found,
     )
+    problems += impact_problems(case, reply.get("decision_impact"), answer)
     if not reply.get("verified"):
         problems.append(f"not verified: {reply.get('issues')}")
     seconds = float(reply.get("elapsed_ms", 0)) / 1000

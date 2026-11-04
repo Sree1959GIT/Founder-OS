@@ -28,8 +28,8 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.agents.events import Artifact, Citation, EventBus
-from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, advise, plan
-from app.agents.tools import ToolContext
+from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, advise, plan, team_impact
+from app.agents.tools import DecisionImpact, ToolContext
 from app.agents.verifier import verify_numbers
 from app.decision.base import DecisionService
 from app.llm.base import Usage
@@ -81,6 +81,9 @@ class ChatResult(BaseModel):
     citations: list[Citation] = Field(description="Only the sources the agents' answers name")
     past_decisions: list[DecisionRecord] = Field(
         default_factory=list, description="Decisions already on record for this topic"
+    )
+    decision_impact: DecisionImpact | None = Field(
+        default=None, description="What this decision does to costs and runway, computed in code"
     )
     verified: bool
     issues: list[str]
@@ -235,7 +238,8 @@ class AgentOrchestrator:
             return {"answer": text, "advisor": {"provider": "rules", "model": ""}}
         parts: list[str] = []
         meta: dict[str, Any] = {"provider": "", "model": "", "usage": Usage()}
-        async for chunk in advise(self.router, state["message"], state["plan"], results):
+        claim_issues: list[str] = []
+        async for chunk in advise(self.router, state["message"], state["plan"], results, claim_issues):
             if chunk.delta:
                 parts.append(chunk.delta)
                 await run.deltas.put(chunk.delta)
@@ -246,6 +250,7 @@ class AgentOrchestrator:
                     "usage": chunk.completion.usage,
                 }
         run.timings["advise"] = _ms(started)
+        meta["claim_issues"] = claim_issues
         return {"answer": "".join(parts).strip(), "advisor": meta}
 
     # ---------------------------------------------------------------- runs
@@ -307,8 +312,10 @@ class AgentOrchestrator:
         known = [n for r in results for n in r.numbers]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
         advisor_issues = [f"advisor number without lineage: {n}" for n in verify_numbers(answer, known, context)]
-        issues = [f"{r.name}: {i}" for r in results for i in r.issues] + advisor_issues
         advisor = state.get("advisor", {})
+        issues = (
+            [f"{r.name}: {i}" for r in results for i in r.issues] + advisor_issues + advisor.get("claim_issues", [])
+        )
         usage = sum((r.usage for r in results), Usage()) + advisor.get("usage", Usage())
         approved = bool(state.get("approved", True))
         return ChatResult(
@@ -327,6 +334,7 @@ class AgentOrchestrator:
             artifacts=artifacts,
             citations=citations,
             past_decisions=past_decisions,
+            decision_impact=team_impact(results),
             verified=not issues and all(r.status == "done" for r in results),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
