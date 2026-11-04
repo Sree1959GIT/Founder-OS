@@ -153,7 +153,7 @@ def test_a_field_keeps_its_label_and_unit() -> None:
     assert fact_for("runway_change_months", -0.76).kind == "months"
     assert fact_for("closing_cash", 5.0).stock
     assert fact_for("probability_cash_out_within_12_months", 0.4).kind == "ratio"
-    assert cost.sentence() == "Headcount cost (monthly): 308,437.67 USD."
+    assert cost.sentence() == "Headcount cost (monthly): $308,437.67."
     assert fact_for("gross_margin", 0.7213, label="Gross margin", unit="ratio").sentence() == "Gross margin: 72.13 %."
 
 
@@ -227,7 +227,7 @@ def test_a_stated_cost_is_not_called_the_average() -> None:
     assert impact is not None
     assert impact.cost_per_hire_monthly == 8000
     assert not impact.cost_is_company_average
-    assert "stated cost per hire of 8,000.00 USD" in impact.sentence()
+    assert "stated cost per hire of $8,000.00" in impact.sentence()
     assert "average" not in impact.sentence()
 
 

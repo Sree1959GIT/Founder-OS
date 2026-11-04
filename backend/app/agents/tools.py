@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.events import Artifact, ArtifactKind, Citation
-from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields
+from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields, format_money
 from app.engine.decision_science import EVOption, ScoringRequest, expected_values, weighted_scoring
 from app.engine.duckdb_engine import NoDataError
 from app.engine.lineage import Lineage
@@ -76,11 +76,11 @@ class DecisionImpact(BaseModel):
 
     def sentence(self) -> str:
         """The impact in words. The same numbers the tool returned, written by code."""
-        cost = f"{self.monthly_cost_delta:,.2f} {self.currency} a month"
+        cost = f"{format_money(self.monthly_cost_delta, self.currency)} a month"
         if self.new_hires and self.cost_per_hire_monthly is not None:
             people = "1 hire" if abs(self.new_hires) == 1 else f"{abs(self.new_hires)} hires"
             verb = "Adding" if self.new_hires > 0 else "Removing"
-            each = f"{self.cost_per_hire_monthly:,.2f} {self.currency}"
+            each = format_money(self.cost_per_hire_monthly, self.currency)
             kind = "average loaded cost" if self.cost_is_company_average else "stated cost"
             lead = f"{verb} {people} at the {kind} per hire of {each} a month changes costs by {cost}"
         else:

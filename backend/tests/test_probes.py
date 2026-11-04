@@ -85,9 +85,7 @@ async def test_qdrant_ok_and_down(settings: Settings) -> None:
 
 async def test_cloud_probe_states() -> None:
     off = await CloudProvidersProbe(Settings(_env_file=None)).check()
-    missing = await CloudProvidersProbe(
-        Settings(_env_file=None, cloud_allowed=True, deep_provider="claude_sdk")
-    ).check()
+    missing = await CloudProvidersProbe(Settings(_env_file=None, cloud_allowed=True, deep_provider="openai")).check()
     on = await CloudProvidersProbe(
         Settings(_env_file=None, cloud_allowed=True, deep_provider="gemini", gemini_api_key="sk-test-SECRET")
     ).check()

@@ -27,8 +27,10 @@ from app.agents.verifier import (
     ClaimIssue,
     Fact,
     extract_figures,
+    format_money,
     named_paths,
     number_supported,
+    one_money_format,
     repair_claims,
     verify,
 )
@@ -766,6 +768,7 @@ class _SentenceGate:
         self.written: set[str] = set()
 
     def _checked(self, text: str) -> str:
+        text = in_one_voice(text)
         fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
         self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
         if not failed:
@@ -789,6 +792,31 @@ class _SentenceGate:
         return self._checked(ready) if ready else ""
 
 
+_VERB_FORMS = {"has": "have", "is": "are", "was": "were", "does": "do"}
+_THE_FOUNDER = re.compile(r"\b(the) founder(?:(['\u2019]s)|\s+([a-z]+))?", re.I)
+_NOT_A_VERB = frozenset({"and", "or", "as", "at", "by", "for", "from", "in", "of", "on", "to", "with", "this", "that"})
+
+
+def _to_you(match: re.Match[str]) -> str:
+    capital = match.group(1)[0].isupper()
+    if match.group(2):
+        return "Your" if capital else "your"
+    word = match.group(3)
+    pronoun = "You" if capital else "you"
+    if word is None or word.lower() in _NOT_A_VERB:
+        return f"{pronoun} {word}" if word else pronoun
+    if word in _VERB_FORMS:
+        return f"{pronoun} {_VERB_FORMS[word]}"
+    if word.endswith("s") and not word.endswith("ss"):
+        return f"{pronoun} {word[:-1]}"
+    return f"{pronoun} {word}"
+
+
+def in_one_voice(text: str) -> str:
+    """The Advisor speaks to the founder, not about them, and writes money one way. Code, because prompts drift."""
+    return one_money_format(_THE_FOUNDER.sub(_to_you, text))
+
+
 def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) -> str:
     impact = team_impact(results) if plan_.intent == "decision" else None
     if impact is None:
@@ -797,7 +825,7 @@ def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) ->
         return f" {impact.sentence()}"
     # Seen live: "Hiring a designer costs $11,423.62". That is the company's average, not a quote for this role.
     if impact.cost_per_hire_monthly and impact.cost_is_company_average and "average" not in answer.lower():
-        each = f"{impact.cost_per_hire_monthly:,.2f} {impact.currency}"
+        each = format_money(impact.cost_per_hire_monthly, impact.currency)
         return f" The {each} is the company's average loaded monthly cost per person, not a quote for this role."
     return ""
 
@@ -867,7 +895,7 @@ async def advise(
             yield StreamChunk(done=True, completion=Completion(text=text, provider=provider.name, model=provider.model))
             return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
-        text = template_answer(results)
+        text = in_one_voice(template_answer(results))
         text += advisor_impact_note(text, plan_, results)
         yield StreamChunk(delta=text)
         yield StreamChunk(

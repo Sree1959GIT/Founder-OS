@@ -1,4 +1,4 @@
-"""The LLM provider interface (PRD §4): one shape for Ollama, Anthropic, Gemini, the Claude Agent SDK and the fake.
+"""The LLM provider interface (PRD §4): one shape for Ollama, Anthropic, Gemini, OpenAI-style APIs and the fake.
 
 `complete(messages, tools=None, json_schema=None, stream=False)` returns a `Completion` (text, tool calls, usage).
 With `stream=True` it returns an async iterator of `StreamChunk`s whose last chunk carries the full `Completion`.
@@ -90,6 +90,7 @@ class Completion(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     latency_ms: float = 0.0
     fallback_from: str | None = Field(default=None, description="Provider that failed before this one answered")
+    est_cost_usd: float | None = Field(default=None, description="From the router's price table; 0 for local models")
 
     def json(self) -> Any:  # type: ignore[override]
         """The text parsed as JSON (for `json_schema` calls). Tolerates code fences around the object."""
@@ -100,6 +101,19 @@ class StreamChunk(BaseModel):
     delta: str = ""
     done: bool = False
     completion: Completion | None = None  # set on the final chunk
+
+
+class WebSource(BaseModel):
+    title: str = ""
+    url: str
+
+
+class WebAnswer(BaseModel):
+    """A grounded search: the provider's text, the pages behind it, and the call for cost accounting."""
+
+    text: str
+    sources: list[WebSource] = Field(default_factory=list)
+    completion: Completion
 
 
 class LLMProvider(ABC):
@@ -113,6 +127,7 @@ class LLMProvider(ABC):
     model: str = ""
     is_cloud: bool = False
     supports_tools: bool = True
+    supports_web_search: bool = False
 
     @overload
     async def complete(
@@ -157,6 +172,9 @@ class LLMProvider(ABC):
         completion = await self._complete(messages, tools, json_schema)
         async for chunk in single_chunk_stream(completion):
             yield chunk
+
+    async def web_search(self, query: str) -> WebAnswer:
+        raise LLMError(f"{self.name} does not provide web search")
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         raise LLMError(f"{self.name} does not provide embeddings")

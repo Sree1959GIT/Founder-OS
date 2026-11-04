@@ -56,7 +56,7 @@ def test_blank_secret_means_not_configured() -> None:
 @pytest.mark.parametrize(
     ("provider", "field"),
     [
-        (DeepProvider.CLAUDE_SDK, "claude_code_oauth_token"),
+        (DeepProvider.OPENAI, "openai_api_key"),
         (DeepProvider.ANTHROPIC, "anthropic_api_key"),
         (DeepProvider.GEMINI, "gemini_api_key"),
     ],

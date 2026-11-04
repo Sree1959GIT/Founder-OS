@@ -151,11 +151,7 @@ class CloudProvidersProbe:
 
     async def check(self) -> DependencyStatus:
         s = self._settings
-        configured = {
-            DeepProvider.CLAUDE_SDK.value: s.provider_configured(DeepProvider.CLAUDE_SDK),
-            DeepProvider.ANTHROPIC.value: s.provider_configured(DeepProvider.ANTHROPIC),
-            DeepProvider.GEMINI.value: s.provider_configured(DeepProvider.GEMINI),
-        }
+        configured = {p.value: s.provider_configured(p) for p in DeepProvider if p is not DeepProvider.OLLAMA}
         effective = s.effective_deep_provider()
         info = {
             "cloud_allowed": s.cloud_allowed,

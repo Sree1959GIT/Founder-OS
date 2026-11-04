@@ -95,6 +95,21 @@ _ALSO_ABOUT = {
 _NAME_ALIASES = {"delta": "cash delta"}  # the scenario's cash difference at the end of the projection
 
 
+_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹"}
+_WRITTEN_CODE = re.compile(r"(?:[$€£₹]\s?)?(\d[\d,]*(?:\.\d+)?)\s?(USD|EUR|GBP|INR)\b")
+
+
+def format_money(value: float, currency: str = "USD") -> str:
+    """One way to write money everywhere: $11,423.62."""
+    symbol = _SYMBOLS.get(currency)
+    return f"{symbol}{value:,.2f}" if symbol else f"{value:,.2f} {currency}".strip()
+
+
+def one_money_format(text: str) -> str:
+    """ "11,423.62 USD" and "$11,423.62 USD" become "$11,423.62". The digits are not touched."""
+    return _WRITTEN_CODE.sub(lambda m: f"{_SYMBOLS[m.group(2)]}{m.group(1)}", text)
+
+
 def concepts_in(text: str) -> frozenset[str]:
     lowered = text.lower().replace("_", " ")
     found = {name for name, pattern in CONCEPTS.items() if pattern.search(lowered)}
@@ -125,6 +140,8 @@ class Fact:
         """The figure in a code-written sentence, for when the model's claim about it failed."""
         if self.kind == "ratio":
             written = f"{self.value * 100:,.2f} %"
+        elif self.kind == "money" and self.unit:
+            written = format_money(self.value, self.unit)
         elif self.kind == "count":
             written = f"{self.value:,.0f}"
         elif self.kind == "months":

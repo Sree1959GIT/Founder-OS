@@ -29,6 +29,7 @@ from app.engine.sql_guard import SqlGuardError
 from app.llm.base import LLMError
 from app.llm.ollama import OllamaProvider
 from app.logging_setup import configure_logging
+from app.responses import Utf8JSONResponse
 from app.vault.manager import NoteExistsError, NoteNotFoundError, VaultError, VaultPathError
 from app.vault.service import VaultService
 
@@ -112,7 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 logger.info("Shutting down while the vault is still indexing")
             await app.state.http_client.aclose()
 
-    app = FastAPI(title="FounderOS", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="FounderOS", version=__version__, lifespan=lifespan, default_response_class=Utf8JSONResponse)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

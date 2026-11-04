@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -10,7 +9,7 @@ import pytest
 
 from app.config import DeepProvider, Settings
 from app.llm.base import Completion, LLMError, LLMUnavailable, Message, ToolCall, ToolSpec, parse_json_text
-from app.llm.cloud import AnthropicAPIProvider, ClaudeAgentSDKProvider, GeminiProvider
+from app.llm.cloud import AnthropicAPIProvider, GeminiProvider
 from app.llm.fake import FakeProvider, schema_example
 from app.llm.ollama import OllamaProvider
 from app.llm.router import LLMRouter, build_cloud_provider, build_local_provider, build_router
@@ -253,41 +252,6 @@ async def test_gemini_function_calls_and_json_config() -> None:
         await empty.complete([Message.user("q")])
 
 
-async def test_claude_sdk_provider_with_a_fake_sdk() -> None:
-    seen: dict[str, Any] = {}
-
-    class Options:
-        def __init__(self, **kwargs: Any) -> None:
-            seen.update(kwargs)
-
-    async def query(prompt: str, options: Options) -> Any:
-        seen["prompt"] = prompt
-        yield SimpleNamespace(content=[SimpleNamespace(text='{"ok": true}')])
-        yield SimpleNamespace(usage={"input_tokens": 4, "output_tokens": 2})
-
-    sdk = SimpleNamespace(ClaudeAgentOptions=Options, query=query)
-    provider = ClaudeAgentSDKProvider("oauth-token", "claude-x", sdk=sdk)
-    completion = await provider.complete(
-        [Message.system("be brief"), Message.user("hi")], json_schema={"type": "object"}
-    )
-    assert completion.json() == {"ok": True} and completion.usage.output_tokens == 2
-    assert seen["model"] == "claude-x" and seen["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "oauth-token"
-    assert "JSON Schema" in seen["system_prompt"] and "USER: hi" in seen["prompt"] and seen["allowed_tools"] == []
-    with pytest.raises(LLMError, match="does not support tool calls"):
-        await provider.complete([Message.user("q")], tools=[TOOL])
-
-
-async def test_claude_sdk_missing_package_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    import importlib
-
-    def boom(name: str) -> Any:
-        raise ImportError(name)
-
-    monkeypatch.setattr(importlib, "import_module", boom)
-    with pytest.raises(LLMUnavailable, match="not installed"):
-        await ClaudeAgentSDKProvider("t", "m").complete([Message.user("q")])
-
-
 # --- router ----------------------------------------------------------------------------------------------------
 async def test_router_never_sends_local_agents_to_the_cloud() -> None:
     local, cloud = FakeProvider(["local"]), FakeProvider(["cloud"], name="cloudy", is_cloud=True)
@@ -329,10 +293,6 @@ def test_build_router_from_settings() -> None:
     assert isinstance(build_cloud_provider(cloud_on), AnthropicAPIProvider)
     gemini = Settings(_env_file=None, cloud_allowed=True, deep_provider=DeepProvider.GEMINI, gemini_api_key="k")
     assert isinstance(build_cloud_provider(gemini), GeminiProvider)
-    sdk = Settings(
-        _env_file=None, cloud_allowed=True, deep_provider=DeepProvider.CLAUDE_SDK, claude_code_oauth_token="t"
-    )
-    assert isinstance(build_cloud_provider(sdk), ClaudeAgentSDKProvider)
     no_key = Settings(_env_file=None, cloud_allowed=True, deep_provider=DeepProvider.GEMINI)
     assert build_cloud_provider(no_key) is None
     assert isinstance(build_router(Settings(_env_file=None, llm_provider="fake")).local, FakeProvider)
