@@ -58,6 +58,15 @@
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium | AWAITING FOUNDER (re-test) |
 
 ## Current session
+- Started (UTC): 2026-11-04 (second local bug-fix session for the M3a gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
+- Plan:
+  - [x] Record the founder feedback (done first)
+  - [ ] Root cause: which tool returned 308,437.67, what the Analyst ran, why the Advisor reused it
+  - [ ] General fix: figures keep label and unit; the claim around them must agree; impacts from code-computed fields
+  - [ ] Unit tests, offline and live eval for the designer question
+  - [ ] Resolve feedback, RV steps, PR #6, CI green
+
+Earlier session (2026-11-04, first bug-fix):
 - Started (UTC): 2026-11-04 ~03:19 (local Windows session, bug-fix only for the M3a Medium gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
 - Plan:
   - [x] Record the founder feedback (done first)
@@ -465,6 +474,11 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M3a] Verifier passes a correct number with the wrong meaning
+- Did: RT6 "Should we hire a designer?".
+- Got: "The financial impact of hiring a designer would be a monthly cost of $308,437.67, reducing runway by that amount." and verified = True. Wrong twice: $308,437.67 is not a designer's cost (it is some other tool figure), and runway is in months, not dollars.
+- Expected: a "verified" answer never attaches a tool figure to a different quantity or unit; otherwise it is not verified and the figure is replaced by a code-written sentence (as the existing fallbacks do). RT1–RT9 otherwise pass (RT8 7/8, then journal passed 2/2 on re-run).
+
 ### [M3a] Librarian misses a past decision on the same topic
 - Did: asked "Should we hire two more SDRs next quarter?" (checklist step 9). Steps 1–9 and 11 otherwise pass.
 - Got: Librarian searched twice, then said "no specific SDR performance metrics or conversion rates are available". But `decisions/2026-09-hire-two-sdrs.md` exists: decided 2026-09-15, kill criterion "if qualified meetings per SDR stay under eight a month by December, pause the second seat", prediction 70%, review_date 2026-12-15. Separately, in step 8 the Librarian cited `decisions/2026-09-hire-two-sdrs.md` without using it.
