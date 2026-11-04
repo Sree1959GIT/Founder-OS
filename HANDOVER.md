@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3b: Specialist agents**, after the founder merges the M3a PR. The founder's review of M3a found two issues, both now fixed: run the **re-test steps RV1–RV9** in the checklist below, then merge. M1 and M2 are ACCEPTED
+- **Next milestone:** **M3b: Specialist agents** (in progress, branch `claude/m3b-specialists`). M0, M1, M2 and M3a are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-04 (second M3a bug-fix session: figures keep their meaning; PR #6 updated, awaiting the founder's re-test)
+- **Last updated:** 2026-11-04 (M3b session started)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -15,8 +15,8 @@
 | M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
-| M3a | LLM layer, agent framework & core agents | DONE (PR open, awaiting founder re-test) | Branch `claude/m3a-agents` |
-| M3b | Specialist agents | NOT STARTED | |
+| M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
+| M3b | Specialist agents | IN PROGRESS | Branch `claude/m3b-specialists` |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
@@ -58,6 +58,17 @@
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 
 ## Current session
+- Started (UTC): 2026-11-04 14:23 (local Windows session), branch `claude/m3b-specialists`, target **M3b** (gate tier: **Medium**)
+- Plan, in the founder's priority order (an "M3b (partial)" PR is fine if time runs out):
+  - [x] Tidy the stale "Next milestone" and M3a table lines
+  - [ ] (1) Small items from the M3a re-test: journal eval reliable in full runs; Advisor says "you" and uses one money format; API sends `charset=utf-8`
+  - [ ] (2a) Cloud layer: remove the subscription path; Anthropic, Gemini (AI Studio or Vertex), OpenAI, OpenAI-compatible; per-agent-type choice; privacy filter on every cloud payload; per-call cost and latency; monthly cap; `/api/agents`
+  - [ ] (2b) Conversation lane backend: run queue, turn classifier, three contexts, narration events, APIs
+  - [ ] (3) Specialists: Devil's Advocate, Market Scout, Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Memo Writer, Perspective lens; cancel and re-run with an edited brief
+  - [ ] Offline and live evals for each new agent
+  - [ ] Decisions in PRD §12 and here; Windows checklist with the "Dubai office" run; self-review; PR into `main`; CI green
+
+Previous session (2026-11-04, second M3a bug-fix):
 - Started (UTC): 2026-11-04 (second local bug-fix session for the M3a gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
 - Plan:
   - [x] Record the founder feedback (done first)
