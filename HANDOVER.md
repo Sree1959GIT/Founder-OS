@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3b: Specialist agents**, after the founder merges the M3a PR (M3a is a **Medium** gate: run the checklist below, try the chat by hand, then merge). M1 and M2 are ACCEPTED
+- **Next milestone:** **M3b: Specialist agents**, after the founder merges the M3a PR. The founder's review of M3a found one issue, now fixed: run the **re-test steps RT1–RT9** in the checklist below, then merge. M1 and M2 are ACCEPTED
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-03 (M3a session, 16:16 to ~17:45 UTC: M3a complete, PR open, awaiting the founder's Medium gate)
+- **Last updated:** 2026-11-04 (M3a bug-fix session: past decisions and citations; PR #6 updated, awaiting the founder's re-test)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -15,7 +15,7 @@
 | M0 | Scaffold & foundations | DONE (merged, PR #2) | Backend `/api/health`, Northwind data, frontend shell, scripts, CI |
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
-| M3a | LLM layer, agent framework & core agents | DONE (PR open, awaiting Medium gate) | Branch `claude/m3a-agents` |
+| M3a | LLM layer, agent framework & core agents | DONE (PR open, awaiting founder re-test) | Branch `claude/m3a-agents` |
 | M3b | Specialist agents | NOT STARTED | |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
@@ -55,16 +55,16 @@
 | M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
 | M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | ACCEPTED (SM, 2026-11-03) after re-test R1–R8 on Windows; fix in #4 |
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
-| M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium | AWAITING FOUNDER |
+| M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium | AWAITING FOUNDER (re-test) |
 
 ## Current session
 - Started (UTC): 2026-11-04 ~03:19 (local Windows session, bug-fix only for the M3a Medium gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
 - Plan:
-  - [ ] Record the founder feedback (done first)
-  - [ ] Root cause: frontmatter in chunks/results, the 900-char cut, ranking of `decisions/`, Librarian prompt
-  - [ ] General fix + citations only for sources used + regression tests
-  - [ ] Offline eval (5–8 questions) and a live check for Windows
-  - [ ] Resolve feedback, re-test steps, PR #6 description, CI green
+  - [x] Record the founder feedback (done first)
+  - [x] Root cause: frontmatter in chunks/results, the 900-char cut, ranking of `decisions/`, Librarian prompt
+  - [x] General fix + citations only for sources used + regression tests
+  - [x] Offline eval (5–8 questions) and a live check for Windows
+  - [x] Resolve feedback, re-test steps, PR #6 description, CI green
 
 Previous session (M3a):
 - Started (UTC): 2026-11-03 16:16 (local Windows 11 session, founder's PC), branch `claude/m3a-agents`; wrapped up ~17:45
@@ -81,8 +81,46 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
-**M3a is complete** (PR awaiting the founder's Medium gate). M0–M2 behaviour is unchanged, apart from the
-"(None)" warning fix. 397 backend tests pass.
+**M3a is complete** (PR awaiting the founder's re-test). M0–M2 behaviour is unchanged, apart from the "(None)"
+warning fix and the keyword-search changes below. 487 backend tests pass.
+
+### Past decisions and citations (fix after the founder's M3a review, 2026-11-04)
+- **Decision records** (`app/vault/decisions.py`): every note under `decisions/` (or tagged `decision`) gets a
+  `DecisionRecord`, built by code: path, title, status, decided, review date, `review_state` (upcoming | overdue,
+  computed from today), what was decided, predictions, kill criteria. Kill criteria come from the frontmatter
+  (`kill_criteria`, `kill_criterion`), a `Kill criteria` heading, or a sentence naming a kill criterion.
+- **Frontmatter is searchable:** a note with fields beyond its name and tags gets a `Record` section, so those fields
+  reach the chunks, the embeddings and the answer. Search results also return `metadata` and `decision`; `read_note`
+  returns the frontmatter. Changed notes re-embed by themselves (point ids are content-addressed).
+- **BM25:** a light stemmer (`SDR` = `SDRs`, `hire` = `hiring`), and question words are dropped when a topic remains.
+- **`search_vault`:** the passage (1,200 characters, less when many hits share the budget) is centred on the matching
+  chunk, replacing the first 900 characters. Decision hits carry their record.
+- **Librarian:** before the model's first turn, code runs `past_decisions` and a whole-vault `search_vault` on the
+  founder's own words. The record is put in the system prompt. `past_decisions` is not offered to the model.
+- **Guarantee:** if an answer (Librarian or Advisor) leaves out a fact of a past decision, code adds it: the whole
+  record if the answer states none, otherwise only what is missing. This needs no second LLM call, and it also works
+  in the rules fallback. `ChatResult.past_decisions` and `AgentResult.past_decisions` return the records.
+- **Citations:** `citations` lists only sources the answer names; `retrieved` keeps everything the tools returned.
+- **Planner:** a decision team always has a Librarian. **Routing:** naming the notes ("what do my notes say about
+  churn?") goes to the Librarian even with a finance word. **Verifier:** written dates ("15 Dec") are not figures.
+- **Eval** (`app/evals/`, `scripts/eval_vault.py`): 8 questions. Offline, 2 modes each (LLM down; a careless fake LLM),
+  run in pytest and CI. `--live` asks a running backend.
+
+Known limits of this fix:
+- "On the same topic" is decided by words in the note's name, tags and body. A synonym with no shared word ("BDRs"
+  for "SDRs") is not guaranteed; it depends on the model's own search of `decisions/`.
+- Citations are checked by path. If the model names a source it did not really use, code cannot tell.
+- The Verifier checks numbers, not invented dates or wrong attributions. One live run invented a past decision; that
+  was fixed in the prompt (the Advisor gets the rule only when a decision exists), so it is not a code guarantee.
+- A reply with added facts can run past the Advisor's 3-sentence limit. The Planner can also spawn two Librarians,
+  and both state the record.
+- The final code passed the live eval 8/8 once, in PowerShell 5.1 on the founder's PC (and the code before the
+  self-review fixes passed 8/8 once). Earlier runs failed and led to the fixes. Model output varies, so an occasional
+  failure is possible.
+- **Open, not part of this fix (for M3b or the founder to prioritise):** the Verifier checks that a number came from a
+  tool, not that it is used correctly. In RT6 the answer said a designer "would be a monthly cost of $308,437.67,
+  reducing runway by that amount". That figure is a scenario output misattributed by the model, and it passed as
+  verified. A correctness check on how numbers are used would be a separate piece of work.
 
 ### LLM layer, agents and chat (M3a)
 - **Providers** (`app/llm/`): `LLMProvider.complete(messages, tools=None, json_schema=None, stream=False)` returns
@@ -321,6 +359,40 @@ a labelled query set, latency and VRAM), deferred from M3a by the founder, along
 names already include the embedding model, so switching models re-embeds cleanly.
 
 ## Windows verification checklist (for the founder)
+**M3a re-test after the "past decision" fix (about 10 min).** PowerShell 5.1 or 7, from `D:\Founder-OS`. Each step
+prints one summary line; compare it with **Expected**. Then merge the PR, or write the issues under "Founder feedback".
+
+- **RT1. Get the fix.** `git pull origin claude/m3a-agents`, close the backend window, then start `run.bat`. No new
+  dependencies, so `setup.bat` is not needed. Wait for `Ollama model qwen3:8b is loaded` in the backend window.
+- **RT2. Offline eval (no Ollama needed).** `.\.venv\Scripts\python.exe scripts\eval_vault.py | Select-Object -Last 1`
+  Expected: `OFFLINE EVAL: 16/16 passed`.
+- **RT3. Your question.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire two more SDRs next quarter?", "stream": false}' -TimeoutSec 900; $d = $r.past_decisions[0]; '{0:n0} s | verified {1} | {2} | status {3} | decided {4} | review {5} | {6}' -f ($r.elapsed_ms/1000), $r.verified, $d.path, $d.status, $d.decided, $d.review_date, $d.predictions[0]`
+  Expected: about **25 s** `| verified True | decisions/2026-09-hire-two-sdrs.md | status decided | decided 2026-09-15 | review 2026-12-15 | 70% chance outbound pipeline grows by at least 30% within 90 days`.
+- **RT4. The kill criterion, and the answer you read** (uses `$r` from RT3).
+  `'{0} || {1}' -f $r.past_decisions[0].kill_criteria[0], $r.answer`
+  Expected: `if qualified meetings per SDR stay under eight a month by December, pause the second seat ||` then an answer
+  that says you already decided to hire two SDRs (September or 2026-09-15), states that kill criterion and
+  2026-12-15 or 15 Dec, gives the 70 %, and asks about it. The wording varies. When the model leaves out a fact, code
+  adds it at the end as `On record for "Hire two SDRs for outbound": ...`.
+- **RT5. Citations list only what was used (your step 8).**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What do my notes say about annual prepayment?", "stream": false}' -TimeoutSec 900; 'intent {0} | verified {1} | past decisions {2} | cites {3} | searched {4}' -f $r.intent, $r.verified, @($r.past_decisions).Count, (($r.citations.path | Select-Object -Unique) -join ', '), (($r.agents[0].retrieved.path | Select-Object -Unique) -join ', ')`
+  Expected: `intent knowledge | verified True | past decisions 0 | cites notes/pricing-strategy.md | searched` then a longer
+  list. `cites` is what the answer used, and `searched` is everything the search returned. `decisions/2026-09-hire-two-sdrs.md`
+  must not be under `cites`.
+- **RT6. Another topic does not claim the SDR decision.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire a designer?", "stream": false}' -TimeoutSec 900; 'intent {0} | past decisions {1} | {2}' -f $r.intent, @($r.past_decisions).Count, $r.answer`
+  Expected: `intent decision | past decisions 0 |` then an answer that does not say you already decided this. Its
+  other content may be weak: a run here misattributed a scenario figure to the designer's cost (see "Known limits").
+- **RT7. The fix is general: a new decision note, not about SDRs.** This writes one test note, asks, then deletes it:
+  `$f = '.\vault\default\decisions\2026-10-cut-paid-search.md'; Set-Content -Path $f -Encoding utf8 -Value "---`ntitle: Cut paid search`ndate: 2026-10-01`nstatus: decided`nreview_date: 2027-01-15`nkill_criteria: if pipeline falls by a third, restore the budget`nprediction: 60% chance CAC falls within a quarter`n---`n# Cut paid search`n`n## Decision`nStop paid search for one quarter.`n"; Start-Sleep -Seconds 3; $r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we cut paid search next quarter?", "stream": false}' -TimeoutSec 900; $d = $r.past_decisions[0]; Remove-Item $f; '{0} | {1} | review {2} | {3} | {4}' -f $d.path, $d.decided, $d.review_date, $d.kill_criteria[0], $d.predictions[0]`
+  Expected: `decisions/2026-10-cut-paid-search.md | 2026-10-01 | review 2027-01-15 | if pipeline falls by a third, restore the budget | 60% chance CAC falls within a quarter`.
+- **RT8. Live eval, 8 questions through the real model.** `.\.venv\Scripts\python.exe scripts\eval_vault.py --live`
+  Expected: one `PASS [live]` line per question, ending `LIVE EVAL: 8/8 passed`, in about **2 minutes**. Model output
+  varies: if one question fails, read the line, re-run it with `--only <id>`, and report it if it fails again.
+- **RT9. Nothing else moved.** `'{0} | {1}' -f (Invoke-RestMethod http://127.0.0.1:8000/api/metrics/runway).value, (Invoke-RestMethod http://127.0.0.1:8000/api/search -Body @{q='annual prepayment discount'; mode='bm25'; k=1}).results[0].path`
+  Expected: `10.65 | notes/pricing-strategy.md`. Steps 1–7 and 10–14 below are unchanged.
+
 **M3a (Medium tier, about 20 min).** In PowerShell, from `D:\Founder-OS`. Every command works in Windows PowerShell
 5.1 and PowerShell 7. Each check prints one summary line; compare it with **Expected**. When done, merge the PR or
 write the issues under "Founder feedback".
@@ -361,13 +433,14 @@ write the issues under "Founder feedback".
    `agent.done x1`, `delta xN` (N about 40–90: the Advisor's words as they arrive), `run.finished x1`, `done x1`.
 8. **Librarian with citations.**
    `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What do my notes say about annual prepayment?", "stream": false}' -TimeoutSec 900; '{0:n1} s | intent {1} | verified {2} | cites {3}' -f ($r.elapsed_ms/1000), $r.intent, $r.verified, (($r.citations.path | Select-Object -Unique) -join ', ')`
-   Expected: about **40 s** `| intent knowledge | verified True | cites ...notes/pricing-strategy.md...`, and
-   `$r.agents[0].text` quotes the 15 % discount with `[notes/pricing-strategy.md]`.
+   Expected: about **10–40 s** `| intent knowledge | verified True | cites notes/pricing-strategy.md`, and
+   `$r.agents[0].text` quotes the 15 % discount with `[notes/pricing-strategy.md]`. See also RT5.
 9. **A decision: Planner team, scenario, no LLM arithmetic.**
    `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire two more SDRs next quarter?", "stream": false}' -TimeoutSec 900; '{0:n1} s | {1} | team {2} | verified {3} | {4}' -f ($r.elapsed_ms/1000), $r.planner, (($r.agents | ForEach-Object { $_.name + ':' + ($_.tool_calls.tool -join '+') }) -join ', '), $r.verified, $r.answer`
-   Expected: about **45 s** `| rules; team by LLM | team Financial Analyst:run_scenario, Librarian:search_vault |
-   verified True |` and an answer with runway 11.23 → 9.81 months or "1.42 months" (that change is computed in code:
-   `runway_change_months`). LLM plans vary: another valid team (e.g. two analysts) is fine if `verified` is True.
+   Expected: about **25–45 s** `| rules; team by LLM | team ..., Librarian:past_decisions+search_vault |
+   verified True |` and an answer that leads with the decision already on record (see RT3 and RT4). The analyst's
+   runway 11.23 → 9.81 months is in `$r.agents` (computed in code: `runway_change_months`). LLM plans vary: another
+   valid team (e.g. two analysts plus the Librarian, or a second Librarian) is fine if `verified` is True.
 10. **Live Agent Activity events.** In a second PowerShell window run
     `curl.exe -s -N "http://127.0.0.1:8000/api/events"`, then repeat step 6 in the first window.
     Expected: the second window prints `event: run.started`, `team.proposed`, `agent.status` (queued, thinking,
@@ -396,6 +469,14 @@ _Write results from your Windows checks, bugs and change requests here. The next
 - Did: asked "Should we hire two more SDRs next quarter?" (checklist step 9). Steps 1–9 and 11 otherwise pass.
 - Got: Librarian searched twice, then said "no specific SDR performance metrics or conversion rates are available". But `decisions/2026-09-hire-two-sdrs.md` exists: decided 2026-09-15, kill criterion "if qualified meetings per SDR stay under eight a month by December, pause the second seat", prediction 70%, review_date 2026-12-15. Separately, in step 8 the Librarian cited `decisions/2026-09-hire-two-sdrs.md` without using it.
 - Expected: the answer says we already hired two SDRs in September and asks whether they hit the kill criterion before the 15 Dec review.
+- **Resolved (2026-11-04, PR #6; re-test: checklist steps RT1–RT9).** Findings from checking each suspect:
+  1. **Frontmatter: root cause.** `status`, `date`, `review_date` and `prediction` never reached the chunks, the search results or `read_note`, so the model could not see them whatever it did.
+  2. **Stemming: root cause, not on your list.** Keyword search had none, so the Planner's "SDR" did not match "SDRs". The Planner's narrow brief ("SDR performance metrics") then matched little.
+  3. **Librarian prompt: root cause.** Nothing made it check for prior decisions or answer beyond the brief.
+  4. **The 900-character cut: not the cause here.** This note is 652 characters. It was a real defect for long notes, because a match late in a note was cut off. Fixed.
+  5. **Ranking of `decisions/`: not the cause.** The note ranked second for your question. No boost was added; code now looks up decisions directly.
+  6. **Step 8: separate bug.** `citations` listed everything the search returned, whether or not the answer used it.
+  The fix is general, with nothing specific to SDRs. Details are under "Current state". The live eval found 4 more problems, all fixed with tests: the model limiting its only search to one folder and inventing an answer, the Advisor inventing a past decision when told about them in general, "by December" passing as the 15 December review, and "What do my notes say about churn?" going to the Analyst.
 
 ### [M2] Fallback warning shows "(None)" instead of the reason
 - Did: stopped the Ollama container, then searched
@@ -471,6 +552,7 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+- 2026-11-04 (M3a bug-fix session, local on the founder's PC, ~03:19 UTC onwards): acted on the founder's review, "[M3a] Librarian misses a past decision". Added decision records, searchable frontmatter, a stemmer, centred passages, code-run decision lookup and whole-vault search for the Librarian, a guarantee that a past decision's facts reach the answer, citations limited to sources used, and an eval over the sample vault (`scripts/eval_vault.py`, offline 16/16). Ran the live eval on Ollama: 6/8, then 4/8 (a stricter check and a prompt change that backfired), 7/8, then 8/8. The self-review (`/code-review medium`) found 10 issues, all fixed with regression tests: written dates hid figures after a month name ("March 45"), an honest "nothing found" was sent back, the year in a file name counted as a topic word, decisions not taken were called decided, paths with spaces and `.markdown` lost their citation, mentions of kill criteria became criteria, mixed questions lost the Analyst, unrelated wording counted as stating a fact, search JSON could be cut, and frontmatter did not count for topic matching. Then all RT steps ran in PowerShell 5.1 with the expected lines, and the live eval passed 8/8. The live runs used the founder's `vault/default` and may have added a few lines to `data/default/decision_log.jsonl`; RT7's test note was deleted. 487 backend tests (90 new).
 - 2026-11-03 (M3a session, 16:16 to ~17:45 UTC, local on the founder's PC): fixed the "(None)" warning; setup detects Ollama over HTTP; `app/llm` (Ollama/Anthropic/Gemini/Claude SDK/Fake, router), `app/decision`, `app/agents` (registry, prompts, tools, runtime, Verifier, LangGraph graph, events), `/api/chat`, `/api/events`, `/api/runs`, `/api/agents`, VRAM in health. The live Ollama run found 4 problems, all fixed with tests: (1) a 217 s cold load from the Docker bind mount was aborted by the 180 s chat timeout (now preload plus load-before-call; re-checked live: the first answer after an unload took 222 s and came from the LLM); (2) the analyst invented `month=2023-10` (now told the data range); (3) an LLM subtraction (11.23 − 9.81) passed the Verifier by matching the full scenario payload (now code-computed deltas and only numbers the model saw count); (4) a duplicate `run.finished` frame. The self-review (`/code-review high`) found 10 issues, all fixed with regression tests: the `/api/events` keep-alive killed the stream, a cut-off Advisor stream got a template appended, timed-out approvals looked open, non-object planner JSON crashed the run, Planner-written briefs whitelisted numbers, `DECISION_MIN_CONFIDENCE` had no effect, the Librarian citation rule never fired, the tolerance rejected correct rounding (`$1.2M`), the intent decision id was dropped, and `OLLAMA_WARMUP` was missing from `.env.example`. 397 backend tests.
 - 2026-11-03 (M2 session, 13:29 to ~14:15 UTC, local on the founder's PC): vault manager, links, parsers, chunking,
   embeddings, Qdrant/in-memory stores, hybrid RAG with RRF, watcher, `/api/vault/*` and `/api/search`, sample vault.
@@ -501,6 +583,12 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M3a bug-fix session, 2026-11-04)
+- Facts of a past decision are guaranteed by code, not prompts: a small local model ignored instructions in live runs, so code does the lookup, gives the record to the model and adds whatever the answer leaves out. No second LLM call.
+- No ranking boost for `decisions/`: dense search always returns something, so a boost would surface decisions on other topics. "On topic" is decided by words (see `decision_matches`).
+- The sample note is unchanged: its kill criterion is read from the body, so the copy already in your vault works as it is.
+- Outside the original list: `rule_intent` now sends questions that name the notes to the Librarian. The live eval showed the Analyst answering them with "I have no tool for notes".
 
 ## Decisions made (M3a session)
 - Founder decisions (recorded in PRD §12): Ollama is an external service (the `ollama` Docker container, port 11434, GPU, shared with n8n) detected over HTTP; the chat model is `qwen3:8b` with thinking off; the EmbeddingGemma vs nomic comparison moves to M3c.

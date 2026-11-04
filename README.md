@@ -120,7 +120,7 @@ ends with a probing question.
 | Endpoint | What it does |
 |---|---|
 | `POST /api/chat` `{"message": "...", "stream": true}` | Server-Sent Events: agent events, then `delta` (Advisor text), then `done` (the full result) |
-| `POST /api/chat` `{"message": "...", "stream": false}` | One JSON result: `answer`, `metrics` (each with full `lineage`), `citations`, `verified`, `issues`, `timings_ms` |
+| `POST /api/chat` `{"message": "...", "stream": false}` | One JSON result: `answer`, `metrics` (each with full `lineage`), `citations` (only the sources the answers name), `past_decisions` (decisions already on record for this topic), `verified`, `issues`, `timings_ms` |
 | `GET /api/events?run_id=&since=` | Live agent events (SSE) for the Agent Activity panel: `team.proposed`, `agent.status`, `agent.step`, ... |
 | `GET /api/runs/{id}` · `POST /api/runs/{id}/approve` · `/cancel` | A run's result and events; approve or reject a proposed team; cancel |
 | `GET /api/agents` | Agent types, their tools, privacy class and the provider each one uses now |
