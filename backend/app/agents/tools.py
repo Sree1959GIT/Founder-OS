@@ -83,6 +83,7 @@ class Tool:
     spec: ToolSpec
     handler: Handler
     status: str = "querying_data"  # agent.status while it runs
+    model_callable: bool = True  # False: code runs it for the agent, so the model is not offered it
 
 
 def _artifact(ctx: ToolContext, kind: ArtifactKind, title: str, data: dict[str, Any], **extra: Any) -> Artifact:
@@ -408,6 +409,7 @@ TOOLS: dict[str, Tool] = {
             ),
             _past_decisions,
             status="searching_vault",
+            model_callable=False,
         ),
         Tool(
             _spec(
@@ -460,4 +462,4 @@ async def run_tool(name: str, ctx: ToolContext, args: dict[str, Any], allowed: t
 
 
 def specs_for(allowed: tuple[str, ...]) -> list[ToolSpec]:
-    return [TOOLS[name].spec for name in allowed if name in TOOLS]
+    return [TOOLS[name].spec for name in allowed if name in TOOLS and TOOLS[name].model_callable]

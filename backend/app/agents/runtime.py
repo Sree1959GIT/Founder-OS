@@ -20,10 +20,11 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.agents.events import Artifact, Citation, EventBus
-from app.agents.registry import REGISTRY, AgentType, spawnable_types
+from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
 from app.agents.tools import TOOLS, ToolContext, ToolOutcome, run_tool, specs_for
-from app.agents.verifier import named_paths, verify
+from app.agents.verifier import PATH_RE, named_paths, verify
 from app.decision.base import DecisionError, DecisionService
+from app.engine.hybrid_rag import bm25_tokens
 from app.engine.lineage import Lineage
 from app.llm.base import Completion, LLMError, Message, StreamChunk, ToolCall, Usage
 from app.llm.router import LLMRouter
@@ -48,7 +49,16 @@ _FINANCE_CUES = re.compile(
     re.I,
 )
 _KNOWLEDGE_CUES = re.compile(r"\b(notes?|vault|journal|documents?|wrote|board update|memo|decided|last time)\b", re.I)
+# Naming the notes says where to look, whatever the topic: "What do my notes say about churn?" is not a metric.
+_ASKS_THE_NOTES = re.compile(
+    r"\b((my|our|the) (notes?|journal|vault|documents?|board update|memo)|what (did|have) (we|i) (decide|decided)|"
+    r"past decisions?)\b",
+    re.I,
+)
+_ASKS_TO_DECIDE = re.compile(r"\b(should|shall) (we|i)\b", re.I)
 _CHITCHAT = re.compile(r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening))\b[\s!.?]*$", re.I)
+
+KILL_CRITERIA_OVERLAP = 0.6
 
 # Keyword -> metric routine, for the rule-based Financial Analyst (first match wins).
 METRIC_KEYWORDS: list[tuple[str, str]] = [
@@ -129,6 +139,8 @@ def rule_intent(message: str) -> Intent | None:
     """Clear-cut cases need no model call (fast, deterministic). Ambiguous ones return None."""
     if _CHITCHAT.match(message):
         return "chitchat"
+    if _ASKS_THE_NOTES.search(message) and not _ASKS_TO_DECIDE.search(message):
+        return "knowledge"
     if _DECISION_CUES.search(message):
         return "decision"
     if _FINANCE_CUES.search(message):
@@ -285,6 +297,7 @@ class AgentRunner:
             Message.system(spec.prompt() + await self._data_context(spec) + _decisions_context(result)),
             Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}"),
         ]
+        await self._search_first(spec, inst, user_message, messages, result)
         try:
             await self._loop(spec, inst, messages, result)
         except LLMError as exc:
@@ -337,6 +350,21 @@ class AgentRunner:
         )
         if not outcome.error:
             result.past_decisions = [DecisionRecord(**row) for row in outcome.content["decisions"]]
+
+    async def _search_first(
+        self, spec: AgentType, inst: AgentInstance, user_message: str, messages: list[Message], result: AgentResult
+    ) -> None:
+        """Search the whole vault for the founder's question before the model's first turn.
+
+        Seen live: left to itself, the model limited its only search to one folder and invented an answer from what
+        came back. It can still search further, but it always has the results for the question as asked.
+        """
+        if spec.name != "librarian":
+            return
+        call = ToolCall(name="search_vault", arguments={"query": user_message})
+        outcome = await self._call_tool(spec, inst, call, result)
+        messages.append(Message.assistant("", [call]))
+        messages.append(Message.tool(call, outcome.for_model()))
 
     async def _data_context(self, spec: AgentType) -> str:
         """Tell the Financial Analyst which months exist, so it does not invent a `month` argument."""
@@ -449,38 +477,82 @@ def _decisions_context(result: AgentResult) -> str:
     return f"\n\nPast decisions on record for this topic (from the vault, exact):\n{lines}"
 
 
-def _date_forms(iso: str | None) -> list[str]:
-    """The ways an answer may refer to a date: 2026-12-15, 2026-12, December, Dec."""
-    if not iso:
-        return []
-    forms = [iso, iso[:7]]
-    try:
-        month = int(iso[5:7])
-    except ValueError:
-        return forms
-    if 1 <= month <= 12:
-        forms += [calendar.month_name[month].lower(), calendar.month_abbr[month].lower()]
-    return forms
+def _month_names(iso: str) -> list[str]:
+    month = int(iso[5:7]) if iso[5:7].isdigit() else 0
+    return [calendar.month_name[month].lower(), calendar.month_abbr[month].lower()] if 1 <= month <= 12 else []
+
+
+def _states_month(iso: str, text: str) -> bool:
+    """2026-09-15, 2026-09, September or Sep. Not inside a longer word: the "2026-09" of a [[2026-09-hire]] link."""
+    forms = [iso, iso[:7], *_month_names(iso)]
+    return any(re.search(rf"(?<![\w-]){re.escape(form.lower())}(?![\w-])", text) for form in forms)
+
+
+def _states_day(iso: str, text: str) -> bool:
+    """2026-12-15, 15 Dec, December 15th. A kill criterion's "by December" does not state a 15 December review."""
+    if re.search(rf"(?<![\w-]){re.escape(iso.lower())}(?![\w-])", text):
+        return True
+    day = iso[8:10].lstrip("0")
+    if not day.isdigit():
+        return _states_month(iso, text)
+    ordinal = rf"{day}(?:st|nd|rd|th)?"
+    return any(
+        re.search(rf"\b{ordinal}\s+(?:of\s+)?{name}\b|\b{name}\.?\s+{ordinal}\b", text) for name in _month_names(iso)
+    )
+
+
+def _states_prediction(predictions: list[str], text: str) -> bool:
+    """The prediction's own percentage ("70%"), or the word when it has none."""
+    percent = re.search(r"(\d+(?:\.\d+)?)\s?(?:%|percent\b)", " ".join(predictions))
+    if percent is None:
+        return "predict" in text
+    return re.search(rf"(?<![\d.]){re.escape(percent.group(1))}\s?(?:%|percent\b)", text) is not None
+
+
+def _states_kill_criteria(criteria: list[str], text: str) -> bool:
+    """Most of the criterion's own words: naming "a kill criterion" without its condition gives the founder nothing."""
+    words = set(bm25_tokens(" ".join(criteria)))
+    return len(words & set(bm25_tokens(text))) >= KILL_CRITERIA_OVERLAP * len(words)
+
+
+def _missing_facts(text: str, record: DecisionRecord) -> tuple[list[str], bool]:
+    """(the facts of this decision that `text` does not state, whether it states any of them)."""
+    lowered = PATH_RE.sub(" ", text).lower()  # the 2026-09 in "decisions/2026-09-hire.md" states no date
+    wanted: list[tuple[str, bool]] = []
+    if record.decided:
+        wanted.append((f"decided {record.decided}", _states_month(record.decided, lowered)))
+    if record.kill_criteria:
+        criteria = "; ".join(c.rstrip(".") for c in record.kill_criteria)
+        wanted.append((f"kill criteria: {criteria}", _states_kill_criteria(record.kill_criteria, lowered)))
+    if record.predictions:
+        wanted.append((f"prediction: {'; '.join(record.predictions)}", _states_prediction(record.predictions, lowered)))
+    if record.review_date:
+        wanted.append((f"review date {record.review_date}", _states_day(record.review_date, lowered)))
+    if not wanted:  # a note with no fields: all an answer can do is name it
+        return ([record.title], False) if record.title.lower() not in lowered else ([], True)
+    return [fact for fact, stated in wanted if not stated], any(stated for _, stated in wanted)
+
+
+def decision_note(text: str, record: DecisionRecord, *, needs_path: bool, lead: str) -> str:
+    """What `text` must add for this decision: only the missing facts, or the whole record if it states none."""
+    missing, any_stated = _missing_facts(text, record)
+    path_missing = needs_path and record.path.lower() not in text.lower()
+    if not any_stated:
+        return f"{lead} {record.summary()}"
+    if not missing and not path_missing:
+        return ""
+    source = f" [{record.path}]" if path_missing else ""
+    return f'On record for "{record.title}"{source}' + (f": {'; '.join(missing)}." if missing else ".")
 
 
 def decision_covered(text: str, record: DecisionRecord, *, needs_path: bool) -> bool:
-    """Does the answer already give this decision's date, review date and kill criteria?"""
-    lowered = text.lower()
-    if needs_path and record.path.lower() not in lowered:
-        return False
-    for iso in (record.decided, record.review_date):
-        forms = _date_forms(iso)
-        if forms and not any(re.search(rf"\b{re.escape(form.lower())}\b", lowered) for form in forms):
-            return False
-    return not record.kill_criteria or "kill" in lowered
+    return not decision_note(text, record, needs_path=needs_path, lead="")
 
 
 def _surface_decisions(result: AgentResult) -> None:
     """A small model can ignore what it was told, so code guarantees that the facts of a past decision are stated."""
-    missing = [r for r in result.past_decisions if not decision_covered(result.text, r, needs_path=True)]
-    if missing:
-        note = " ".join(f"On record: {record.summary()}" for record in missing)
-        result.text = f"{result.text} {note}".strip()
+    notes = [decision_note(result.text, r, needs_path=True, lead="On record:") for r in result.past_decisions]
+    result.text = " ".join([result.text, *(n for n in notes if n)]).strip()
 
 
 def _keep_used_sources(result: AgentResult) -> None:
@@ -541,8 +613,13 @@ def _team_decisions(results: list[AgentResult]) -> list[DecisionRecord]:
 
 def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
     """What the Advisor's reply must add so that no past decision on the topic goes unmentioned."""
-    missing = [r for r in _team_decisions(results) if not decision_covered(answer, r, needs_path=False)]
-    return "".join(f" You already decided this: {r.summary()} {r.follow_up_question()}" for r in missing)
+    parts: list[str] = []
+    for record in _team_decisions(results):
+        note = decision_note(answer, record, needs_path=False, lead="You already decided this:")
+        if note:
+            ignored = note.startswith("You already")
+            parts.append(f" {note} {record.follow_up_question()}" if ignored else f" {note}")
+    return "".join(parts)
 
 
 async def advise(
@@ -560,7 +637,10 @@ async def advise(
         )
         + f"\n\nTeam findings:\n{findings}"
     )
-    messages = [Message.system(spec.prompt()), Message.user(context)]
+    # Only when there is one: told about past decisions in general, the model invented one ("you decided in August").
+    decisions_rule = (PROMPTS_DIR / "advisor_past_decisions.md").read_text(encoding="utf-8")
+    system = spec.prompt() + (decisions_rule if _team_decisions(results) else "")
+    messages = [Message.system(system), Message.user(context)]
     sent: list[str] = []
     try:
         async for chunk in router.stream(spec.privacy, messages):

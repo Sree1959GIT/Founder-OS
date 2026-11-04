@@ -14,7 +14,7 @@ import pytest
 from app.agents.events import EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.registry import REGISTRY
-from app.agents.runtime import AgentInstance, AgentRunner, Plan, advise, decision_covered, plan
+from app.agents.runtime import AgentInstance, AgentRunner, Plan, advise, decision_covered, plan, rule_intent
 from app.agents.tools import ToolContext, passage, run_tool
 from app.agents.verifier import verify_numbers
 from app.config import PROJECT_ROOT
@@ -244,13 +244,15 @@ async def test_the_model_is_told_about_the_decision_before_it_answers(vault: Any
     await runner(provider, vault).run(librarian(), SDR_QUESTION)
     system = provider.calls[0]["messages"][0].content
     assert "on record for this topic" in system and "2026-12-15" in system and KILL in system
-    assert "`decisions`" in system  # the prompt asks for the folder search first
+    assert "`decisions`" in system  # the prompt asks for the folder search
+    assert all(t.name != "past_decisions" for t in provider.calls[0]["tools"])  # code runs it, not the model
+    assert {t.name for t in provider.calls[0]["tools"]} == {"search_vault", "read_note", "write_note"}
 
 
 async def test_an_answer_that_states_the_decision_is_left_as_it_is(vault: Any) -> None:
     answer = (
-        f"You already decided this on 2026-09-15 [{SDR_PATH}]: the kill criterion is under eight meetings a month, "
-        "the prediction is 70%, and the review is on 15 Dec."
+        f"You already decided this on 2026-09-15 [{SDR_PATH}]: {KILL}. "
+        "The prediction is 70%, and the review is on 15 Dec."
     )
     result = await runner(FakeProvider([answer]), vault).run(librarian(), SDR_QUESTION)
     assert result.text == answer and result.verified
@@ -316,28 +318,120 @@ async def test_advisor_that_ignores_the_decision_gets_it_added(vault: Any) -> No
     assert "2026-09-15" in text and KILL in text and text.endswith("before the 2026-12-15 review?")
     assert completion.text == text
     assert "Past decisions on this topic" in provider.calls[0]["messages"][-1].content
+    assert "kill criteria" in provider.calls[0]["messages"][0].content
 
 
 async def test_advisor_that_states_the_decision_is_left_as_it_is(vault: Any) -> None:
-    reply = "You already hired two SDRs in September: did they beat the kill criterion before the 15 Dec review?"
+    reply = (
+        f"You already hired two SDRs in September at 70% confidence, with a kill criterion: {KILL}. "
+        "Did they beat it before the 15 Dec review?"
+    )
     text, _, _ = await _advice(reply, [await _team_result(vault)])
     assert text == reply
 
 
+async def test_advisor_saying_by_december_has_not_stated_the_review_date(vault: Any) -> None:
+    """Seen live: "a kill criterion ... by December" passed as the 15 December review, which the founder never saw."""
+    reply = f"You already decided in September at 70%, with a kill criterion: {KILL}."
+    text, _, _ = await _advice(reply, [await _team_result(vault)])
+    assert text == f'{reply} On record for "Hire two SDRs for outbound": review date 2026-12-15.'
+
+
+async def test_naming_a_kill_criterion_without_its_condition_is_not_enough(vault: Any) -> None:
+    reply = "You already decided in September at 70%, with a kill criterion, and review on 15 Dec."
+    text, _, _ = await _advice(reply, [await _team_result(vault)])
+    assert text == f'{reply} On record for "Hire two SDRs for outbound": kill criteria: {KILL}.'
+
+
+async def test_advisor_that_misses_one_fact_gets_only_that_fact(vault: Any) -> None:
+    """Seen live: a good reply without the decision month got the whole record repeated after it."""
+    reply = (
+        f"You already hired two SDRs at 70%, with a kill criterion: {KILL}. Is that on track for the 2026-12-15 review?"
+    )
+    text, _, _ = await _advice(reply, [await _team_result(vault)])
+    assert text == f'{reply} On record for "Hire two SDRs for outbound": decided 2026-09-15.'
+
+
+async def test_librarian_that_misses_only_the_path_gets_only_the_path(vault: Any) -> None:
+    answer = f"You decided this on 2026-09-15 at 70%; {KILL}; the 15 Dec review stands."
+    result = await runner(FakeProvider([answer]), vault).run(librarian(), SDR_QUESTION)
+    assert result.text == f'{answer} On record for "Hire two SDRs for outbound" [{SDR_PATH}].' and result.verified
+
+
+def test_a_date_inside_the_file_name_does_not_count_as_stating_it() -> None:
+    record = DecisionRecord(path="decisions/2026-09-hire.md", title="Hire", decided="2026-09-15")
+    assert not decision_covered("See [decisions/2026-09-hire.md].", record, needs_path=True)
+    assert not decision_covered("See [[2026-09-hire]] [decisions/2026-09-hire.md].", record, needs_path=True)
+    assert decision_covered("Decided in September [decisions/2026-09-hire.md].", record, needs_path=True)
+
+
+def test_a_note_with_no_fields_counts_as_covered_when_named() -> None:
+    record = DecisionRecord(path="decisions/a.md", title="Pause ads")
+    assert decision_covered("We chose to pause ads.", record, needs_path=False)
+    assert not decision_covered("We chose nothing.", record, needs_path=False)
+
+
 async def test_advisor_without_a_past_decision_adds_nothing(vault: Any) -> None:
     result = await runner(FakeProvider(["ok"]), vault).run(librarian("annual"), "annual prepayment")
-    text, _, _ = await _advice("Annual prepayment pulls cash forward.", [result])
+    text, _, provider = await _advice("Annual prepayment pulls cash forward.", [result])
     assert text == "Annual prepayment pulls cash forward."
+    # Seen live: told about past decisions in general, the model invented one ("you decided this in August").
+    assert "kill criteria" not in provider.calls[0]["messages"][0].content
 
 
 def test_coverage_needs_each_date_and_the_kill_criteria() -> None:
     record = DecisionRecord(
-        path="decisions/a.md", title="A", decided="2026-09-15", review_date="2026-12-15", kill_criteria=["x"]
+        path="decisions/a.md",
+        title="A",
+        decided="2026-09-15",
+        review_date="2026-12-15",
+        kill_criteria=["CAC above plan"],
+        predictions=["70% chance of growth"],
     )
-    assert decision_covered("September, the kill criterion, 15 Dec", record, needs_path=False)
-    assert not decision_covered("September, the kill criterion", record, needs_path=False)
-    assert not decision_covered("September, 15 Dec", record, needs_path=False)
-    assert not decision_covered("September, the kill criterion, 15 Dec", record, needs_path=True)
+    full = "September, CAC above plan, 70 %, December 15th"
+    assert decision_covered(full, record, needs_path=False)
+    assert decision_covered("2026-09-15, CAC above plan, 70 percent, the 15th of December", record, needs_path=False)
+    assert not decision_covered("CAC above plan, 70 %, 15 Dec", record, needs_path=False)  # no decision date
+    assert not decision_covered("September, CAC above plan, 70 %", record, needs_path=False)  # no review date
+    assert not decision_covered("September, CAC above plan, 170 %, 15 Dec", record, needs_path=False)  # no prediction
+    assert not decision_covered("September, a kill criterion, 70 %, 15 Dec", record, needs_path=False)  # no condition
+    assert not decision_covered(full, record, needs_path=True)  # no path
+
+
+async def test_the_model_always_has_the_results_for_the_question_as_asked(vault: Any) -> None:
+    """Seen live: the model searched only `decisions` and then invented what the board update asks."""
+    question = "What does the board update ask of the board?"
+    provider = FakeProvider(["ok"])
+    result = await runner(provider, vault).run(librarian("Something narrower"), question)
+    assert [c["tool"] for c in result.tool_calls] == ["past_decisions", "search_vault"]
+    assert result.tool_calls[1]["arguments"] == {"query": question}
+    last = next(m for m in provider.calls[0]["messages"] if m.role == "tool")
+    assert last.role == "tool" and "sources/board-update-2026-q3.md" in last.content and "Introductions" in last.content
+
+
+async def test_only_the_librarian_searches_first(vault: Any) -> None:
+    analyst = AgentInstance(type="financial_analyst", name="Financial Analyst", brief="x", provider="fake")
+    finance = SimpleNamespace(metrics=SimpleNamespace(available_months=lambda: []))
+    provider = FakeProvider(["ok"])
+    the_runner = AgentRunner(LLMRouter(provider), EventBus(), "r", lambda aid: ToolContext(finance, vault, aid))
+    assert (await the_runner.run(analyst, SDR_QUESTION)).tool_calls == []
+
+
+# --- routing ---------------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("message", "intent"),
+    [
+        ("What do my notes say about churn reasons?", "knowledge"),  # seen live: went to the Analyst, who has no notes
+        ("What did we decide about SDRs?", "knowledge"),
+        ("What does the board update ask of the board?", "knowledge"),
+        ("What did my journal say about the logistics customers?", "knowledge"),
+        ("Should we follow what my notes say about churn?", "decision"),
+        ("What's our churn?", "finance"),
+        ("What's our runway?", "finance"),
+    ],
+)
+def test_naming_the_notes_goes_to_the_librarian(message: str, intent: str) -> None:
+    assert rule_intent(message) == intent
 
 
 # --- the Planner ------------------------------------------------------------------------------------------------------
