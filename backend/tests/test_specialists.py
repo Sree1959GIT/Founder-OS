@@ -22,11 +22,13 @@ from app.agents.specialists import (
     PLACEHOLDER_KILL,
     MemoDraft,
     MemoPrediction,
+    calls_for_team,
     lens_name,
     memo_slug,
     memo_title,
     risks_from_text,
     team_for_message,
+    with_required_fields,
     without_unbacked_figures,
 )
 from app.agents.tools import ToolContext
@@ -146,6 +148,28 @@ async def test_the_default_team_includes_them_when_the_model_is_down() -> None:
         DUBAI, LLMRouter(FakeProvider([LLMUnavailable("down")])), DecisionService(FakeDecisionProvider())
     )
     assert {"devils_advocate", "memo_writer", "market_scout"} <= {i.type for i in planned.team}
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("What is our churn?", False),
+        ("What do my notes say about our pricing?", False),
+        ("What does the competitor pricing say?", False),
+        ("What is our runway?", False),
+        ("What would a discount do to churn?", True),
+        ("Who are our competitors in the Dubai market?", True),
+        ("Run a pre-mortem on the launch", True),
+        ("What do my notes say about risks?", False),
+    ],
+)
+def test_a_plain_lookup_stays_a_lookup(message: str, expected: bool) -> None:
+    assert calls_for_team(message) is expected
+
+
+async def test_a_metric_question_keeps_its_one_agent_team() -> None:
+    planned = await plan("What is our churn?", LLMRouter(FakeProvider()), DecisionService(FakeDecisionProvider()))
+    assert [i.type for i in planned.team] == ["financial_analyst"]
 
 
 def test_a_lens_is_named_after_its_viewpoint() -> None:
@@ -410,12 +434,15 @@ async def test_the_memo_lists_the_teams_metrics_with_lineage(finance: Any, vault
     )
     assert result.memo is not None
     text = (vault.vault.root / result.memo.path).read_text(encoding="utf-8")
-    assert "formula:" in text and "No metrics were computed" not in text
+    assert "formula:" in text and "No metrics were computed" not in text and "- - " not in text
 
 
 def test_memo_names_and_figures() -> None:
     assert memo_title("Should we open a Dubai office? Write it up.") == "Open a Dubai office"
     assert memo_slug("Open a Dubai office") == "open-dubai-office"
+    # What the model wrote on the founder's PC: the file name should not repeat it.
+    titled = with_required_fields(MemoDraft(title="Decision Memo: Should We Open a Dubai Office?"), "q")
+    assert titled.title == "Open a Dubai Office"
     draft = MemoDraft(
         title="T", context="Costs $9,999 of $1,000.", predictions=[MemoPrediction(statement="s", probability=70)]
     )

@@ -175,6 +175,21 @@ def _check(case: EvalCase, mode: str, result: AgentResult, advisor_answer: str) 
     return EvalResult(case.id, mode, problems, f"cites {sorted(used_in_text) or 'nothing'}")
 
 
+def make_sample_vault(root: Path) -> Any:
+    """A private copy of the sample vault with keyword search, so ranking is deterministic."""
+    shutil.copytree(SAMPLE_VAULT, root)
+    manager = VaultManager(root)
+    index = HybridIndex(manager, FakeEmbedder(), None, ApproxTokenizer())
+    index.refresh(dense=False)
+    return SimpleNamespace(
+        vault=manager,
+        index=index,
+        ensure_started=lambda: None,
+        wait_ready=lambda: True,
+        apply_changes=lambda paths: index.refresh(sorted(paths), dense=False),
+    )
+
+
 def sample_finance(root: Path) -> Any:
     db = FinanceDB(root / "default")
     ingest_directory(db, PROJECT_ROOT / "sample_data")

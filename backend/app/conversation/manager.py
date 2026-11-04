@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from app.agents.events import AgentEvent, EventBus, EventType
 from app.agents.graph import AgentOrchestrator, RunContext
 from app.agents.verifier import extract_figures
-from app.conversation.classifier import Classified, TurnClassifier, TurnKind
+from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.llm.base import LLMError, LLMProvider, Message
 
@@ -98,9 +98,9 @@ class ConversationManager:
     def session(self, session_id: str | None = None) -> Session:
         sid = session_id or f"ses_{uuid.uuid4().hex[:10]}"
         if sid not in self.sessions:
-            for old in [s for s in self.sessions if not self._active(self.sessions[s])][: -MAX_SESSIONS + 1 or None]:
-                if len(self.sessions) >= MAX_SESSIONS:
-                    del self.sessions[old]
+            idle = [s for s in self.sessions.values() if not self._active(s)]
+            for old in idle[: max(0, len(self.sessions) - MAX_SESSIONS + 1)]:
+                del self.sessions[old.id]
             self.sessions[sid] = Session(sid, self.default_quiet)
         return self.sessions[sid]
 
@@ -287,11 +287,12 @@ class ConversationManager:
         return outcome
 
     async def _turn_when_idle(self, session: Session, text: str) -> TurnOutcome:
-        classified = await self.classifier.classify(text, "")
-        if classified.kind == "backchannel":
-            return self._reply(session, classified, "", session.run_id)
-        if classified.kind == "stop":
-            return self._reply(session, classified, "Nothing is running.", session.run_id)
+        """Rules only. With nothing to protect, an unclear turn is simply a request: no model call before the run."""
+        kind = by_rules(text)
+        if kind == "backchannel":
+            return self._reply(session, Classified(kind=kind, by="rules"), "", session.run_id)
+        if kind == "stop":
+            return self._reply(session, Classified(kind=kind, by="rules"), "Nothing is running.", session.run_id)
         run = self._start_run(session, text)
         return TurnOutcome(session_id=session.id, reply="", run_id=run.run_id)
 

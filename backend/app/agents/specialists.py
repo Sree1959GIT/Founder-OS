@@ -89,6 +89,23 @@ def team_for_message(message: str) -> list[str]:
     return [agent_type for agent_type, cue in _CUES if cue.search(message)]
 
 
+_LOOKUP = re.compile(r"\b(my notes|my journal|did we decide|board update)\b", re.I)
+_DECISION_SHAPED = re.compile(r"\b(should|would|could|if|who are)\b", re.I)
+_ONLY_WHEN_DECIDING = frozenset({"revenue_customer", "market_scout"})
+
+
+def calls_for_team(message: str) -> bool:
+    """True when the founder's words ask for a specialist, so the message is not a plain lookup.
+
+    "What is our churn?" is a metric and "What do my notes say about pricing?" is a search, though both name a
+    specialist's subject. "What would a discount do to churn?" needs the specialist.
+    """
+    types = set(team_for_message(message))
+    if not types or _LOOKUP.search(message):
+        return False
+    return bool(types - _ONLY_WHEN_DECIDING) or bool(_DECISION_SHAPED.search(message))
+
+
 def needs_analyst(types: list[str]) -> bool:
     return "financial_analyst" not in types and any(t in _NEEDS_NUMBERS for t in types)
 
@@ -241,11 +258,15 @@ def rule_draft(message: str) -> MemoDraft:
     )
 
 
+_MEMO_PREFIX = re.compile(r"^(decision\s+)?memo\s*[:\-\u2013\u2014]\s*", re.I)
+
+
 def with_required_fields(draft: MemoDraft, message: str) -> MemoDraft:
     """A memo always has a title, a prediction and a kill criterion, even when the model left them out."""
+    title = _MEMO_PREFIX.sub("", draft.title.strip())
     return draft.model_copy(
         update={
-            "title": draft.title.strip() or memo_title(message),
+            "title": memo_title(title) if title else memo_title(message),
             "decision": draft.decision.strip() or f"Not decided yet: {message}",
             "predictions": draft.predictions or [MemoPrediction(statement=PLACEHOLDER_PREDICTION, probability=0.5)],
             "kill_criteria": [c for c in draft.kill_criteria if c.strip()] or [PLACEHOLDER_KILL],
@@ -269,15 +290,19 @@ def memo_slug(title: str) -> str:
     return "-".join(words[:7]) or "decision"
 
 
+def _clean_figures(text: str, known: list[Fact], context: str) -> str:
+    unbacked = set(verify_numbers(text, known, context))
+    for figure in extract_figures(text):
+        if figure.text in unbacked:
+            text = text.replace(figure.text, FIGURE_REMOVED)
+    return text
+
+
 def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) -> MemoDraft:
     """A memo is kept for years: a figure with no lineage is removed from it, not just flagged."""
 
     def clean(text: str) -> str:
-        unbacked = set(verify_numbers(text, known, message))
-        for figure in extract_figures(text):
-            if figure.text in unbacked:
-                text = text.replace(figure.text, FIGURE_REMOVED)
-        return text
+        return _clean_figures(text, known, message)
 
     return MemoDraft(
         title=clean(draft.title),
@@ -307,19 +332,20 @@ def _metric_lines(upstream: list[Any]) -> list[str]:
                 source = f"; formula: {lineage.formula}; files: {', '.join(lineage.source_files)}" if lineage else ""
                 data = artifact.data
                 lines.append(
-                    f"- {data.get('label')}: {data.get('value')} {data.get('unit')} (as of {data.get('as_of')}{source})"
+                    f"{data.get('label')}: {data.get('value')} {data.get('unit')} (as of {data.get('as_of')}{source})"
                 )
         if result.decision_impact is not None:
             sentence = result.decision_impact.sentence()
             if sentence not in seen:
                 seen.add(sentence)
-                lines.append(f"- {sentence} (computed by `run_scenario`)")
+                lines.append(f"{sentence} (computed by `run_scenario`)")
     return lines
 
 
 def render_body(draft: MemoDraft, upstream: list[Any]) -> str:
     findings = [
-        f"- **{r.name}{'' if r.verified else ' (not verified)'}:** {_one_line(r.text)}"
+        f"**{r.name}{'' if r.verified else ' (not verified)'}:** "
+        f"{_one_line(_clean_figures(r.text, r.known_facts, r.brief))}"
         for r in upstream
         if r.status == "done" and r.text
     ]

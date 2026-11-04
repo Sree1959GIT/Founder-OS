@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3b: Specialist agents** (in progress, branch `claude/m3b-specialists`). M0, M1, M2 and M3a are ACCEPTED and merged.
+- **Next milestone:** **M3c: Decision models (Laya / Jev)**, after the founder reviews M3b (PR open, branch `claude/m3b-specialists`). M0, M1, M2 and M3a are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-04 (M3b session started)
+- **Last updated:** 2026-11-04 (M3b session wrap-up)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -16,7 +16,7 @@
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
-| M3b | Specialist agents | IN PROGRESS | Branch `claude/m3b-specialists` |
+| M3b | Specialist agents | DONE (PR open, Medium gate awaiting the founder) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
@@ -61,12 +61,12 @@
 - Started (UTC): 2026-11-04 14:23 (local Windows session), branch `claude/m3b-specialists`, target **M3b** (gate tier: **Medium**)
 - Plan, in the founder's priority order (an "M3b (partial)" PR is fine if time runs out):
   - [x] Tidy the stale "Next milestone" and M3a table lines
-  - [ ] (1) Small items from the M3a re-test: journal eval reliable in full runs; Advisor says "you" and uses one money format; API sends `charset=utf-8`
-  - [ ] (2a) Cloud layer: remove the subscription path; Anthropic, Gemini (AI Studio or Vertex), OpenAI, OpenAI-compatible; per-agent-type choice; privacy filter on every cloud payload; per-call cost and latency; monthly cap; `/api/agents`
-  - [ ] (2b) Conversation lane backend: run queue, turn classifier, three contexts, narration events, APIs
-  - [ ] (3) Specialists: Devil's Advocate, Market Scout, Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Memo Writer, Perspective lens; cancel and re-run with an edited brief
-  - [ ] Offline and live evals for each new agent
-  - [ ] Decisions in PRD §12 and here; Windows checklist with the "Dubai office" run; self-review; PR into `main`; CI green
+  - [x] (1) Small items from the M3a re-test: journal eval reliable in full runs; Advisor says "you" and uses one money format; API sends `charset=utf-8`
+  - [x] (2a) Cloud layer: remove the subscription path; Anthropic, Gemini (AI Studio or Vertex), OpenAI, OpenAI-compatible; per-agent-type choice; privacy filter on every cloud payload; per-call cost and latency; monthly cap; `/api/agents`
+  - [x] (2b) Conversation lane backend: run queue, turn classifier, three contexts, narration events, APIs
+  - [x] (3) Specialists: Devil's Advocate, Market Scout, Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Memo Writer, Perspective lens; cancel and re-run with an edited brief
+  - [x] Offline and live evals for each new agent
+  - [x] Decisions in PRD §12 and here; Windows checklist with the "Dubai office" run; self-review; PR into `main`; CI green
 
 Previous session (2026-11-04, second M3a bug-fix):
 - Started (UTC): 2026-11-04 (second local bug-fix session for the M3a gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
@@ -101,8 +101,37 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
-**M3a is complete** (PR awaiting the founder's re-test). M0–M2 behaviour is unchanged, apart from the "(None)"
-warning fix and the keyword-search changes below. 576 backend tests pass.
+### Specialist agents, cloud layer and conversation lane (M3b)
+**What you can do now**
+- Ask "Should we open a Dubai office? Write a decision memo." You get a team (Financial Analyst, Librarian, Market Scout, Regulatory & Tax, People & Ops, Devil's Advocate, Memo Writer), a risk register, and `decisions/YYYY-MM-DD-<slug>.md` with options, assumptions, metrics with lineage, predictions, kill criteria and a review date 30 days out. It took about 2 minutes on the local model.
+- The memo's status is `proposed`: you decide. Its predictions are also stored in the calibration store.
+- Cancel one agent, or re-run it with an edited brief, while the rest of the team works.
+- Talk to the lane while a run works: status questions answer at once, "actually, assume..." offers a re-run, new questions wait in a queue.
+
+**Agents (`app/agents/registry.py`, prompts in `prompts/`, code in `specialists.py`)**
+- Stages: 0 Financial Analyst, Librarian, Market Scout; 1 Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Perspective lens; 2 Devil's Advocate; 3 Memo Writer. Each stage sees earlier findings, and the Verifier accepts earlier stages' numbers (`AgentResult.inherited`).
+- Who joins: the Planner chooses, and the founder's words add specialists by rule (`team_for_message`). `calls_for_team` keeps "What is our churn?" a one-agent lookup while "What would a discount do to churn?" gets the specialist. The Memo Writer only joins when you ask for a memo or to record the decision, so ordinary questions never write to your vault. Up to 8 agents.
+- Every specialist has a no-LLM rule answer with no invented figures (R3) and goes through the Verifier and its repair turn.
+- What code guarantees: a risk register from the Devil's Advocate's lines; "not legal or tax advice" from Regulatory; the Market Scout's "vault only" note when cloud is off; web sources named; the Prioritiser sent back once if it ranks without the routine; the memo's path and review date in the reply.
+- `request_metric` gives Revenue & Customer and People & Ops the Analyst's routines with lineage. They have no `run_sql` or scenarios.
+- Memo: the model drafts JSON, the Verifier checks the prose, one repair turn, and code writes the file. A figure with no lineage is removed from the memo (`[figure removed: no lineage]`), including from the team findings section. A second memo on the same day gets `-2`.
+
+**Cloud (`app/llm/`)**
+- `cloud.py`: Anthropic (API key), Gemini (AI Studio or Vertex express key), OpenAI and OpenAI-compatible. The subscription path is gone; a `.env` that still says `DEEP_PROVIDER=claude_sdk` starts up local. You can delete `CLAUDE_CODE_OAUTH_TOKEN` from your `.env`.
+- `router.py`: `AGENT_MODELS` per type, `DEEP_PROVIDER` as the default, fallback to Ollama. `privacy.py` filters every cloud payload. `costs.py` writes `data/<ws>/llm_calls.jsonl` (never the payload) and enforces `CLOUD_MONTHLY_CAP_USD`. `/api/agents` shows calls, cost and latency per type.
+- **Tested with fakes only.** No real cloud call was made in this session: there is no key here. Prices in `costs.py` were read on 2026-11-04; override them with `LLM_PRICES`.
+
+**Conversation lane (`app/conversation/`, `app/api/conversation.py`)**
+- Backend only: M4 builds the text UI and M5 the voice. Events (`narration`, `recap`, `turn.classified`, `amendment.offered`, `queue.added`, `queue.offered`) arrive on `/api/events`.
+- Rules classify clear turns in about 0.01 s. An unclear one goes to the decision model with a 4 s limit, then counts as a new question.
+- Narration is templates over real events. The optional small model (`FAST_LANE_MODEL`, empty by default) only words a status reply and the assumption question, and a reply with a figure is thrown away. So the lane states no figures at all, which is stricter than "no unverified figure".
+
+**Known limits**
+- **GPU sharing is untested and matters for M5.** Live, an unclear turn timed out at 4 s while agents held the GPU and was queued: safe, but the decision model does not answer under load. M5 must test Ollama parallelism, or CPU/Laya for the fast lane.
+- Findings from a `local` agent can reach a later `cloud_allowed` agent as text. The filter removes data rows and emails, not customer names in a sentence. Check this before using cloud with real customer data.
+- Bedrock and Vertex for Claude are not built (Anthropic API key only). Gemini on Vertex is the express key, with no service-account login. OpenAI providers have no web search here. Web search fees per query are not in the cost estimates.
+- A run's snapshot is recorded but agents do not read the session's recent turns, so "and what about Dubai?" as a new run has no earlier context. M4 should decide this with the UI.
+- A specialist can still write an unsupported figure: live, Regulatory & Tax wrote a threshold from memory (375,000), the Verifier flagged it after the repair turn, and the run showed `verified False`. That is the system working, but expect it on tax questions.
 
 ### Past decisions and citations (fix after the founder's M3a review, 2026-11-04)
 - **Decision records** (`app/vault/decisions.py`): every note under `decisions/` (or tagged `decision`) gets a
@@ -356,29 +385,13 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M3b session)
-0. **Gate check:** M3a is a **Medium** gate. The founder runs the M3a checklist, tries the chat by hand and merges
-   the PR. Act on any "Founder feedback" first.
-1. M3b (PRD F3, §8): register the specialist types in `app/agents/registry.py` with prompts in `prompts/`: Devil's
-   Advocate, Market Scout, Revenue & Customer, People & Ops, Regulatory & Tax, Prioritiser, Memo Writer and the
-   Perspective-lens template (prompt-only: no tools). Set their privacy classes (`cloud_allowed`/`cloud`) so the
-   router and the `cloud_only` approval policy apply. Extend the Planner's enum (it already accepts any spawnable type).
-2. Task dependencies: the Planner's tasks gain `depends_on`. Revenue & Customer asks the Financial Analyst for
-   numbers, so run dependent instances after their inputs, e.g. a second `Send` wave or a per-run dependency gate.
-3. Memo Writer: writes `vault/<ws>/decisions/YYYY-MM-DD-<slug>.md` (context, options, rejected alternatives,
-   assumptions, metrics with lineage, predictions stored in `CalibrationStore`, kill criteria, review date +30 d)
-   through `write_note`.
-4. Cancel and re-run with an edited brief: `agent.cancel` / `agent.rerun` (POST `/api/runs/{id}/agents/{agent_id}/…`)
-   per instance, using per-instance asyncio tasks inside the agent node.
-5. Privacy filter on cloud payloads (F3/F7): raw financial rows never go to the cloud; send summarised metrics with
-   lineage ids. A decision-model yes/no "may this text go to the cloud?" plus a deterministic row filter.
-6. Cost estimates for cloud agents (`est_cost_usd` in `agent.done`), from the token counts and a price table in config.
-7. Consider a smarter `LLM_PROVIDER=fake` (rule-based replies) for an offline demo, and making
-   `engine/embeddings.OllamaEmbedder` delegate to `OllamaProvider.embed`.
-
-Later (M3c): add the **EmbeddingGemma vs `nomic-embed-text` comparison** (retrieval quality on the sample vault plus
-a labelled query set, latency and VRAM), deferred from M3a by the founder, alongside the Laya/Jev bake-off. Collection
-names already include the embedding model, so switching models re-embeds cleanly.
+## Next steps (for the M3c session)
+0. **Gate check:** M3b is a **Medium** gate. The founder runs the M3b checklist below, tries a decision by hand and merges the PR. Act on any "Founder feedback" first.
+1. M3c (PRD §8): `LayaProvider`, `JevProvider`, the bake-off harness and labelled set, and the Laya fine-tuning script. The turn classifier (`kind="turn"` in the decision log) is new labelled data.
+2. The bake-off also compares cloud providers on **accuracy, latency and cost per answer** (founder decision, PRD §12). `llm_calls.jsonl` already holds latency and cost per call; `scripts/eval_vault.py` and `scripts/eval_agents.py` supply the questions.
+3. The **EmbeddingGemma vs `nomic-embed-text` comparison**, deferred from M3a: retrieval quality on the sample vault plus a labelled query set, latency and VRAM. Collection names include the embedding model, so switching re-embeds cleanly.
+4. M4 builds the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
+5. Smaller ideas: a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
 **M3a re-test after the "wrong meaning" fix (about 8 min). Run this one: it is the current re-test.** Commands were
@@ -520,7 +533,8 @@ write the issues under "Founder feedback".
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
 
-### [M3a → M3b] Small items found in the M3a re-test (not blocking)
+### [M3a → M3b] Small items found in the M3a re-test (not blocking): RESOLVED
+**Fixed in M3b.** Journal: 3 full live rounds reproduced no order or state effect. The search returned the journal at rank 2 and the model sometimes cited only the churn note, so this was the model's choice varying, not state. Code now guarantees it: asked what "my journal" says, an answer with no journal source gets the journal's own passage and path (`_surface_named_folder`). Advisor: code turns "the founder" into "you" and writes money one way (`in_one_voice`). API: JSON answers send `application/json; charset=utf-8`.
 - Live eval `journal` question passes 4/4 when run alone (`--only journal`) but failed in 2 of 3 full `--live` runs (did not cite journal/2026-10-28.md). Likely an order or state effect between questions; investigate and make the full run pass reliably.
 - Advisor wording: says "The founder has already committed..." instead of "You have..."; mixes "$11,423.62" and "11,423.62 USD" in one answer. Use second person and one money format.
 - Windows PowerShell 5.1 shows curly apostrophes as "â€™" (display only; check the API sends `charset=utf-8`).
@@ -615,7 +629,7 @@ Answered (2026-11-03, founder note at the start of the M1 session):
 ## Decisions made
 See PRD §12 (Decision log). Summary of the planning session on 2026-11-02:
 - New repo, text-first build order (voice last), milestone-based sessions of about 2 hours.
-- Ollama is the default LLM. Deep-work agents (risk, memo, scout) can use Claude via the **Claude Agent SDK on the founder's subscription** (`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`), Anthropic API or Gemini, with automatic fallback to Ollama.
+- *(Replaced 2026-11-04: Claude needs an API key, see PRD §12.)* Ollama is the default LLM. Deep-work agents (risk, memo, scout) can use Claude via the **Claude Agent SDK on the founder's subscription** (`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`), Anthropic API or Gemini, with automatic fallback to Ollama.
 - Single user now, sell later.
 - Runs natively on Windows; Docker only for Qdrant.
 - Stack: LangGraph, Kokoro, Qdrant, shadcn/ui + Recharts. Synthetic demo data. Tests use mocks; the founder verifies on the PC.
@@ -628,6 +642,12 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+
+### M3b session (2026-11-04)
+- Tidied the stale status lines. Re-checked Anthropic's docs (decision in PRD §12).
+- Cloud layer, privacy filter, cost ledger and cap, small items: committed and pushed.
+- Specialists, stages, memo, cancel and re-run, conversation lane: committed and pushed.
+- Live on `qwen3:8b` on a scratch test backend (cloud off): the Dubai run, the lane under GPU load, and the vault and agent evals. Scratch data only, the founder's vault was not touched.
 - 2026-11-04 (second M3a bug-fix session, local on the founder's PC): acted on "[M3a] Verifier passes a correct number with the wrong meaning". Traced 308,437.67 to `headcount_cost` in 4 of 4 live runs. Added typed facts, claim checks, a code-run scenario for counted hires, `decision_impact`, and a sentence-by-sentence gate on the Advisor. Self-review (`/code-review medium`) gave 10 findings: 9 fixed with regression tests, and of the conventions finding only the duplicate code was fixed (see Decisions). Backend 576 tests pass, ruff clean, offline eval 18/18, live eval 9/9 on the final code, RV commands run in PowerShell 5.1 against a test backend on another port.
 - 2026-11-04 (M3a bug-fix session, local on the founder's PC, ~03:19 UTC onwards): acted on the founder's review, "[M3a] Librarian misses a past decision". Added decision records, searchable frontmatter, a stemmer, centred passages, code-run decision lookup and whole-vault search for the Librarian, a guarantee that a past decision's facts reach the answer, citations limited to sources used, and an eval over the sample vault (`scripts/eval_vault.py`, offline 16/16). Ran the live eval on Ollama: 6/8, then 4/8 (a stricter check and a prompt change that backfired), 7/8, then 8/8. The self-review (`/code-review medium`) found 10 issues, all fixed with regression tests: written dates hid figures after a month name ("March 45"), an honest "nothing found" was sent back, the year in a file name counted as a topic word, decisions not taken were called decided, paths with spaces and `.markdown` lost their citation, mentions of kill criteria became criteria, mixed questions lost the Analyst, unrelated wording counted as stating a fact, search JSON could be cut, and frontmatter did not count for topic matching. Then all RT steps ran in PowerShell 5.1 with the expected lines, and the live eval passed 8/8. The live runs used the founder's `vault/default` and may have added a few lines to `data/default/decision_log.jsonl`; RT7's test note was deleted. 487 backend tests (90 new).
 - 2026-11-03 (M3a session, 16:16 to ~17:45 UTC, local on the founder's PC): fixed the "(None)" warning; setup detects Ollama over HTTP; `app/llm` (Ollama/Anthropic/Gemini/Claude SDK/Fake, router), `app/decision`, `app/agents` (registry, prompts, tools, runtime, Verifier, LangGraph graph, events), `/api/chat`, `/api/events`, `/api/runs`, `/api/agents`, VRAM in health. The live Ollama run found 4 problems, all fixed with tests: (1) a 217 s cold load from the Docker bind mount was aborted by the 180 s chat timeout (now preload plus load-before-call; re-checked live: the first answer after an unload took 222 s and came from the LLM); (2) the analyst invented `month=2023-10` (now told the data range); (3) an LLM subtraction (11.23 − 9.81) passed the Verifier by matching the full scenario payload (now code-computed deltas and only numbers the model saw count); (4) a duplicate `run.finished` frame. The self-review (`/code-review high`) found 10 issues, all fixed with regression tests: the `/api/events` keep-alive killed the stream, a cut-off Advisor stream got a template appended, timed-out approvals looked open, non-object planner JSON crashed the run, Planner-written briefs whitelisted numbers, `DECISION_MIN_CONFIDENCE` had no effect, the Librarian citation rule never fired, the tolerance rejected correct rounding (`$1.2M`), the intent decision id was dropped, and `OLLAMA_WARMUP` was missing from `.env.example`. 397 backend tests.
@@ -660,6 +680,15 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M3b session, 2026-11-04)
+Significant ones are in PRD §12: no Claude subscription path and the cloud layer; two lanes; stages rather than `depends_on`.
+- A rerun of a finished agent in a still-running team is refused (409): its findings already went to the next stage, so re-running it alone would leave the rest out of date. Once the run has finished, a rerun starts a new run of the whole team with that brief edited.
+- The Memo Writer joins only on an explicit request, so live evals and everyday questions do not write to the vault.
+- People & Ops is called by "capacity", "key-person", "execution plan", "team structure" and similar, not by plain "hire": the Planner may still add it, and hiring questions keep their existing team and evals.
+- The lane's narration is templates, not the small model: it cannot invent progress, and it works with no fast model installed.
+- An idle turn uses rules only: with nothing running, an unclear turn is just a request, so it does not wait for a model first.
+- `Regulatory & Tax` and `Market Scout` have privacy class `cloud`: with cloud on they need team approval, and they fall back to Ollama and the vault otherwise.
 
 ## Decisions made (second M3a bug-fix session, 2026-11-04)
 - The cost of a hire is the company's average loaded cost (payroll / headcount), labelled as an average. `cost_per_hire_monthly` stays out of the tool spec the model sees, because a cost the model made up would produce "verified" numbers. A cost the code is given is called "stated", not average.

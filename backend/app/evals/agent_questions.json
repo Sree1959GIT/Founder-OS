@@ -1,0 +1,10 @@
+[
+  {"id": "devils-advocate", "question": "Run a pre-mortem on raising our prices next quarter.", "agent": "devils_advocate", "artifact": "risk_register"},
+  {"id": "market-scout", "question": "Who are our competitors in the Dubai market?", "agent": "market_scout"},
+  {"id": "revenue-customer", "question": "What would a discount do to churn?", "agent": "revenue_customer"},
+  {"id": "people-ops", "question": "Is there a key-person risk in our execution plan?", "agent": "people_ops"},
+  {"id": "regulatory-tax", "question": "What tax and licence points should we check for a Dubai entity?", "agent": "regulatory_tax", "text_has": ["not legal or tax advice"]},
+  {"id": "prioritiser", "question": "Rank these: a Dubai pilot, two SDR hires, or a new onboarding flow. Value and ease matter equally. Scores out of 5: pilot value 3 ease 2; SDRs value 4 ease 3; onboarding value 4 ease 4.", "agent": "prioritiser"},
+  {"id": "perspective-lens", "question": "How would an investor see us opening a second product line?", "agent": "perspective_lens"},
+  {"id": "memo-writer", "question": "Should we open a Dubai office? Write a decision memo.", "agent": "memo_writer", "artifact": "decision_memo", "memo": true}
+]

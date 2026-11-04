@@ -30,6 +30,7 @@ from app.agents.specialists import (
     MemoDraft,
     MemoPrediction,
     MemoRef,
+    calls_for_team,
     default_brief,
     lens_name,
     needs_analyst,
@@ -236,6 +237,8 @@ def _team(tasks: list[tuple[str, str]], router: LLMRouter) -> list[AgentInstance
 
 async def plan(message: str, router: LLMRouter, decisions: DecisionService) -> Plan:
     """Planner: intent (rules, then the decision model), then the team (templates, or the LLM for decisions)."""
+    if calls_for_team(message):
+        return await _plan_decision(message, router, "rules (the founder named a specialist's work)", None)
     intent = rule_intent(message)
     how = "rules"
     decision_id = None

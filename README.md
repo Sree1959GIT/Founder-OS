@@ -123,11 +123,18 @@ ends with a probing question.
 | `POST /api/chat` `{"message": "...", "stream": false}` | One JSON result: `answer`, `metrics` (each with full `lineage`), `citations` (only the sources the answers name), `past_decisions` (decisions already on record for this topic), `decision_impact` (for a hire or spending change: cost per hire, added monthly cost and runway change, computed in code), `verified`, `issues`, `timings_ms` |
 | `GET /api/events?run_id=&since=` | Live agent events (SSE) for the Agent Activity panel: `team.proposed`, `agent.status`, `agent.step`, ... |
 | `GET /api/runs/{id}` · `POST /api/runs/{id}/approve` · `/cancel` | A run's result and events; approve or reject a proposed team; cancel |
-| `GET /api/agents` | Agent types, their tools, privacy class and the provider each one uses now |
+| `POST /api/runs/{id}/agents/{agent_id}/cancel` · `/rerun` `{"brief": "..."}` | Cancel one agent (the team goes on), or re-run it with an edited brief: restarted in place while running, a new run once the run has finished |
+| `POST /api/conversation/turn` `{"session_id": null, "text": "..."}` | One founder turn. Idle: starts a run. During a run: classified as backchannel, status, amendment, new question or stop, without disturbing the run |
+| `GET /api/conversation/{session}` · `POST .../quiet` · `.../amendments/{id}` · `.../queue/{id}` | The lane's state; quiet mode; accept or decline an amendment; accept or drop the offered queued question |
+| `GET /api/agents` | Agent types, tools, privacy class, the provider each one uses now, this month's calls, cost and latency per type, and the monthly cloud spend and cap |
 
-Models: chat `OLLAMA_CHAT_MODEL` (default `qwen3:8b`, thinking off) on the local Ollama. Deep-work agents can use
-Claude (Agent SDK or API) or Gemini when `CLOUD_ALLOWED=true`. They fall back to Ollama, and teams with a cloud
-agent wait for approval (`TEAM_APPROVAL=cloud_only`). Small typed choices (intent routing) go through the decision
+Models: chat `OLLAMA_CHAT_MODEL` (default `qwen3:8b`, thinking off) on the local Ollama. With `CLOUD_ALLOWED=true` and
+a key in `.env`, deep-work agents can use Anthropic (API key), Google Gemini (AI Studio or Vertex key), OpenAI or an
+OpenAI-compatible endpoint (OpenRouter, DeepSeek and so on), chosen per agent type with `AGENT_MODELS`. A Claude Free,
+Pro or Max subscription cannot be used: Anthropic allows those credentials only in its own apps. Every cloud payload
+goes through a privacy filter (no raw financial rows). Calls past `CLOUD_MONTHLY_CAP_USD` (default 25), or to a model
+with no known price, run locally. Cloud failures fall back to Ollama, and teams with a cloud agent wait for approval
+(`TEAM_APPROVAL=cloud_only`). Small typed choices (intent routing) go through the decision
 model and are logged to `data/<workspace>/decision_log.jsonl`. Without Ollama, agents answer from rules (the metric
 routine or vault search), and say so.
 

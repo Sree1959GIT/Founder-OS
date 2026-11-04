@@ -21,6 +21,7 @@ from app.conversation.classifier import TurnClassifier, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.conversation.manager import (
     ASSUMPTION_QUESTION,
+    MAX_SESSIONS,
     ConversationError,
     ConversationManager,
 )
@@ -280,6 +281,17 @@ async def test_narration_follows_real_events(finance: Any) -> None:
     said = manager.sessions[session_id].narration
     assert said[0].startswith("Team: ") and said[-1].startswith("The answer is ready")
     assert any(line == "Financial Analyst finished." for line in said)
+
+
+async def test_an_idle_turn_never_waits_for_a_model_and_old_idle_sessions_make_room(finance: Any) -> None:
+    manager, provider = lane(finance)
+    manager.classifier = TurnClassifier(DecisionService(Slow()), timeout_s=30)
+    provider.release.set()
+    outcome = await asyncio.wait_for(manager.turn("s", "The Dubai thing worries me"), timeout=2)
+    await manager.orchestrator.runs[outcome.run_id or ""].task
+    for i in range(MAX_SESSIONS + 5):
+        manager.session(f"other{i}")
+    assert len(manager.sessions) == MAX_SESSIONS
 
 
 # --- API --------------------------------------------------------------------------------------------------------------
