@@ -16,7 +16,7 @@ from app.agents.graph import AgentOrchestrator
 from app.agents.registry import REGISTRY
 from app.agents.runtime import AgentInstance, AgentRunner, Plan, advise, decision_covered, plan, rule_intent
 from app.agents.tools import ToolContext, passage, run_tool
-from app.agents.verifier import verify_numbers
+from app.agents.verifier import named_paths, verify_numbers
 from app.config import PROJECT_ROOT
 from app.decision.base import DecisionService, FakeDecisionProvider
 from app.engine.chunking import ApproxTokenizer
@@ -119,6 +119,15 @@ def test_passage_is_centred_on_the_match() -> None:
     assert passage("a" * 50, "not in the text", 10) == "a" * 10
 
 
+async def test_search_results_are_never_cut_mid_json(vault: Any) -> None:
+    filler = " ".join(f"Budget sentence number {i} about zebra spending." for i in range(150))
+    for i in range(8):
+        write_note(vault, f"notes/long{i}.md", f"# Long {i}\n\n{filler}\n")
+    ctx = ToolContext(None, vault, "a")
+    found = await run_tool("search_vault", ctx, {"query": "zebra budget", "k": 8}, REGISTRY["librarian"].tools)
+    assert json.loads(found.for_model())["results"] and len(found.citations) == len(found.content["results"])
+
+
 async def test_a_match_at_the_end_of_a_long_note_reaches_the_model(vault: Any) -> None:
     filler = " ".join(f"Sentence number {i} about nothing at all." for i in range(60))
     write_note(vault, "notes/long.md", f"# Long\n\n{filler}\n\nThe zebra budget ends in spring.\n")
@@ -159,6 +168,50 @@ def test_kill_criteria_from_frontmatter_and_from_a_heading() -> None:
     assert heading is not None and heading.kill_criteria == ["CAC above plan", "churn above 3 %"]
 
 
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "No kill criteria were set.",
+        "See the kill criteria below.",
+        "We discussed kill criteria at length.",
+        "Kill criteria are not set.",
+    ],
+)
+def test_a_mention_of_kill_criteria_is_not_a_criterion(sentence: str) -> None:
+    record = record_for("decisions/a.md", f"# A\n\n{sentence}\n")
+    assert record is not None and record.kill_criteria == []
+
+
+def test_an_abbreviation_does_not_cut_a_criterion_short() -> None:
+    record = record_for("decisions/a.md", "# A\n\nKill criterion: stop if a metric, e.g. CAC, rises. Next thing.\n")
+    assert record is not None and record.kill_criteria == ["stop if a metric, e.g. CAC, rises"]
+
+
+def test_a_decision_from_frontmatter_is_read_and_matches_on_topic(vault: Any) -> None:
+    write_note(
+        vault,
+        "decisions/2026-08-bet.md",
+        "---\ntitle: Q3 bet\ndecision: Keep webinars\nkill_criteria: stop webinars if attendance halves\n---\n"
+        "# Q3 bet\n",
+    )
+    found = vault.index.past_decisions("What did we decide about webinars attendance?")
+    assert [r.decision for r in found] == ["Keep webinars"]
+
+
+@pytest.mark.parametrize("status", ["proposed", "rejected", "reversed"])
+async def test_a_decision_not_taken_is_never_called_decided(vault: Any, status: str) -> None:
+    write_note(
+        vault, "decisions/2026-08-emea.md", f"---\nstatus: {status}\ndate: 2026-08-01\n---\n# Open EMEA region\n"
+    )
+    question = "Should we open an EMEA region?"
+    result = await runner(FakeProvider(["ok"]), vault).run(librarian(question), question)
+    text, _, _ = await _advice("Think about EMEA.", [result])
+    assert "You already decided" not in text and f"status {status}" in text and f"marked {status}" in text
+    # The model gave the date but not that the decision was reversed: the status is added.
+    covered, _, _ = await _advice("From August: think about EMEA.", [result])
+    assert f"status {status}" in covered
+
+
 def test_a_note_without_fields_still_gives_a_record() -> None:
     record = record_for("decisions/2026-03-pause-ads.md", "# Pause ads\n\nWe paused them.\n")
     assert record is not None and record.status == "unknown" and record.decided == "2026-03"
@@ -184,6 +237,7 @@ def test_past_decision_is_found_on_the_same_topic(vault: Any, question: str) -> 
     "question",
     [
         "Should we hire a designer?",
+        "Should we hire a designer in 2026?",  # review finding: the 2026 of the file name counted as a topic word
         "Should we change our pricing?",  # the note only links to the pricing note in passing
         "What do my notes say about annual prepayment?",
         "What's our runway?",
@@ -218,14 +272,52 @@ def test_a_new_decision_note_is_picked_up_and_a_deleted_one_goes(vault: Any) -> 
 
 
 # --- the Verifier and dates ------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("date", ["15 Dec", "Dec 15", "December 15th", "15th of December", "Sep. 15"])
-def test_a_written_date_is_not_a_financial_figure(date: str) -> None:
-    assert verify_numbers(f"Review it by {date}.", []) == []
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Review it by 15 Dec.",
+        "Review it by Dec 15.",
+        "By December 15th we know.",
+        "The 15th of December it is.",
+        "Check on Sep. 15, please.",
+        "Before the December 15 review.",
+        "On December 15 2026 we meet.",
+    ],
+)
+def test_a_written_date_is_not_a_financial_figure(sentence: str) -> None:
+    assert verify_numbers(sentence, []) == []
 
 
 def test_a_number_next_to_a_month_is_still_checked() -> None:
     assert verify_numbers("In May we had 15 customers and 40 % churn.", []) == ["15", "40 %"]
     assert verify_numbers("December 40 % churn", []) == ["40 %"]
+    # Review finding: a figure after a month name passed as the day of a date.
+    assert verify_numbers("In March 15 customers churned.", []) == ["15"]
+    assert verify_numbers("By December 80 accounts renewed.", []) == ["80"]
+    assert verify_numbers("March 45.", []) == ["45"]
+
+
+def test_paths_with_spaces_and_markdown_suffix_are_named_whole() -> None:
+    known = {"decisions/hire two sdrs.md", "notes/a.markdown"}
+    assert named_paths("See [decisions/hire two sdrs.md].", known) == {"decisions/hire two sdrs.md"}
+    assert named_paths("See [notes/a.markdown] and [notes/b.markdown].", known) == {
+        "notes/a.markdown",
+        "notes/b.markdown",
+    }
+
+
+async def test_a_surfaced_decision_with_a_space_in_its_path_keeps_its_citation(vault: Any) -> None:
+    write_note(vault, "decisions/open emea office.md", "---\ndate: 2026-10-01\n---\n# Open EMEA office\n")
+    question = "Should we open an EMEA office?"
+    result = await runner(FakeProvider(["Nothing on that."]), vault).run(librarian(question), question)
+    assert {c.path for c in result.citations} == {"decisions/open emea office.md"} and result.verified
+
+
+async def test_an_honest_nothing_found_is_not_sent_back(vault: Any) -> None:
+    question = "What do my notes say about zebras?"
+    provider = FakeProvider(["Nothing relevant was found in the vault."])
+    result = await runner(provider, vault).run(librarian(question), question)
+    assert result.verified and result.attempts == 1 and result.citations == []
 
 
 # --- the founder's bug, end to end ----------------------------------------------------------------------------------
@@ -293,7 +385,7 @@ async def test_citations_are_only_the_sources_the_answer_names(vault: Any) -> No
 
 async def test_an_answer_with_no_source_cites_nothing(vault: Any) -> None:
     provider = FakeProvider(
-        [[ToolCall(name="search_vault", arguments={"query": "annual"})], "Nothing useful.", "Nothing useful."]
+        [[ToolCall(name="search_vault", arguments={"query": "annual"})], "Plans vary.", "Plans vary."]
     )
     result = await runner(provider, vault).run(librarian("annual"), "annual")
     assert result.citations == [] and result.retrieved and not result.verified
@@ -332,13 +424,13 @@ async def test_advisor_that_states_the_decision_is_left_as_it_is(vault: Any) -> 
 
 async def test_advisor_saying_by_december_has_not_stated_the_review_date(vault: Any) -> None:
     """Seen live: "a kill criterion ... by December" passed as the 15 December review, which the founder never saw."""
-    reply = f"You already decided in September at 70%, with a kill criterion: {KILL}."
+    reply = f"You already decided in September with a 70% chance, and a kill criterion: {KILL}."
     text, _, _ = await _advice(reply, [await _team_result(vault)])
     assert text == f'{reply} On record for "Hire two SDRs for outbound": review date 2026-12-15.'
 
 
 async def test_naming_a_kill_criterion_without_its_condition_is_not_enough(vault: Any) -> None:
-    reply = "You already decided in September at 70%, with a kill criterion, and review on 15 Dec."
+    reply = "You already decided in September with a 70% chance, a kill criterion, and review on 15 Dec."
     text, _, _ = await _advice(reply, [await _team_result(vault)])
     assert text == f'{reply} On record for "Hire two SDRs for outbound": kill criteria: {KILL}.'
 
@@ -346,14 +438,15 @@ async def test_naming_a_kill_criterion_without_its_condition_is_not_enough(vault
 async def test_advisor_that_misses_one_fact_gets_only_that_fact(vault: Any) -> None:
     """Seen live: a good reply without the decision month got the whole record repeated after it."""
     reply = (
-        f"You already hired two SDRs at 70%, with a kill criterion: {KILL}. Is that on track for the 2026-12-15 review?"
+        f"You already hired two SDRs with a 70% chance, and a kill criterion: {KILL}. "
+        "Is that on track for the 2026-12-15 review?"
     )
     text, _, _ = await _advice(reply, [await _team_result(vault)])
     assert text == f'{reply} On record for "Hire two SDRs for outbound": decided 2026-09-15.'
 
 
 async def test_librarian_that_misses_only_the_path_gets_only_the_path(vault: Any) -> None:
-    answer = f"You decided this on 2026-09-15 at 70%; {KILL}; the 15 Dec review stands."
+    answer = f"You decided this on 2026-09-15 with a 70% chance; {KILL}; the 15 Dec review stands."
     result = await runner(FakeProvider([answer]), vault).run(librarian(), SDR_QUESTION)
     assert result.text == f'{answer} On record for "Hire two SDRs for outbound" [{SDR_PATH}].' and result.verified
 
@@ -363,6 +456,15 @@ def test_a_date_inside_the_file_name_does_not_count_as_stating_it() -> None:
     assert not decision_covered("See [decisions/2026-09-hire.md].", record, needs_path=True)
     assert not decision_covered("See [[2026-09-hire]] [decisions/2026-09-hire.md].", record, needs_path=True)
     assert decision_covered("Decided in September [decisions/2026-09-hire.md].", record, needs_path=True)
+
+
+def test_unrelated_wording_does_not_count_as_stating_a_fact() -> None:
+    may = DecisionRecord(path="decisions/a.md", title="A", decided="2026-05-01")
+    assert not decision_covered("You may want to think again.", may, needs_path=False)
+    assert decision_covered("You decided in May.", may, needs_path=False)
+    predicted = DecisionRecord(path="decisions/a.md", title="A", predictions=["70% chance pipeline grows"])
+    assert not decision_covered("Gross margin is 70%.", predicted, needs_path=False)
+    assert decision_covered("You gave it a 70% chance.", predicted, needs_path=False)
 
 
 def test_a_note_with_no_fields_counts_as_covered_when_named() -> None:
@@ -388,13 +490,19 @@ def test_coverage_needs_each_date_and_the_kill_criteria() -> None:
         kill_criteria=["CAC above plan"],
         predictions=["70% chance of growth"],
     )
-    full = "September, CAC above plan, 70 %, December 15th"
+    full = "September, CAC above plan, a 70 % chance, December 15th"
     assert decision_covered(full, record, needs_path=False)
-    assert decision_covered("2026-09-15, CAC above plan, 70 percent, the 15th of December", record, needs_path=False)
-    assert not decision_covered("CAC above plan, 70 %, 15 Dec", record, needs_path=False)  # no decision date
-    assert not decision_covered("September, CAC above plan, 70 %", record, needs_path=False)  # no review date
-    assert not decision_covered("September, CAC above plan, 170 %, 15 Dec", record, needs_path=False)  # no prediction
-    assert not decision_covered("September, a kill criterion, 70 %, 15 Dec", record, needs_path=False)  # no condition
+    assert decision_covered(
+        "2026-09-15, CAC above plan, 70 percent likely, the 15th of December", record, needs_path=False
+    )
+    assert not decision_covered("CAC above plan, a 70 % chance, 15 Dec", record, needs_path=False)  # no decision date
+    assert not decision_covered("September, CAC above plan, a 70 % chance", record, needs_path=False)  # no review date
+    assert not decision_covered(
+        "September, CAC above plan, a 170 % chance, 15 Dec", record, needs_path=False
+    )  # no prediction
+    assert not decision_covered(
+        "September, a kill criterion, a 70 % chance, 15 Dec", record, needs_path=False
+    )  # no condition
     assert not decision_covered(full, record, needs_path=True)  # no path
 
 
@@ -426,6 +534,9 @@ async def test_only_the_librarian_searches_first(vault: Any) -> None:
         ("What does the board update ask of the board?", "knowledge"),
         ("What did my journal say about the logistics customers?", "knowledge"),
         ("Should we follow what my notes say about churn?", "decision"),
+        # Review finding: a money decision that mentions the notes still needs the Analyst.
+        ("What if we hire two SDRs, given the board update?", "decision"),
+        ("We plan to cut burn, check my notes and runway", "decision"),
         ("What's our churn?", "finance"),
         ("What's our runway?", "finance"),
     ],

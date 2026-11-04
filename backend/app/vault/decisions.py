@@ -27,8 +27,16 @@ _PREDICTION_FIELDS = ("predictions", "prediction")
 _ISO_PREFIX_RE = re.compile(r"\d{4}-\d{2}(-\d{2})?")
 _KILL_HEADING_RE = re.compile(r"kill[ -]criteri(on|a)$", re.I)
 _DECISION_HEADING_RE = re.compile(r"^(the )?decision$", re.I)
+# A kill criterion must be stated: "kill criterion: if X", "kill criteria are X", "a kill criterion if X".
+# "No kill criteria were set" and "see the kill criteria below" state none. A sentence ends before a capital, so
+# "e.g. the" does not cut it short.
+_NOT_A_CRITERION_RE = re.compile(r"(set|defined|needed|required|below|above|listed|none|not|tbd|tba)\b", re.I)
+_DECIDED_STATUSES = frozenset({"decided", "approved", "accepted", "active", "done", "unknown", "in progress"})
 _KILL_SENTENCE_RE = re.compile(
-    r"kill[ -]criteri(?:on|a)\b(?:\s+(?:is|are))?\s*[^\w\s]?\s*(?P<text>.+?)(?:(?<=[.!?])\s|$)", re.I
+    r"(?<!no )kill[ -]criteri(?:on|a)\b"
+    r"(?:\s+(?:is|are)\b\s*:?|\s*[^\w\s.,;!?]|(?=\s+(?:if|when|unless)\b))"
+    r"\s*(?P<text>.+?)(?:(?<![Ee]\.[Gg]\.)(?<![Ii]\.[Ee]\.)(?<=[.!?])\s+(?=[A-Z\d\"\[])|$)",
+    re.I,
 )
 _FIRST_SENTENCE_RE = re.compile(r"(.+?[.!?])(?:\s|$)")
 _WIKILINK_RE = re.compile(r"!?\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]")
@@ -47,6 +55,11 @@ class DecisionRecord(BaseModel):
     predictions: list[str] = Field(default_factory=list)
     kill_criteria: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+
+    @property
+    def is_decided(self) -> bool:
+        """False for proposed, rejected, reversed and the like: then the founder must not hear "you decided this"."""
+        return self.status.lower() in _DECIDED_STATUSES
 
     def with_review_state(self, today: dt.date) -> DecisionRecord:
         """Computed in code from today's date, so the model never does date arithmetic."""
@@ -75,6 +88,8 @@ class DecisionRecord(BaseModel):
         return f'"{self.title}" [{self.path}]: ' + ", ".join(parts) + "."
 
     def follow_up_question(self) -> str:
+        if not self.is_decided:
+            return f"It is marked {self.status}: what has changed since?"
         if not self.kill_criteria:
             return f"What has changed since this was decided on {self.decided or 'that date'}?"
         if self.review_date and self.review_state == "overdue":
@@ -90,6 +105,15 @@ def _text(value: Any) -> str:
     if isinstance(value, list):
         return ", ".join(_text(v) for v in value)
     return str(value).strip()
+
+
+def without_links(body: str) -> str:
+    """A passing [[link]] does not make a note about the linked topic."""
+    return _WIKILINK_RE.sub(" ", body)
+
+
+def frontmatter_text(frontmatter: dict[str, Any]) -> str:
+    return " ".join(_text(value) for value in frontmatter.values())
 
 
 def frontmatter_section(parsed: ParsedDocument) -> Section | None:
@@ -146,7 +170,7 @@ def _kill_criteria(frontmatter: dict[str, Any], sections: list[Section]) -> list
     for section in sections:
         for match in _KILL_SENTENCE_RE.finditer(_prose(section.text)):
             sentence = match.group("text").strip().rstrip(".")
-            if sentence and sentence not in found:
+            if sentence and sentence not in found and not _NOT_A_CRITERION_RE.match(sentence):
                 found.append(sentence)
     return found
 
@@ -177,7 +201,7 @@ def build_record(path: str, parsed: ParsedDocument) -> DecisionRecord | None:
         status=_text(frontmatter.get("status") or "unknown"),
         decided=None if decided is None else _text(decided),
         review_date=None if review is None else _text(review),
-        decision=_decision_sentence(sections),
+        decision=_text(frontmatter.get("decision") or "") or _decision_sentence(sections),
         predictions=_as_items(_first_field(frontmatter, _PREDICTION_FIELDS)),
         kill_criteria=_kill_criteria(frontmatter, sections),
         tags=as_str_list(frontmatter.get("tags")),

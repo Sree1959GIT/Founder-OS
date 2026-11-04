@@ -56,6 +56,12 @@ _ASKS_THE_NOTES = re.compile(
     re.I,
 )
 _ASKS_TO_DECIDE = re.compile(r"\b(should|shall) (we|i)\b", re.I)
+_ASKS_WHAT_WAS_DECIDED = re.compile(r"\b(what (did|have) (we|i) (decide|decided)|past decisions?)\b", re.I)
+_SAYS_NOTHING_FOUND = re.compile(
+    r"\b(nothing|no (relevant|information|notes?|mention|details?|sources?)|not (found|mentioned|covered)|"
+    r"(do|does|did) not (say|mention|cover|contain))\b",
+    re.I,
+)
 _CHITCHAT = re.compile(r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening))\b[\s!.?]*$", re.I)
 
 KILL_CRITERIA_OVERLAP = 0.6
@@ -139,10 +145,12 @@ def rule_intent(message: str) -> Intent | None:
     """Clear-cut cases need no model call (fast, deterministic). Ambiguous ones return None."""
     if _CHITCHAT.match(message):
         return "chitchat"
-    if _ASKS_THE_NOTES.search(message) and not _ASKS_TO_DECIDE.search(message):
+    if _ASKS_WHAT_WAS_DECIDED.search(message) and not _ASKS_TO_DECIDE.search(message):
         return "knowledge"
     if _DECISION_CUES.search(message):
         return "decision"
+    if _ASKS_THE_NOTES.search(message):
+        return "knowledge"
     if _FINANCE_CUES.search(message):
         return "finance"
     if _KNOWLEDGE_CUES.search(message):
@@ -385,7 +393,10 @@ class AgentRunner:
     def _verify(self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult) -> None:
         self._emit("agent.status", inst.id, status="verifying")
         searched = any(c["tool"] == "search_vault" and not c.get("error") for c in result.tool_calls)
-        cited = bool(result.past_decisions) or (searched and bool(result.retrieved))
+        # The search always runs and dense search always returns something, so "nothing relevant" must stay allowed:
+        # sending it back would push the model to cite a source that did not help.
+        honest_blank = not result.past_decisions and _SAYS_NOTHING_FOUND.search(result.text) is not None
+        cited = not honest_blank and (bool(result.past_decisions) or (searched and bool(result.retrieved)))
         report = verify(
             result.text,
             result.numbers,
@@ -479,18 +490,21 @@ def _decisions_context(result: AgentResult) -> str:
 
 def _month_names(iso: str) -> list[str]:
     month = int(iso[5:7]) if iso[5:7].isdigit() else 0
-    return [calendar.month_name[month].lower(), calendar.month_abbr[month].lower()] if 1 <= month <= 12 else []
+    return [calendar.month_name[month], calendar.month_abbr[month]] if 1 <= month <= 12 else []
 
 
 def _states_month(iso: str, text: str) -> bool:
-    """2026-09-15, 2026-09, September or Sep. Not inside a longer word: the "2026-09" of a [[2026-09-hire]] link."""
+    """2026-09-15, 2026-09, September or Sep, capitalised ("you may want" is not May).
+
+    Not inside a longer word: the "2026-09" of a [[2026-09-hire]] link states no date.
+    """
     forms = [iso, iso[:7], *_month_names(iso)]
-    return any(re.search(rf"(?<![\w-]){re.escape(form.lower())}(?![\w-])", text) for form in forms)
+    return any(re.search(rf"(?<![\w-]){re.escape(form)}(?![\w-])", text) for form in forms)
 
 
 def _states_day(iso: str, text: str) -> bool:
     """2026-12-15, 15 Dec, December 15th. A kill criterion's "by December" does not state a 15 December review."""
-    if re.search(rf"(?<![\w-]){re.escape(iso.lower())}(?![\w-])", text):
+    if re.search(rf"(?<![\w-]){re.escape(iso)}(?![\w-])", text):
         return True
     day = iso[8:10].lstrip("0")
     if not day.isdigit():
@@ -502,11 +516,16 @@ def _states_day(iso: str, text: str) -> bool:
 
 
 def _states_prediction(predictions: list[str], text: str) -> bool:
-    """The prediction's own percentage ("70%"), or the word when it has none."""
-    percent = re.search(r"(\d+(?:\.\d+)?)\s?(?:%|percent\b)", " ".join(predictions))
+    """The prediction's own words, or its percentage named as a prediction: "gross margin is 70%" does not count."""
+    joined = " ".join(predictions)
+    words = set(bm25_tokens(joined))
+    if words and len(words & set(bm25_tokens(text))) >= KILL_CRITERIA_OVERLAP * len(words):
+        return True
+    percent = re.search(r"(\d+(?:\.\d+)?)\s?(?:%|percent\b)", joined)
     if percent is None:
-        return "predict" in text
-    return re.search(rf"(?<![\d.]){re.escape(percent.group(1))}\s?(?:%|percent\b)", text) is not None
+        return False
+    named = re.search(r"predict|chance|probab|likel|confiden", text) is not None
+    return named and re.search(rf"(?<![\d.]){re.escape(percent.group(1))}\s?(?:%|percent\b)", text) is not None
 
 
 def _states_kill_criteria(criteria: list[str], text: str) -> bool:
@@ -517,17 +536,21 @@ def _states_kill_criteria(criteria: list[str], text: str) -> bool:
 
 def _missing_facts(text: str, record: DecisionRecord) -> tuple[list[str], bool]:
     """(the facts of this decision that `text` does not state, whether it states any of them)."""
-    lowered = PATH_RE.sub(" ", text).lower()  # the 2026-09 in "decisions/2026-09-hire.md" states no date
+    # The 2026-09 in "decisions/2026-09-hire.md" states no date.
+    plain = PATH_RE.sub(" ", text.replace(record.path, " "))
+    lowered = plain.lower()
     wanted: list[tuple[str, bool]] = []
     if record.decided:
-        wanted.append((f"decided {record.decided}", _states_month(record.decided, lowered)))
+        wanted.append((f"decided {record.decided}", _states_month(record.decided, plain)))
+    if not record.is_decided:
+        wanted.append((f"status {record.status}", record.status.lower() in lowered))
     if record.kill_criteria:
         criteria = "; ".join(c.rstrip(".") for c in record.kill_criteria)
         wanted.append((f"kill criteria: {criteria}", _states_kill_criteria(record.kill_criteria, lowered)))
     if record.predictions:
         wanted.append((f"prediction: {'; '.join(record.predictions)}", _states_prediction(record.predictions, lowered)))
     if record.review_date:
-        wanted.append((f"review date {record.review_date}", _states_day(record.review_date, lowered)))
+        wanted.append((f"review date {record.review_date}", _states_day(record.review_date, plain)))
     if not wanted:  # a note with no fields: all an answer can do is name it
         return ([record.title], False) if record.title.lower() not in lowered else ([], True)
     return [fact for fact, stated in wanted if not stated], any(stated for _, stated in wanted)
@@ -557,7 +580,7 @@ def _surface_decisions(result: AgentResult) -> None:
 
 def _keep_used_sources(result: AgentResult) -> None:
     """Citations are the sources the answer names, not everything a search happened to return."""
-    used = named_paths(result.text)
+    used = named_paths(result.text, {c.path for c in result.retrieved})
     result.citations = [c for c in result.retrieved if c.path in used]
     result.artifacts = [a for a in result.artifacts if a.kind != "citation" or any(c.path in used for c in a.citations)]
 
@@ -615,9 +638,10 @@ def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
     """What the Advisor's reply must add so that no past decision on the topic goes unmentioned."""
     parts: list[str] = []
     for record in _team_decisions(results):
-        note = decision_note(answer, record, needs_path=False, lead="You already decided this:")
+        lead = "You already decided this:" if record.is_decided else "Already on record:"
+        note = decision_note(answer, record, needs_path=False, lead=lead)
         if note:
-            ignored = note.startswith("You already")
+            ignored = note.startswith(lead)
             parts.append(f" {note} {record.follow_up_question()}" if ignored else f" {note}")
     return "".join(parts)
 

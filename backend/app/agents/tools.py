@@ -33,8 +33,7 @@ from app.vault.manager import VaultError
 
 WRITABLE_FOLDERS = ("decisions/", "journal/")
 MAX_TOOL_CHARS = 6000
-PASSAGE_CHARS = 1200  # per search hit; shrunk when many hits share the model's budget
-SEARCH_BUDGET_CHARS = 4800
+PASSAGE_SIZES = (1200, 800, 500, 300)  # characters per search hit: the largest that fits MAX_TOOL_CHARS
 
 
 @dataclass
@@ -228,19 +227,39 @@ def passage(text: str, snippet: str, limit: int) -> str:
     return text[start : start + limit]
 
 
+def _fit_hits(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hits for the model, sized so the JSON is never cut mid-string (or figures it never saw counted as shown)."""
+
+    def build(limit: int, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        hits: list[dict[str, Any]] = []
+        seen_decisions: set[str] = set()
+        for r in rows:
+            hit = {"path": r["path"], "heading": r["heading"], "text": passage(r["text"], r["snippet"], limit)}
+            if r.get("decision") is not None and r["path"] not in seen_decisions:
+                seen_decisions.add(r["path"])
+                hit["decision"] = r["decision"].with_review_state(dt.date.today()).for_model()
+            hits.append(hit)
+        return hits
+
+    def fits(hits: list[dict[str, Any]]) -> bool:
+        # 200: room for the mode and warnings around the hits.
+        return len(json.dumps(hits, ensure_ascii=False, default=str)) + 200 <= MAX_TOOL_CHARS
+
+    for limit in PASSAGE_SIZES:
+        hits = build(limit, results)
+        if fits(hits):
+            return hits
+    while hits and not fits(hits):
+        hits = hits[:-1]
+    return hits
+
+
 def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     vault = _require_vault(ctx)
     k = max(1, min(int(args.get("k") or 4), 8))
     result = vault.index.search(str(args.get("query", "")), k=k, folder=args.get("folder") or None)
-    limit = min(PASSAGE_CHARS, SEARCH_BUDGET_CHARS // max(1, len(result["results"])))
-    hits: list[dict[str, Any]] = []
-    seen_decisions: set[str] = set()
-    for r in result["results"]:
-        hit = {"path": r["path"], "heading": r["heading"], "text": passage(r["text"], r["snippet"], limit)}
-        if r.get("decision") is not None and r["path"] not in seen_decisions:
-            seen_decisions.add(r["path"])
-            hit["decision"] = r["decision"].with_review_state(dt.date.today()).for_model()
-        hits.append(hit)
+    hits = _fit_hits(result["results"])
+    result["results"] = result["results"][: len(hits)]
     citations = [Citation(**r["citation"]) for r in result["results"]]
     content = {"mode": result["mode"], "results": hits, "warnings": result["warnings"]}
     cards = [

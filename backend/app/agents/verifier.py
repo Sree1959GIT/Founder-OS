@@ -25,9 +25,17 @@ _MONTH_NAME = (
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?"
     r"|Nov(?:ember)?|Dec(?:ember)?)\b\.?"
 )
-_DAY = r"\d{1,2}(?:st|nd|rd|th)?\b(?!\s?%)"
-WRITTEN_DATE_RE = re.compile(rf"\b{_DAY}\s+(?:of\s+)?{_MONTH_NAME}|\b{_MONTH_NAME}\s+{_DAY}")
-PATH_RE = re.compile(r"[\w./-]+\.(?:md|pdf|csv|xlsx|txt)\b")
+_DAY = r"(?:0?[1-9]|[12]\d|3[01])"
+_ORDINAL = r"(?:st|nd|rd|th)"
+# "15 Dec" can only be a date. "Dec 15" can also be "In March 15 customers churned", so the day must be an ordinal, or
+# be followed by a year, the end of a clause or a word that goes with a date. Anything else stays a figure to check.
+_DATE_NOUNS = r"(?:review|deadline|meeting|board|check-?in|date)\b"
+WRITTEN_DATE_RE = re.compile(
+    rf"\b{_DAY}{_ORDINAL}?\s+(?:of\s+)?{_MONTH_NAME}"
+    rf"|\b{_MONTH_NAME}\s+{_DAY}{_ORDINAL}\b(?!\s?%)"
+    rf"|\b{_MONTH_NAME}\s+{_DAY}\b(?!\s?%)(?=\s*(?:$|[,.;:!?)\]]|\d{{4}}\b|{_DATE_NOUNS}))"
+)
+PATH_RE = re.compile(r"[\w./-]+\.(?:markdown|md|pdf|csv|xlsx|txt)\b")
 SMALL_INT_MAX = 12
 REL_TOL = 0.01
 
@@ -93,20 +101,24 @@ def verify_numbers(text: str, known: list[float], context: str = "") -> list[str
     return [f.text for f in extract_figures(text) if not number_supported(f, allowed)]
 
 
+def named_paths(text: str, known: set[str]) -> set[str]:
+    """Paths the text names. Known paths are matched whole, since a vault path may contain spaces."""
+    found = {path for path in known if path in text}
+    for path in sorted(found, key=len, reverse=True):
+        text = text.replace(path, " ")
+    return found | set(PATH_RE.findall(text))
+
+
 def verify_citations(text: str, citations: list[Citation]) -> list[str]:
     """The answer must name at least one source path, and every path it names must have been returned."""
     issues: list[str] = []
     returned = {c.path for c in citations}
-    named = set(PATH_RE.findall(text))
+    named = named_paths(text, returned)
     if text.strip() and not named & returned:
         issues.append("the answer cites no vault source")
     for path in sorted(named - returned):
         issues.append(f"{path} was not returned by a search")
     return issues
-
-
-def named_paths(text: str) -> set[str]:
-    return set(PATH_RE.findall(text))
 
 
 def verify(

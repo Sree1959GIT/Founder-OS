@@ -29,7 +29,13 @@ from rank_bm25 import BM25Okapi
 from app.engine.chunking import ChildChunk, ParentChunk, Tokenizer, chunk_document
 from app.engine.embeddings import Embedder, EmbeddingError
 from app.engine.vector_store import VectorPoint, VectorStore, VectorStoreError, point_id
-from app.vault.decisions import DecisionRecord, build_record, frontmatter_section
+from app.vault.decisions import (
+    DecisionRecord,
+    build_record,
+    frontmatter_section,
+    frontmatter_text,
+    without_links,
+)
 from app.vault.manager import VaultManager
 from app.vault.parsers import ParseError, Section, parse_file
 
@@ -142,12 +148,14 @@ def decision_matches(terms: list[str], name_words: set[str], body_words: set[str
     """(matches in the note's name and tags, matches anywhere), or None when the note is not on this topic.
 
     Dense search always returns something, so "on topic" is decided here by words: two matches in the note's name,
-    or most of the question's words including one in its name (or three anywhere). "Should we hire a designer?"
-    does not match a note on hiring SDRs, and a passing link to a pricing note does not make it a pricing decision.
+    every word of the question (two or more), or most of them including one in its name (or three anywhere). "Should
+    we hire a designer?" does not match a note on hiring SDRs. Years and other bare numbers are not topics.
     """
+    terms = [t for t in terms if not t.isdigit()]
     named = sum(t in name_words for t in terms)
     matched = sum(t in name_words or t in body_words for t in terms)
-    if named >= 2 or (matched * 2 > len(terms) and (named >= 1 or matched >= 3)):
+    all_of_them = matched == len(terms) and matched >= 2
+    if named >= 2 or all_of_them or (matched * 2 > len(terms) and (named >= 1 or matched >= 3)):
         return named, matched
     return None
 
@@ -293,8 +301,17 @@ class HybridIndex:
             decisions=decisions,
             decision_words={
                 path: (
-                    set(bm25_tokens(" ".join([record.title, path.rsplit("/", 1)[-1], *record.tags]))),
-                    set(bm25_tokens(self._docs[path].body)),
+                    # No digits: the 2026 of a dated file name must not match a year in the question.
+                    {
+                        word
+                        for word in bm25_tokens(" ".join([record.title, PurePosixPath(path).stem, *record.tags]))
+                        if not word.isdigit()
+                    },
+                    set(
+                        bm25_tokens(
+                            f"{without_links(self._docs[path].body)}\n{frontmatter_text(self._docs[path].frontmatter)}"
+                        )
+                    ),
                 )
                 for path, record in decisions.items()
             },
