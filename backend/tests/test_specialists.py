@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.agents.events import EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.registry import REGISTRY
-from app.agents.runtime import AgentInstance, AgentRunner, plan
+from app.agents.runtime import AgentInstance, AgentRunner, advisor_decision_note, plan
 from app.agents.specialists import (
     FIGURE_REMOVED,
     PLACEHOLDER_KILL,
@@ -399,6 +399,15 @@ async def test_the_memo_writer_writes_a_memo_with_a_prediction_and_review_date(f
     assert stored[0].statement.startswith("A pilot signs") and stored[0].decision == result.memo.path
     assert any(a.kind == "decision_memo" for a in result.artifacts)
     assert result.memo.path in result.text and review in result.text
+
+
+async def test_a_memo_on_record_is_a_proposal_not_a_decision(finance: Any, vault: Any) -> None:
+    result = await runner(FakeProvider([json.dumps(GOOD_MEMO)]), finance, vault).run(instance("memo_writer"), DUBAI)
+    assert result.memo is not None
+    vault.index.refresh([result.memo.path], dense=False)
+    record = next(r for r in vault.index.past_decisions("Dubai office") if r.path == result.memo.path)
+    assert not record.is_decided and "not decided yet" in record.summary() and " decided 20" not in record.summary()
+    assert "You already decided" not in advisor_decision_note("", [SimpleNamespace(past_decisions=[record])])  # type: ignore[list-item]
 
 
 async def test_a_second_memo_never_overwrites_the_first(finance: Any, vault: Any) -> None:

@@ -9,3 +9,4 @@ Rules:
   assumption.
 - If a finding is flagged as unverified, say that the number needs checking.
 - If the team found nothing, say what is missing and what the founder could provide.
+- A past record marked `proposed` or "not decided yet" is a proposal, not a decision: never say "you decided" about it.

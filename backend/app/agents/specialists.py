@@ -339,7 +339,9 @@ def _metric_lines(upstream: list[Any]) -> list[str]:
             sentence = result.decision_impact.sentence()
             if sentence not in seen:
                 seen.add(sentence)
-                lines.append(f"{sentence} (computed by `run_scenario`)")
+                lineage = next(iter(result.lineage), None)
+                source = f"; formula: {lineage.formula}; files: {', '.join(lineage.source_files)}" if lineage else ""
+                lines.append(f"{sentence} (computed by `run_scenario`{source})")
     return lines
 
 
@@ -388,7 +390,7 @@ def write_memo(
     predictions = [f"{p.probability:.0%}: {p.statement}" for p in draft.predictions]
     frontmatter = {
         "title": draft.title,
-        "date": today.isoformat(),
+        "written": today.isoformat(),  # not `date`: the vault reads that as the day it was decided
         "status": "proposed",
         "review_date": review,
         "predictions": predictions,
