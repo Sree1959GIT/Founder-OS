@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3b: Specialist agents**, after the founder merges the M3a PR. The founder's review of M3a found one issue, now fixed: run the **re-test steps RT1–RT9** in the checklist below, then merge. M1 and M2 are ACCEPTED
+- **Next milestone:** **M3b: Specialist agents**, after the founder merges the M3a PR. The founder's review of M3a found two issues, both now fixed: run the **re-test steps RV1–RV9** in the checklist below, then merge. M1 and M2 are ACCEPTED
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-04 (M3a bug-fix session: past decisions and citations; PR #6 updated, awaiting the founder's re-test)
+- **Last updated:** 2026-11-04 (second M3a bug-fix session: figures keep their meaning; PR #6 updated, awaiting the founder's re-test)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -61,10 +61,10 @@
 - Started (UTC): 2026-11-04 (second local bug-fix session for the M3a gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
 - Plan:
   - [x] Record the founder feedback (done first)
-  - [ ] Root cause: which tool returned 308,437.67, what the Analyst ran, why the Advisor reused it
-  - [ ] General fix: figures keep label and unit; the claim around them must agree; impacts from code-computed fields
-  - [ ] Unit tests, offline and live eval for the designer question
-  - [ ] Resolve feedback, RV steps, PR #6, CI green
+  - [x] Root cause: which tool returned 308,437.67, what the Analyst ran, why the Advisor reused it
+  - [x] General fix: figures keep label and unit; the claim around them must agree; impacts from code-computed fields
+  - [x] Unit tests, offline and live eval for the designer question
+  - [x] Resolve feedback, RV steps, PR #6, CI green
 
 Earlier session (2026-11-04, first bug-fix):
 - Started (UTC): 2026-11-04 ~03:19 (local Windows session, bug-fix only for the M3a Medium gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
@@ -91,7 +91,7 @@ Previous session (M3a):
 
 ## Current state
 **M3a is complete** (PR awaiting the founder's re-test). M0–M2 behaviour is unchanged, apart from the "(None)"
-warning fix and the keyword-search changes below. 487 backend tests pass.
+warning fix and the keyword-search changes below. 576 backend tests pass.
 
 ### Past decisions and citations (fix after the founder's M3a review, 2026-11-04)
 - **Decision records** (`app/vault/decisions.py`): every note under `decisions/` (or tagged `decision`) gets a
@@ -126,10 +126,12 @@ Known limits of this fix:
 - The final code passed the live eval 8/8 once, in PowerShell 5.1 on the founder's PC (and the code before the
   self-review fixes passed 8/8 once). Earlier runs failed and led to the fixes. Model output varies, so an occasional
   failure is possible.
-- **Open, not part of this fix (for M3b or the founder to prioritise):** the Verifier checks that a number came from a
-  tool, not that it is used correctly. In RT6 the answer said a designer "would be a monthly cost of $308,437.67,
-  reducing runway by that amount". That figure is a scenario output misattributed by the model, and it passed as
-  verified. A correctness check on how numbers are used would be a separate piece of work.
+- **Limits of the meaning check (rules, not understanding):**
+  - It knows a fixed list of quantities. A sentence using other words, or a clause naming nothing outside a hire decision, is checked by value and unit only, so a wrong meaning can still pass there.
+  - Numbers from `run_sql` are checked by value only, and a `DECIMAL` result reaches the tool as text, so it counts as a number without lineage (as before this fix).
+  - A hire with no count ("Should we hire more?", "a few SDRs") gets no code-run scenario and no impact. The model chooses what to run, and the claim checks still apply.
+  - A number with no lineage at all is flagged as before, not replaced.
+  - In the designer answer the Advisor may mention the SDR decision as context and call the founder "the founder". It does not claim that decision covers a designer. Wording only, not changed here.
 
 ### LLM layer, agents and chat (M3a)
 - **Providers** (`app/llm/`): `LLMProvider.complete(messages, tools=None, json_schema=None, stream=False)` returns
@@ -368,7 +370,40 @@ a labelled query set, latency and VRAM), deferred from M3a by the founder, along
 names already include the embedding model, so switching models re-embeds cleanly.
 
 ## Windows verification checklist (for the founder)
-**M3a re-test after the "past decision" fix (about 10 min).** PowerShell 5.1 or 7, from `D:\Founder-OS`. Each step
+**M3a re-test after the "wrong meaning" fix (about 8 min). Run this one: it is the current re-test.** Commands were
+run in PowerShell 5.1 here, against a test backend on another port. From `D:\Founder-OS`. Each step prints a summary
+line; compare it with **Expected**. Then merge the PR, or write the issues under "Founder feedback".
+
+- **RV1. Get the fix.** `git pull origin claude/m3a-agents`, close the backend window, then start `run.bat`. It must be
+  restarted: a backend that is already running keeps the old code. No new dependencies, so `setup.bat` is not needed.
+  Wait for `Ollama model qwen3:8b is loaded` in the backend window.
+- **RV2. The rules, offline (no Ollama needed).** `.\.venv\Scripts\python.exe scripts\eval_vault.py | Select-Object -Last 1; Set-Location backend; ..\.venv\Scripts\python.exe -m pytest tests\test_claim_verifier.py -q | Select-Object -Last 1; Set-Location ..`
+  Expected: `OFFLINE EVAL: 18/18 passed`, then `89 passed` (with a time). These include your exact sentence, which must fail.
+- **RV3. Your question.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire a designer?", "stream": false}' -TimeoutSec 900; $i = $r.decision_impact; 'intent {0} | verified {1} | hires {2} | per hire {3} | added a month {4} | runway {5} to {6} ({7}) | payroll in answer {8}' -f $r.intent, $r.verified, $i.new_hires, $i.cost_per_hire_monthly, $i.monthly_cost_delta, $i.base_runway_months, $i.scenario_runway_months, $i.runway_change_months, ($r.answer -match '308,?437')`
+  Expected: `intent decision | verified True | hires 1 | per hire 11423.62 | added a month 11423.62 | runway 11.23 to 10.47 (-0.76) | payroll in answer False`.
+  `$r.answer` must give those figures and call the cost the company's average, not a quote for this role. Its other
+  wording varies, and it may mention the SDR decision as context.
+- **RV4. Two hires: the code multiplies.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire two SDRs?", "stream": false}' -TimeoutSec 900; $i = $r.decision_impact; 'verified {0} | hires {1} | per hire {2} | added a month {3} | runway {4} to {5} ({6}) | past decisions {7}' -f $r.verified, $i.new_hires, $i.cost_per_hire_monthly, $i.monthly_cost_delta, $i.base_runway_months, $i.scenario_runway_months, $i.runway_change_months, @($r.past_decisions).Count`
+  Expected: `verified True | hires 2 | per hire 11423.62 | added a month 22847.24 | runway 11.23 to 9.81 (-1.42) | past decisions 1`.
+- **RV5. Not a hire: nothing changes.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What''s our runway?", "stream": false}' -TimeoutSec 900; 'verified {0} | runway {1} | impact is empty {2} | tools {3}' -f $r.verified, $r.metrics[0].value, ($null -eq $r.decision_impact), ($r.agents[0].tool_calls.tool -join ',')`
+  Expected: `verified True | runway 10.65 | impact is empty True | tools get_metric`.
+- **RV6. A percentage still verifies.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What is our gross margin?", "stream": false}' -TimeoutSec 900; 'verified {0} | margin {1} | says 72.13 {2}' -f $r.verified, $r.metrics[0].value, ($r.answer -match '72\.13')`
+  Expected: `verified True | margin 0.7213 | says 72.13 True`.
+- **RV7. A figure quoted from a note still verifies.**
+  `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What do my notes say about annual prepayment?", "stream": false}' -TimeoutSec 900; 'verified {0} | says 15 {1} | cites pricing note {2}' -f $r.verified, ($r.answer -match '15\s?%'), (@($r.citations.path) -contains 'notes/pricing-strategy.md')`
+  Expected: `verified True | says 15 True | cites pricing note True`.
+- **RV8. Streaming now goes sentence by sentence.**
+  `Set-Content -Path $env:TEMP\ask.json -Value '{"message": "What''s our runway?"}' -Encoding ascii; $out = curl.exe -s -N -X POST http://127.0.0.1:8000/api/chat -H "Content-Type: application/json" --data-binary "@$env:TEMP\ask.json"; ($out | Select-String '^event: (delta|done)' | ForEach-Object { $_.Line -replace 'event: ','' } | Group-Object | ForEach-Object { "$($_.Name) x$($_.Count)" }) -join ', '`
+  Expected: `delta xN, done x1`, with N about 2–5 (it was 40–90, one per word). Each sentence is checked before it is sent.
+- **RV9. Live eval, now 9 questions through the real model.** `.\.venv\Scripts\python.exe scripts\eval_vault.py --live`
+  Expected: one `PASS [live]` line per question, ending `LIVE EVAL: 9/9 passed`, in about **2 minutes**. Model output
+  varies, so if a question fails, re-run it alone with `--only <id>` and read the answer.
+
+**Earlier M3a re-test, after the "past decision" fix (about 10 min).** RV replaces RT6 and RT8 (now 9 questions). PowerShell 5.1 or 7, from `D:\Founder-OS`. Each step
 prints one summary line; compare it with **Expected**. Then merge the PR, or write the issues under "Founder feedback".
 
 - **RT1. Get the fix.** `git pull origin claude/m3a-agents`, close the backend window, then start `run.bat`. No new
@@ -391,8 +426,7 @@ prints one summary line; compare it with **Expected**. Then merge the PR, or wri
   must not be under `cites`.
 - **RT6. Another topic does not claim the SDR decision.**
   `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we hire a designer?", "stream": false}' -TimeoutSec 900; 'intent {0} | past decisions {1} | {2}' -f $r.intent, @($r.past_decisions).Count, $r.answer`
-  Expected: `intent decision | past decisions 0 |` then an answer that does not say you already decided this. Its
-  other content may be weak: a run here misattributed a scenario figure to the designer's cost (see "Known limits").
+  Expected: `intent decision | past decisions 0 |` then an answer that does not say you already decided this.
 - **RT7. The fix is general: a new decision note, not about SDRs.** This writes one test note, asks, then deletes it:
   `$f = '.\vault\default\decisions\2026-10-cut-paid-search.md'; Set-Content -Path $f -Encoding utf8 -Value "---`ntitle: Cut paid search`ndate: 2026-10-01`nstatus: decided`nreview_date: 2027-01-15`nkill_criteria: if pipeline falls by a third, restore the budget`nprediction: 60% chance CAC falls within a quarter`n---`n# Cut paid search`n`n## Decision`nStop paid search for one quarter.`n"; Start-Sleep -Seconds 3; $r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "Should we cut paid search next quarter?", "stream": false}' -TimeoutSec 900; $d = $r.past_decisions[0]; Remove-Item $f; '{0} | {1} | review {2} | {3} | {4}' -f $d.path, $d.decided, $d.review_date, $d.kill_criteria[0], $d.predictions[0]`
   Expected: `decisions/2026-10-cut-paid-search.md | 2026-10-01 | review 2027-01-15 | if pipeline falls by a third, restore the budget | 60% chance CAC falls within a quarter`.
@@ -439,7 +473,7 @@ write the issues under "Founder feedback".
 7. **Streaming (SSE).** PowerShell 5.1 has no streaming client, so use `curl.exe` with a body file:
    `Set-Content -Path $env:TEMP\ask.json -Value '{"message": "What''s our runway?"}' -Encoding ascii; $out = curl.exe -s -N -X POST http://127.0.0.1:8000/api/chat -H "Content-Type: application/json" --data-binary "@$env:TEMP\ask.json"; ($out | Select-String '^event:' | ForEach-Object { $_.Line.Substring(7) } | Group-Object | ForEach-Object { '{0} x{1}' -f $_.Name, $_.Count }) -join ', '`
    Expected: one line containing `team.proposed x1`, `agent.spawned x1`, `agent.tool_call x1`, `agent.artifact x1`,
-   `agent.done x1`, `delta xN` (N about 40–90: the Advisor's words as they arrive), `run.finished x1`, `done x1`.
+   `agent.done x1`, `delta xN` (N about 2–5: the Advisor's sentences, each checked before it is sent), `run.finished x1`, `done x1`.
 8. **Librarian with citations.**
    `$r = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body '{"message": "What do my notes say about annual prepayment?", "stream": false}' -TimeoutSec 900; '{0:n1} s | intent {1} | verified {2} | cites {3}' -f ($r.elapsed_ms/1000), $r.intent, $r.verified, (($r.citations.path | Select-Object -Unique) -join ', ')`
    Expected: about **10–40 s** `| intent knowledge | verified True | cites notes/pricing-strategy.md`, and
@@ -478,6 +512,17 @@ _Write results from your Windows checks, bugs and change requests here. The next
 - Did: RT6 "Should we hire a designer?".
 - Got: "The financial impact of hiring a designer would be a monthly cost of $308,437.67, reducing runway by that amount." and verified = True. Wrong twice: $308,437.67 is not a designer's cost (it is some other tool figure), and runway is in months, not dollars.
 - Expected: a "verified" answer never attaches a tool figure to a different quantity or unit; otherwise it is not verified and the figure is replaced by a code-written sentence (as the existing fallbacks do). RT1–RT9 otherwise pass (RT8 7/8, then journal passed 2/2 on re-run).
+
+- **Resolved (2026-11-04, PR #6; re-test: checklist steps RV1–RV9).** Root cause, seen in 4 of 4 live runs before the fix:
+  - **The figure:** 308,437.67 is `get_metric headcount_cost`, the whole company's monthly payroll for 27 people. It is in no scenario output (the earlier note in "Known limits" guessing a scenario figure was wrong).
+  - **The Analyst:** asked "the cost of hiring a designer", it called `get_metric headcount_cost` and never ran `run_scenario`, so there was no `new_hires` and no `cost_per_hire`.
+  - **The Verifier:** it kept tool numbers as bare floats, so any real value passed, whatever the sentence said it was.
+  - **The Advisor:** it reused the figure because the Analyst's text was "verified", and the metric card line put the raw total in its findings.
+- **The fix:**
+  - Every tool number is now a `Fact` with the label, unit, quantity and flow-or-balance of its field. The Verifier checks the claim around a figure, by rules only, with no LLM judge (`check_claims` in `verifier.py`).
+  - A failing Analyst sentence is sent back once, then replaced by a code-written one, and the answer stays unverified. A failing Advisor sentence is replaced before it is streamed.
+  - For a hire the founder counts ("a designer", "two SDRs"), code runs the scenario first. `decision_impact` (`cost_per_hire_monthly`, `monthly_cost_delta`, `runway_change_months` and others) is computed in code, returned by `/api/chat`, and given to the Advisor in place of raw totals. If the Advisor leaves it out, code adds it.
+- **Correct figures:** one hire costs 11,423.62 a month (the company's average loaded cost, not a quote for a designer) and moves projected runway from 11.23 to 10.47 months (-0.76).
 
 ### [M3a] Librarian misses a past decision on the same topic
 - Did: asked "Should we hire two more SDRs next quarter?" (checklist step 9). Steps 1–9 and 11 otherwise pass.
@@ -566,6 +611,7 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+- 2026-11-04 (second M3a bug-fix session, local on the founder's PC): acted on "[M3a] Verifier passes a correct number with the wrong meaning". Traced 308,437.67 to `headcount_cost` in 4 of 4 live runs. Added typed facts, claim checks, a code-run scenario for counted hires, `decision_impact`, and a sentence-by-sentence gate on the Advisor. Self-review (`/code-review medium`) gave 10 findings: 9 fixed with regression tests, and of the conventions finding only the duplicate code was fixed (see Decisions). Backend 576 tests pass, ruff clean, offline eval 18/18, live eval 9/9 on the final code, RV commands run in PowerShell 5.1 against a test backend on another port.
 - 2026-11-04 (M3a bug-fix session, local on the founder's PC, ~03:19 UTC onwards): acted on the founder's review, "[M3a] Librarian misses a past decision". Added decision records, searchable frontmatter, a stemmer, centred passages, code-run decision lookup and whole-vault search for the Librarian, a guarantee that a past decision's facts reach the answer, citations limited to sources used, and an eval over the sample vault (`scripts/eval_vault.py`, offline 16/16). Ran the live eval on Ollama: 6/8, then 4/8 (a stricter check and a prompt change that backfired), 7/8, then 8/8. The self-review (`/code-review medium`) found 10 issues, all fixed with regression tests: written dates hid figures after a month name ("March 45"), an honest "nothing found" was sent back, the year in a file name counted as a topic word, decisions not taken were called decided, paths with spaces and `.markdown` lost their citation, mentions of kill criteria became criteria, mixed questions lost the Analyst, unrelated wording counted as stating a fact, search JSON could be cut, and frontmatter did not count for topic matching. Then all RT steps ran in PowerShell 5.1 with the expected lines, and the live eval passed 8/8. The live runs used the founder's `vault/default` and may have added a few lines to `data/default/decision_log.jsonl`; RT7's test note was deleted. 487 backend tests (90 new).
 - 2026-11-03 (M3a session, 16:16 to ~17:45 UTC, local on the founder's PC): fixed the "(None)" warning; setup detects Ollama over HTTP; `app/llm` (Ollama/Anthropic/Gemini/Claude SDK/Fake, router), `app/decision`, `app/agents` (registry, prompts, tools, runtime, Verifier, LangGraph graph, events), `/api/chat`, `/api/events`, `/api/runs`, `/api/agents`, VRAM in health. The live Ollama run found 4 problems, all fixed with tests: (1) a 217 s cold load from the Docker bind mount was aborted by the 180 s chat timeout (now preload plus load-before-call; re-checked live: the first answer after an unload took 222 s and came from the LLM); (2) the analyst invented `month=2023-10` (now told the data range); (3) an LLM subtraction (11.23 − 9.81) passed the Verifier by matching the full scenario payload (now code-computed deltas and only numbers the model saw count); (4) a duplicate `run.finished` frame. The self-review (`/code-review high`) found 10 issues, all fixed with regression tests: the `/api/events` keep-alive killed the stream, a cut-off Advisor stream got a template appended, timed-out approvals looked open, non-object planner JSON crashed the run, Planner-written briefs whitelisted numbers, `DECISION_MIN_CONFIDENCE` had no effect, the Librarian citation rule never fired, the tolerance rejected correct rounding (`$1.2M`), the intent decision id was dropped, and `OLLAMA_WARMUP` was missing from `.env.example`. 397 backend tests.
 - 2026-11-03 (M2 session, 13:29 to ~14:15 UTC, local on the founder's PC): vault manager, links, parsers, chunking,
@@ -597,6 +643,15 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (second M3a bug-fix session, 2026-11-04)
+- The cost of a hire is the company's average loaded cost (payroll / headcount), labelled as an average. `cost_per_hire_monthly` stays out of the tool spec the model sees, because a cost the model made up would produce "verified" numbers. A cost the code is given is called "stated", not average.
+- Advisor streaming changed from per word to per sentence, because a sentence must be checked before the founder sees it. This is a visible change. Sentence-sized pieces should also suit voice later.
+- A clause that names nothing can't be judged, so its figure is checked by value and unit only. The exception is a hire decision: there, a sum of money in such a clause is read as the hire's cost. This can occasionally replace a correct sentence, which seemed better than passing a wrong one.
+- Query columns (`run_sql`) carry no meaning, because the model names them itself. They are checked by value, and can't count as the cost of a hire.
+- No impact is produced when a scenario also moves another lever (the runway change wouldn't be the cost's alone), or when there is no payroll to average (0.00 would read as a free hire).
+- The first scenario of a run is the decision's impact. Later ones are the model exploring.
+- Self-review's conventions finding, partly left: the one-line findings heading for the impact stays in code, next to the other findings headings. The hire parsing also stays in two places with different word lists, since one counts people and the other finds the role. Worth merging in M3b if it grows.
 
 ## Decisions made (M3a bug-fix session, 2026-11-04)
 - Facts of a past decision are guaranteed by code, not prompts: a small local model ignored instructions in live runs, so code does the lookup, gives the record to the model and adds whatever the answer leaves out. No second LLM call.
