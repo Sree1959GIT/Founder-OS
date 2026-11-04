@@ -1,0 +1,70 @@
+[
+  {
+    "id": "same-decision-again",
+    "question": "Should we hire two more SDRs next quarter?",
+    "cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": ["decisions/2026-09-hire-two-sdrs.md"],
+    "facts": [
+      ["2026-09-15", "15 Sep", "Sep 15", "September"],
+      ["2026-12-15", "15 Dec", "Dec 15", "December 15", "15 December"],
+      ["70%", "70 %"],
+      ["eight a month", "under eight", "fewer than eight", "kill criteri"]
+    ]
+  },
+  {
+    "id": "what-did-we-decide",
+    "question": "What did we decide about SDRs?",
+    "cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": ["decisions/2026-09-hire-two-sdrs.md"],
+    "facts": [
+      ["2026-12-15", "15 Dec", "Dec 15", "December 15", "15 December"],
+      ["eight a month", "under eight", "fewer than eight"]
+    ]
+  },
+  {
+    "id": "a-different-word-for-the-topic",
+    "question": "Is outbound working?",
+    "cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": ["decisions/2026-09-hire-two-sdrs.md"],
+    "facts": [["2026-12-15", "15 Dec", "Dec 15", "December 15", "15 December"]]
+  },
+  {
+    "id": "unrelated-note-with-a-passing-link",
+    "question": "What do my notes say about annual prepayment?",
+    "cited": ["notes/pricing-strategy.md"],
+    "not_cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": [],
+    "facts": [["15 %", "15%"]]
+  },
+  {
+    "id": "no-false-past-decision",
+    "question": "What do my notes say about our pricing?",
+    "cited": ["notes/pricing-strategy.md"],
+    "past_decisions": [],
+    "facts": [["annual", "Growth", "Starter"]]
+  },
+  {
+    "id": "churn-notes",
+    "question": "What do my notes say about churn reasons?",
+    "cited": ["notes/customer-churn.md"],
+    "not_cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": [],
+    "facts": [["onboarding"]]
+  },
+  {
+    "id": "journal",
+    "question": "What did my journal say about the logistics customers?",
+    "cited": ["journal/2026-10-28.md"],
+    "not_cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": [],
+    "facts": [["budget freeze"]]
+  },
+  {
+    "id": "board-update",
+    "question": "What does the board update ask of the board?",
+    "cited": ["sources/board-update-2026-q3.md"],
+    "not_cited": ["decisions/2026-09-hire-two-sdrs.md"],
+    "past_decisions": [],
+    "facts": [["introduction"]]
+  }
+]

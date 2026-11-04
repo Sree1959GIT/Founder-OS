@@ -9,6 +9,7 @@ an error becomes `ToolOutcome.error`, which the model sees.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import uuid
 from collections.abc import Callable
@@ -31,6 +32,9 @@ from app.llm.base import ToolSpec
 from app.vault.manager import VaultError
 
 WRITABLE_FOLDERS = ("decisions/", "journal/")
+MAX_TOOL_CHARS = 6000
+PASSAGE_CHARS = 1200  # per search hit; shrunk when many hits share the model's budget
+SEARCH_BUDGET_CHARS = 4800
 
 
 @dataclass
@@ -43,7 +47,7 @@ class ToolOutcome:
 
     def for_model(self) -> str:
         payload = {"error": self.error} if self.error else self.content
-        return json.dumps(payload, ensure_ascii=False, default=str)[:6000]
+        return json.dumps(payload, ensure_ascii=False, default=str)[:MAX_TOOL_CHARS]
 
 
 def collect_numbers(value: Any) -> list[float]:
@@ -209,14 +213,33 @@ def _require_vault(ctx: ToolContext) -> Any:
     return ctx.vault
 
 
+def passage(text: str, snippet: str, limit: int) -> str:
+    """Up to `limit` characters of a parent chunk, centred on the child that matched.
+
+    Cutting from the start would hide a match at the end of a long note, however well it ranked.
+    """
+    if len(text) <= limit:
+        return text
+    at = text.find(snippet)
+    if at < 0 or len(snippet) >= limit:
+        return (snippet if at >= 0 else text)[:limit]
+    start = min(max(0, at - (limit - len(snippet)) // 2), len(text) - limit)
+    return text[start : start + limit]
+
+
 def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     vault = _require_vault(ctx)
     k = max(1, min(int(args.get("k") or 4), 8))
     result = vault.index.search(str(args.get("query", "")), k=k, folder=args.get("folder") or None)
-    hits = [
-        {"path": r["path"], "heading": r["heading"], "snippet": r["snippet"], "text": r["text"][:900]}
-        for r in result["results"]
-    ]
+    limit = min(PASSAGE_CHARS, SEARCH_BUDGET_CHARS // max(1, len(result["results"])))
+    hits: list[dict[str, Any]] = []
+    seen_decisions: set[str] = set()
+    for r in result["results"]:
+        hit = {"path": r["path"], "heading": r["heading"], "text": passage(r["text"], r["snippet"], limit)}
+        if r.get("decision") is not None and r["path"] not in seen_decisions:
+            seen_decisions.add(r["path"])
+            hit["decision"] = r["decision"].with_review_state(dt.date.today()).for_model()
+        hits.append(hit)
     citations = [Citation(**r["citation"]) for r in result["results"]]
     content = {"mode": result["mode"], "results": hits, "warnings": result["warnings"]}
     cards = [
@@ -224,16 +247,35 @@ def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         for c, r in zip(citations, result["results"], strict=True)
     ]
     # A figure quoted from a returned passage is backed by that passage's citation.
-    quoted = [f.value for h in hits for f in extract_figures(h["text"])]
+    quoted = [f.value for h in hits for f in extract_figures(json.dumps(h, ensure_ascii=False))]
     return ToolOutcome(content, artifacts=cards, citations=citations, numbers=quoted)
+
+
+def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
+    vault = _require_vault(ctx)
+    records = vault.index.past_decisions(str(args.get("query", "")))
+    rows = [r.for_model() for r in records]
+    citations = [Citation(path=r.path, heading=r.title, chunk_id=f"{r.path}#decision") for r in records]
+    cards = [
+        _artifact(ctx, "citation", f"Past decision: {r.title}", row, citations=[c])
+        for r, row, c in zip(records, rows, citations, strict=True)
+    ]
+    quoted = [f.value for row in rows for f in extract_figures(json.dumps(row, ensure_ascii=False))]
+    return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, numbers=quoted)
 
 
 def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     vault = _require_vault(ctx)
     note = vault.vault.read_note(str(args.get("path", "")))
     citation = Citation(path=note["path"], heading=note.get("title") or note["path"], chunk_id=f"{note['path']}#note")
-    content = {"path": note["path"], "title": note.get("title"), "body": str(note.get("body", ""))[:4000]}
-    quoted = [f.value for f in extract_figures(content["body"])]
+    frontmatter = note.get("frontmatter") or {}
+    content = {
+        "path": note["path"],
+        "title": note.get("title"),
+        "frontmatter": frontmatter,
+        "body": str(note.get("body", ""))[:4000],
+    }
+    quoted = [f.value for f in extract_figures(f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}")]
     return ToolOutcome(content, citations=[citation], numbers=quoted)
 
 
@@ -357,7 +399,23 @@ TOOLS: dict[str, Tool] = {
             status="searching_vault",
         ),
         Tool(
-            _spec("read_note", "Read one vault note by its path.", {"path": {"type": "string"}}, ["path"]),
+            _spec(
+                "past_decisions",
+                "Decisions already on record on a topic, with status, decision date, review date, prediction and "
+                "kill criteria.",
+                {"query": {"type": "string", "description": "The topic or question"}},
+                ["query"],
+            ),
+            _past_decisions,
+            status="searching_vault",
+        ),
+        Tool(
+            _spec(
+                "read_note",
+                "Read one vault note (frontmatter and body) by its path.",
+                {"path": {"type": "string"}},
+                ["path"],
+            ),
             _read_note,
             status="searching_vault",
         ),

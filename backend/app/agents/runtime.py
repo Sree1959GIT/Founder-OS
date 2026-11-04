@@ -8,6 +8,7 @@ only from tool results.
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 import re
 import time
@@ -21,11 +22,12 @@ from pydantic import BaseModel, Field
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.registry import REGISTRY, AgentType, spawnable_types
 from app.agents.tools import TOOLS, ToolContext, ToolOutcome, run_tool, specs_for
-from app.agents.verifier import verify
+from app.agents.verifier import named_paths, verify
 from app.decision.base import DecisionError, DecisionService
 from app.engine.lineage import Lineage
 from app.llm.base import Completion, LLMError, Message, StreamChunk, ToolCall, Usage
 from app.llm.router import LLMRouter
+from app.vault.decisions import DecisionRecord
 
 Intent = Literal["finance", "knowledge", "decision", "chitchat"]
 INTENT_OPTIONS: list[str] = ["finance", "knowledge", "decision", "chitchat"]
@@ -101,7 +103,9 @@ class AgentResult(BaseModel):
     status: Literal["done", "failed", "cancelled"] = "done"
     error: str | None = None
     artifacts: list[Artifact] = Field(default_factory=list)
-    citations: list[Citation] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list, description="Only the sources the answer names")
+    retrieved: list[Citation] = Field(default_factory=list, description="Everything the agent's tools returned")
+    past_decisions: list[DecisionRecord] = Field(default_factory=list, description="On record for this topic")
     numbers: list[float] = Field(default_factory=list, exclude=True)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     verified: bool | None = None
@@ -234,6 +238,9 @@ async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id:
         ]
         if not tasks:
             raise LLMError("the plan had no valid tasks")
+        if not any(agent_type == "librarian" for agent_type, _ in tasks):
+            # A decision is never analysed without checking what was already decided, whatever the plan says.
+            tasks = [*tasks[:3], ("librarian", f"What the founder already decided on this topic: {message}")]
         reversibility = data.get("reversibility") if data.get("reversibility") in ("one_way", "two_way") else None
         return Plan(
             intent="decision",
@@ -273,8 +280,9 @@ class AgentRunner:
         started = time.perf_counter()
         result = AgentResult(agent_id=inst.id, type=inst.type, name=inst.name, brief=inst.brief)
         self._emit("agent.status", inst.id, status="thinking")
+        await self._look_up_past_decisions(spec, inst, user_message, result)
         messages = [
-            Message.system(spec.prompt() + await self._data_context(spec)),
+            Message.system(spec.prompt() + await self._data_context(spec) + _decisions_context(result)),
             Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}"),
         ]
         try:
@@ -283,6 +291,7 @@ class AgentRunner:
             logger.warning("Agent {} LLM unavailable, using rules: {}", inst.name, exc)
             result.fallback_from = result.provider or inst.provider
             await self._rules(spec, inst, user_message, result)
+        _surface_decisions(result)
         self._verify(spec, inst, user_message, result)
         if not result.verified and result.provider not in ("rules", ""):
             result.attempts = 2
@@ -299,7 +308,9 @@ class AgentRunner:
                 await self._loop(spec, inst, messages, result)
             except LLMError as exc:
                 result.issues.append(f"retry failed: {exc}")
+            _surface_decisions(result)
             self._verify(spec, inst, user_message, result)
+        _keep_used_sources(result)
         result.elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         self._emit(
             "agent.done",
@@ -314,6 +325,18 @@ class AgentRunner:
             est_cost_usd=0.0 if not inst.is_cloud else None,
         )
         return result
+
+    async def _look_up_past_decisions(
+        self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult
+    ) -> None:
+        """Checked by code on the founder's own words: a Planner brief can narrow the topic and a model can skip it."""
+        if "past_decisions" not in spec.tools:
+            return
+        outcome = await self._call_tool(
+            spec, inst, ToolCall(name="past_decisions", arguments={"query": user_message}), result
+        )
+        if not outcome.error:
+            result.past_decisions = [DecisionRecord(**row) for row in outcome.content["decisions"]]
 
     async def _data_context(self, spec: AgentType) -> str:
         """Tell the Financial Analyst which months exist, so it does not invent a `month` argument."""
@@ -334,11 +357,12 @@ class AgentRunner:
     def _verify(self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult) -> None:
         self._emit("agent.status", inst.id, status="verifying")
         searched = any(c["tool"] == "search_vault" and not c.get("error") for c in result.tool_calls)
+        cited = bool(result.past_decisions) or (searched and bool(result.retrieved))
         report = verify(
             result.text,
             result.numbers,
-            result.citations,
-            needs_citations=spec.name == "librarian" and searched and bool(result.citations),
+            result.retrieved,
+            needs_citations=spec.name == "librarian" and cited,
             # Only the founder's own words may supply numbers: a Planner-written brief is LLM text (PRD R1).
             context=user_message,
         )
@@ -355,8 +379,8 @@ class AgentRunner:
         result.tool_calls.append({"tool": call.name, "arguments": call.arguments, "error": outcome.error})
         result.numbers.extend(outcome.numbers)
         for citation in outcome.citations:
-            if citation not in result.citations:
-                result.citations.append(citation)
+            if citation not in result.retrieved:
+                result.retrieved.append(citation)
         self._emit("agent.tool_call", inst.id, tool=call.name, arguments=call.arguments, error=outcome.error)
         for artifact in outcome.artifacts:
             result.artifacts.append(artifact)
@@ -408,14 +432,62 @@ class AgentRunner:
             outcome = await self._call_tool(
                 spec, inst, ToolCall(name="search_vault", arguments={"query": inst.brief, "k": 3}), result
             )
-            hits = outcome.content.get("results", [])
+            hits = [a for a in outcome.artifacts if a.citations][:3]
             result.text = (
-                " ".join(f"{_plain(h['snippet'])} [{h['path']}]" for h in hits[:3])
+                " ".join(f"{_plain(a.data['snippet'])} [{a.citations[0].path}]" for a in hits)
                 if hits
                 else "Nothing relevant was found in the vault."
             )
         if not result.text:
             result.status, result.error = "failed", "the language model is unavailable and no rule applies"
+
+
+def _decisions_context(result: AgentResult) -> str:
+    if not result.past_decisions:
+        return ""
+    lines = "\n".join(f"- {record.summary()}" for record in result.past_decisions)
+    return f"\n\nPast decisions on record for this topic (from the vault, exact):\n{lines}"
+
+
+def _date_forms(iso: str | None) -> list[str]:
+    """The ways an answer may refer to a date: 2026-12-15, 2026-12, December, Dec."""
+    if not iso:
+        return []
+    forms = [iso, iso[:7]]
+    try:
+        month = int(iso[5:7])
+    except ValueError:
+        return forms
+    if 1 <= month <= 12:
+        forms += [calendar.month_name[month].lower(), calendar.month_abbr[month].lower()]
+    return forms
+
+
+def decision_covered(text: str, record: DecisionRecord, *, needs_path: bool) -> bool:
+    """Does the answer already give this decision's date, review date and kill criteria?"""
+    lowered = text.lower()
+    if needs_path and record.path.lower() not in lowered:
+        return False
+    for iso in (record.decided, record.review_date):
+        forms = _date_forms(iso)
+        if forms and not any(re.search(rf"\b{re.escape(form.lower())}\b", lowered) for form in forms):
+            return False
+    return not record.kill_criteria or "kill" in lowered
+
+
+def _surface_decisions(result: AgentResult) -> None:
+    """A small model can ignore what it was told, so code guarantees that the facts of a past decision are stated."""
+    missing = [r for r in result.past_decisions if not decision_covered(result.text, r, needs_path=True)]
+    if missing:
+        note = " ".join(f"On record: {record.summary()}" for record in missing)
+        result.text = f"{result.text} {note}".strip()
+
+
+def _keep_used_sources(result: AgentResult) -> None:
+    """Citations are the sources the answer names, not everything a search happened to return."""
+    used = named_paths(result.text)
+    result.citations = [c for c in result.retrieved if c.path in used]
+    result.artifacts = [a for a in result.artifacts if a.kind != "citation" or any(c.path in used for c in a.citations)]
 
 
 def _fmt(value: Any, unit: str) -> str:
@@ -456,7 +528,21 @@ def findings_for_advisor(results: list[AgentResult]) -> str:
             if art.kind == "metric_card":
                 d = art.data
                 blocks.append(f"  * {d.get('label')}: {d.get('value')} {d.get('unit')} (as of {d.get('as_of')})")
+    records = _team_decisions(results)
+    if records:
+        blocks.append("Past decisions on this topic, already on record (lead with these):")
+        blocks.extend(f"- {record.summary()}" for record in records)
     return "\n".join(blocks) if blocks else "(no findings)"
+
+
+def _team_decisions(results: list[AgentResult]) -> list[DecisionRecord]:
+    return list({record.path: record for r in results for record in r.past_decisions}.values())
+
+
+def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
+    """What the Advisor's reply must add so that no past decision on the topic goes unmentioned."""
+    missing = [r for r in _team_decisions(results) if not decision_covered(answer, r, needs_path=False)]
+    return "".join(f" You already decided this: {r.summary()} {r.follow_up_question()}" for r in missing)
 
 
 async def advise(
@@ -479,13 +565,23 @@ async def advise(
     try:
         async for chunk in router.stream(spec.privacy, messages):
             sent.append(chunk.delta)
+            if chunk.done and chunk.completion is not None:
+                if chunk.delta:
+                    yield StreamChunk(delta=chunk.delta)
+                note = advisor_decision_note("".join(sent), results)
+                if note:
+                    sent.append(note)
+                    yield StreamChunk(delta=note)
+                text = "".join(sent)
+                yield StreamChunk(done=True, completion=chunk.completion.model_copy(update={"text": text}))
+                continue
             yield chunk
     except LLMError as exc:
         provider = router.primary(spec.privacy)
         if any(sent):
             # The founder already saw part of the reply: end it honestly instead of appending a second answer.
             logger.warning("Advisor stream broke after {} chunks: {}", len(sent), exc)
-            note = " (The reply was cut off; see the findings.)"
+            note = " (The reply was cut off; see the findings.)" + advisor_decision_note("".join(sent), results)
             yield StreamChunk(delta=note)
             text = "".join(sent) + note
             yield StreamChunk(done=True, completion=Completion(text=text, provider=provider.name, model=provider.model))

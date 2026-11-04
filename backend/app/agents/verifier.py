@@ -2,9 +2,9 @@
 
 1. Every number in the text must match a number the model was shown by its tools (each tool result carries lineage),
    within the written rounding ("$1.2M" covers 1,150,000-1,250,000) or 1 % relative, whichever is wider. A
-   percentage may be written for a ratio (72.13 % for 0.7213). Years, YYYY-MM months and small counting words
-   ("3 months", "2 options") are not treated as financial figures. Numbers in the founder's own message may be
-   repeated; numbers in a Planner-written brief may not (that is LLM text).
+   percentage may be written for a ratio (72.13 % for 0.7213). Years, YYYY-MM months, written dates ("15 Dec") and
+   small counting words ("3 months", "2 options") are not treated as financial figures. Numbers in the founder's
+   own message may be repeated; numbers in a Planner-written brief may not (that is LLM text).
 2. A Librarian answer must name at least one source path that its searches returned, and every
    `*.md`/`*.pdf`/`*.csv` path it names must be one of them.
 """
@@ -21,6 +21,12 @@ NUMBER_RE = re.compile(
     r"\s?(?P<suffix>%|percent\b|[kKmMbB]\b|bn\b|million\b|thousand\b|billion\b)?"
 )
 MONTH_RE = re.compile(r"\b(19|20)\d{2}-(0[1-9]|1[0-2])(-\d{2})?\b")
+_MONTH_NAME = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?"
+    r"|Nov(?:ember)?|Dec(?:ember)?)\b\.?"
+)
+_DAY = r"\d{1,2}(?:st|nd|rd|th)?\b(?!\s?%)"
+WRITTEN_DATE_RE = re.compile(rf"\b{_DAY}\s+(?:of\s+)?{_MONTH_NAME}|\b{_MONTH_NAME}\s+{_DAY}")
 PATH_RE = re.compile(r"[\w./-]+\.(?:md|pdf|csv|xlsx|txt)\b")
 SMALL_INT_MAX = 12
 REL_TOL = 0.01
@@ -45,7 +51,7 @@ class Figure:
 
 def extract_figures(text: str) -> list[Figure]:
     """Financial-looking numbers in `text` (dates, years and small counting integers are skipped)."""
-    cleaned = MONTH_RE.sub(" ", text)
+    cleaned = WRITTEN_DATE_RE.sub(" ", MONTH_RE.sub(" ", text))
     figures: list[Figure] = []
     for m in NUMBER_RE.finditer(cleaned):
         raw = m.group("num")
@@ -97,6 +103,10 @@ def verify_citations(text: str, citations: list[Citation]) -> list[str]:
     for path in sorted(named - returned):
         issues.append(f"{path} was not returned by a search")
     return issues
+
+
+def named_paths(text: str) -> set[str]:
+    return set(PATH_RE.findall(text))
 
 
 def verify(

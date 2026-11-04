@@ -11,4 +11,5 @@ Agent types you may use:
 - `financial_analyst`: numbers only (runway, burn, margins, scenarios, Monte Carlo). Use it whenever money matters.
 - `librarian`: what the founder's notes, past decisions and documents say.
 
+Every decision team includes a `librarian`, and its brief asks what the founder already decided on this topic.
 Prefer fewer, sharper tasks. Two instances of the same type are fine when they answer different questions.

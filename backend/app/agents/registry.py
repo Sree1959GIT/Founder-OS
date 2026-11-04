@@ -47,7 +47,7 @@ FINANCE_TOOLS = (
     "expected_value",
     "calibration_scores",
 )
-LIBRARY_TOOLS = ("search_vault", "read_note", "write_note")
+LIBRARY_TOOLS = ("past_decisions", "search_vault", "read_note", "write_note")
 
 REGISTRY: dict[str, AgentType] = {
     t.name: t

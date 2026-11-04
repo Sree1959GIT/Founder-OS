@@ -34,6 +34,7 @@ from app.agents.verifier import verify_numbers
 from app.decision.base import DecisionService
 from app.llm.base import Usage
 from app.llm.router import LLMRouter
+from app.vault.decisions import DecisionRecord
 
 
 class RunCancelled(Exception):
@@ -77,7 +78,10 @@ class ChatResult(BaseModel):
     agents: list[AgentResult]
     metrics: list[MetricOut] = Field(description="Every metric the team computed, with its full lineage")
     artifacts: list[Artifact]
-    citations: list[Citation]
+    citations: list[Citation] = Field(description="Only the sources the agents' answers name")
+    past_decisions: list[DecisionRecord] = Field(
+        default_factory=list, description="Decisions already on record for this topic"
+    )
     verified: bool
     issues: list[str]
     advisor_provider: str
@@ -295,6 +299,7 @@ class AgentOrchestrator:
             for a in artifacts
             if a.kind == "metric_card"
         ]
+        past_decisions = list({d.path: d for r in results for d in r.past_decisions}.values())
         citations: list[Citation] = []
         for r in results:
             citations.extend(c for c in r.citations if c not in citations)
@@ -321,6 +326,7 @@ class AgentOrchestrator:
             metrics=metrics,
             artifacts=artifacts,
             citations=citations,
+            past_decisions=past_decisions,
             verified=not issues and all(r.status == "done" for r in results),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
