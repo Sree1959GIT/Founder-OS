@@ -28,7 +28,7 @@ from app.engine.metrics import METRICS, SUMMARY_METRICS, MetricError
 from app.engine.montecarlo import MonteCarloRequest, run_monte_carlo
 from app.engine.scenario import Adjustments
 from app.engine.sql_guard import SqlGuardError, run_guarded_query
-from app.llm.base import ToolSpec
+from app.llm.base import ToolSpec, WebAnswer
 from app.vault.manager import VaultError
 
 WRITABLE_FOLDERS = ("decisions/", "journal/")
@@ -159,6 +159,17 @@ def _get_metric(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     }
     card = _artifact(ctx, "metric_card", result.label, data, lineage=[result.lineage])
     return ToolOutcome(content, artifacts=[card], facts=_metric_facts(content))
+
+
+def web_outcome(ctx: ToolContext, answer: WebAnswer) -> ToolOutcome:
+    """A grounded search's answer. Its figures are backed by the pages it names, like a passage from a note."""
+    citations = [Citation(path=s.url, heading=s.title or s.url, chunk_id="web") for s in answer.sources]
+    content = {"answer": answer.text, "sources": [s.model_dump() for s in answer.sources]}
+    return ToolOutcome(content, citations=citations, facts=quoted_facts(answer.text))
+
+
+def _web_search(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
+    return ToolOutcome({}, error="web search runs through the LLM router and is not available here")
 
 
 def _metrics_summary(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -422,6 +433,26 @@ TOOLS: dict[str, Tool] = {
     t.spec.name: t
     for t in (
         Tool(_spec("list_metrics", "List the metric routines that get_metric can run.", {}), _list_metrics),
+        Tool(
+            _spec(
+                "request_metric",
+                "Ask the Financial Analyst's routines for one metric. Returns the value, unit and lineage. "
+                f"Names: {', '.join(sorted(METRICS))}. 'headcount_cost' is the whole company's monthly payroll.",
+                {"name": {"type": "string"}, "month": _MONTH},
+                ["name"],
+            ),
+            _get_metric,
+        ),
+        Tool(
+            _spec(
+                "web_search",
+                "Search the web for facts outside the vault. Never put company figures or customer names in the query.",
+                {"query": {"type": "string"}},
+                ["query"],
+            ),
+            _web_search,
+            status="searching_web",
+        ),
         Tool(
             _spec(
                 "get_metric",

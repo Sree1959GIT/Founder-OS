@@ -21,7 +21,26 @@ from pydantic import BaseModel, Field
 
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
-from app.agents.tools import TOOLS, DecisionImpact, ToolContext, ToolOutcome, run_tool, specs_for
+from app.agents.specialists import (
+    MAX_TEAM,
+    MEMO_SCHEMA,
+    REGULATORY_NOTE,
+    RULE_TEXT,
+    SCOUT_LOCAL_NOTE,
+    MemoDraft,
+    MemoPrediction,
+    MemoRef,
+    default_brief,
+    lens_name,
+    needs_analyst,
+    risk_register,
+    rule_draft,
+    team_for_message,
+    with_required_fields,
+    without_unbacked_figures,
+    write_memo,
+)
+from app.agents.tools import TOOLS, DecisionImpact, ToolContext, ToolOutcome, run_tool, specs_for, web_outcome
 from app.agents.verifier import (
     PATH_RE,
     ClaimIssue,
@@ -40,6 +59,7 @@ from app.engine.lineage import Lineage
 from app.llm.base import Completion, LLMError, Message, StreamChunk, ToolCall, Usage
 from app.llm.router import LLMRouter
 from app.vault.decisions import DecisionRecord
+from app.vault.manager import VaultError
 
 Intent = Literal["finance", "knowledge", "decision", "chitchat"]
 INTENT_OPTIONS: list[str] = ["finance", "knowledge", "decision", "chitchat"]
@@ -134,7 +154,11 @@ class AgentResult(BaseModel):
     retrieved: list[Citation] = Field(default_factory=list, description="Everything the agent's tools returned")
     past_decisions: list[DecisionRecord] = Field(default_factory=list, description="On record for this topic")
     decision_impact: DecisionImpact | None = Field(default=None, description="From run_scenario, computed in code")
+    memo: MemoRef | None = Field(default=None, description="The memo this agent wrote")
     facts: list[Fact] = Field(default_factory=list, exclude=True)
+    inherited: list[Fact] = Field(default_factory=list, exclude=True, description="From earlier stages of the team")
+    inherited_impact: DecisionImpact | None = Field(default=None, exclude=True)
+    est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     verified: bool | None = None
     issues: list[str] = Field(default_factory=list)
@@ -148,6 +172,10 @@ class AgentResult(BaseModel):
     @property
     def numbers(self) -> list[float]:
         return [f.value for f in self.facts]
+
+    @property
+    def known_facts(self) -> list[Fact]:
+        return [*self.facts, *self.inherited]
 
     @property
     def lineage(self) -> list[Lineage]:
@@ -184,11 +212,12 @@ def rule_metric(text: str) -> str | None:
 
 def _instance(agent_type: str, brief: str, router: LLMRouter, index: int = 1) -> AgentInstance:
     spec = REGISTRY[agent_type]
-    provider = router.primary(spec.privacy, needs_tools=bool(spec.tools))
+    provider = router.primary(spec.privacy, needs_tools=bool(spec.tools), agent_type=agent_type)
     suffix = f" #{index}" if index > 1 else ""
+    lens = lens_name(brief) if agent_type == "perspective_lens" else None
     return AgentInstance(
         type=agent_type,
-        name=f"{spec.title}{suffix}",
+        name=f"{spec.title}: {lens}{suffix}" if lens else f"{spec.title}{suffix}",
         brief=brief,
         provider=provider.name,
         model=provider.model,
@@ -234,12 +263,29 @@ async def plan(message: str, router: LLMRouter, decisions: DecisionService) -> P
     return await _plan_decision(message, router, how, decision_id)
 
 
+def _with_required_types(tasks: list[tuple[str, str]], message: str) -> list[tuple[str, str]]:
+    """The specialists the founder's words call for, and the Analyst whose numbers they argue from.
+
+    The founder asked for them, so they stay even if the team is full: others make room, last planned first.
+    """
+    required = [t for t in team_for_message(message) if t not in {agent_type for agent_type, _ in tasks}]
+    combined = [*tasks, *((t, default_brief(t, message)) for t in required)]
+    if needs_analyst([agent_type for agent_type, _ in combined]):
+        combined.insert(0, ("financial_analyst", f"Numbers that matter for this decision: {message}"))
+    keep = {"librarian", "financial_analyst", *required}
+    while len(combined) > MAX_TEAM:
+        drop = next((i for i in range(len(combined) - 1, -1, -1) if combined[i][0] not in keep), len(combined) - 1)
+        combined.pop(drop)
+    return combined
+
+
 def _default_decision_plan(message: str, router: LLMRouter, how: str, decision_id: str | None) -> Plan:
     tasks = [
         ("financial_analyst", f"Numbers that matter for this decision: {message}"),
         ("librarian", f"What the notes and past decisions say about: {message}"),
     ]
-    return Plan(intent="decision", team=_team(tasks, router), planner=how, intent_decision_id=decision_id)
+    team = _team(_with_required_types(tasks, message), router)
+    return Plan(intent="decision", team=team, planner=how, intent_decision_id=decision_id)
 
 
 async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id: str | None) -> Plan:
@@ -252,7 +298,7 @@ async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id:
             "tasks": {
                 "type": "array",
                 "minItems": 1,
-                "maxItems": 4,
+                "maxItems": 6,
                 "items": {
                     "type": "object",
                     "properties": {"agent_type": {"type": "string", "enum": types}, "brief": {"type": "string"}},
@@ -269,20 +315,20 @@ async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id:
             raise LLMError(f"the plan was not a JSON object: {str(data)[:100]}")
         tasks = [
             (str(t["agent_type"]), str(t["brief"]).strip() or message)
-            for t in data.get("tasks", [])[:4]
+            for t in data.get("tasks", [])[:6]
             if isinstance(t, dict) and t.get("agent_type") in types
         ]
         if not tasks:
             raise LLMError("the plan had no valid tasks")
         if not any(agent_type == "librarian" for agent_type, _ in tasks):
             # A decision is never analysed without checking what was already decided, whatever the plan says.
-            tasks = [*tasks[:3], ("librarian", f"What the founder already decided on this topic: {message}")]
+            tasks = [*tasks[:5], ("librarian", f"What the founder already decided on this topic: {message}")]
         reversibility = data.get("reversibility") if data.get("reversibility") in ("one_way", "two_way") else None
         return Plan(
             intent="decision",
             decision_type=str(data.get("decision_type") or "") or None,
             reversibility=reversibility,
-            team=_team(tasks, router),
+            team=_team(_with_required_types(tasks, message), router),
             planner=f"{how}; team by LLM",
             intent_decision_id=decision_id,
         )
@@ -311,16 +357,30 @@ class AgentRunner:
     def _emit(self, type_: Any, agent_id: str, **data: Any) -> None:
         self.bus.emit(type_, self.run_id, agent_id, **data)
 
-    async def run(self, inst: AgentInstance, user_message: str) -> AgentResult:
+    async def run(
+        self, inst: AgentInstance, user_message: str, upstream: list[AgentResult] | None = None
+    ) -> AgentResult:
         spec = REGISTRY[inst.type]
         started = time.perf_counter()
-        result = AgentResult(agent_id=inst.id, type=inst.type, name=inst.name, brief=inst.brief)
+        upstream = upstream or []
+        result = AgentResult(
+            agent_id=inst.id,
+            type=inst.type,
+            name=inst.name,
+            brief=inst.brief,
+            inherited=[fact for r in upstream for fact in r.facts],
+            inherited_impact=team_impact(upstream),
+        )
         self._emit("agent.status", inst.id, status="thinking")
         await self._look_up_past_decisions(spec, inst, user_message, result)
+        findings = f"\nTeam findings so far:\n{findings_for_advisor(upstream)}" if upstream else ""
         messages = [
             Message.system(spec.prompt() + await self._data_context(spec) + _decisions_context(result)),
-            Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}"),
+            Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}{findings}"),
         ]
+        if spec.name == "memo_writer":
+            await self._write_memo(spec, inst, user_message, messages, upstream, result)
+            return self._finish(inst, result, started)
         await self._search_first(spec, inst, user_message, messages, result)
         await self._scenario_first(spec, inst, user_message, messages, result)
         try:
@@ -329,6 +389,8 @@ class AgentRunner:
             logger.warning("Agent {} LLM unavailable, using rules: {}", inst.name, exc)
             result.fallback_from = result.provider or inst.provider
             await self._rules(spec, inst, user_message, result)
+        await self._insist_on_scoring(spec, inst, messages, result)
+        await self._surface_named_folder(spec, inst, user_message, result)
         _surface_decisions(result)
         self._verify(spec, inst, user_message, result)
         if not result.verified and result.provider not in ("rules", ""):
@@ -349,7 +411,11 @@ class AgentRunner:
             _surface_decisions(result)
             self._verify(spec, inst, user_message, result)
         _replace_wrong_claims(result, user_message)
+        self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
+        return self._finish(inst, result, started)
+
+    def _finish(self, inst: AgentInstance, result: AgentResult, started: float) -> AgentResult:
         result.elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         self._emit(
             "agent.done",
@@ -361,9 +427,137 @@ class AgentRunner:
             provider=result.provider,
             model=result.model,
             tokens=result.usage.model_dump(),
-            est_cost_usd=0.0 if not inst.is_cloud else None,
+            est_cost_usd=result.est_cost_usd,
         )
         return result
+
+    def _finish_specialist(self, spec: AgentType, inst: AgentInstance, result: AgentResult) -> None:
+        """What a specialist's answer always carries, whatever the model wrote."""
+        if spec.name == "devils_advocate" and result.text:
+            artifact = risk_register(inst.id, result.text)
+            result.artifacts.append(artifact)
+            self._emit("agent.artifact", inst.id, artifact=artifact.model_dump(mode="json"))
+        if spec.name == "regulatory_tax" and "not legal" not in result.text.lower():
+            result.text = f"{result.text} {REGULATORY_NOTE}".strip()
+        web_used = any(c["tool"] == "web_search" and not c.get("error") for c in result.tool_calls)
+        if spec.name == "market_scout" and not web_used and not self._can_search_web(spec):
+            result.text = f"{result.text} {SCOUT_LOCAL_NOTE}".strip()
+        pages = [c for c in result.retrieved if c.chunk_id == "web" and c.path not in result.text]
+        if pages and spec.name in ("market_scout", "regulatory_tax"):
+            result.text = f"{result.text} Sources: {', '.join(c.path for c in pages[:5])}."
+
+    def _can_search_web(self, spec: AgentType) -> bool:
+        return "web_search" in spec.tools and self.router.can_search_web(spec.privacy, spec.name)
+
+    async def _insist_on_scoring(
+        self, spec: AgentType, inst: AgentInstance, messages: list[Message], result: AgentResult
+    ) -> None:
+        """A ranking must come from the routine. A model that ranked in prose is sent back once to call it."""
+        scored = any(c["tool"] == "weighted_scoring" and not c.get("error") for c in result.tool_calls)
+        if spec.name != "prioritiser" or scored or result.provider in ("rules", ""):
+            return
+        messages.append(Message.assistant(result.text))
+        messages.append(Message.user("Call weighted_scoring now: a ranking must come from the routine."))
+        try:
+            await self._loop(spec, inst, messages, result)
+        except LLMError as exc:
+            logger.info("Prioritiser retry failed: {}", exc)
+
+    async def _surface_named_folder(
+        self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult
+    ) -> None:
+        """Asked what "my journal" says, the answer must use the journal.
+
+        Seen live, 2 full eval runs of 3: the search returned the journal and the model cited only another note. The
+        same question run alone passed, so the model's choice varies. Code adds the journal's own passage.
+        """
+        if spec.name != "librarian" or not _NAMES_THE_JOURNAL.search(user_message):
+            return
+        if any(path.startswith("journal/") for path in named_paths(result.text, {c.path for c in result.retrieved})):
+            return
+        call = ToolCall(name="search_vault", arguments={"query": user_message, "folder": "journal", "k": 2})
+        outcome = await self._call_tool(spec, inst, call, result)
+        hits = [a for a in outcome.artifacts if a.citations and a.citations[0].path.startswith("journal/")]
+        if hits:
+            hit = hits[0]
+            quote = f"From your journal: {_plain(hit.data['snippet'])} [{hit.citations[0].path}]"
+            result.text = f"{result.text} {quote}".strip()
+
+    async def _write_memo(
+        self,
+        spec: AgentType,
+        inst: AgentInstance,
+        user_message: str,
+        messages: list[Message],
+        upstream: list[AgentResult],
+        result: AgentResult,
+    ) -> None:
+        """The model drafts as JSON, the Verifier checks the prose (one repair turn), and code writes the file."""
+        draft = await self._draft_memo(spec, messages, user_message, result)
+        report = self._check_memo(draft, user_message, result)
+        if not report.ok and result.provider != "rules":
+            result.attempts = 2
+            self._emit("agent.step", inst.id, step="memo sent back by the Verifier: " + "; ".join(report.issues))
+            messages.append(Message.assistant(draft.model_dump_json()))
+            messages.append(
+                Message.user(
+                    f"The Verifier rejected your memo: {'; '.join(report.issues)}. Use only numbers from the findings, "
+                    "with their meaning. Return the whole memo again."
+                )
+            )
+            draft = await self._draft_memo(spec, messages, user_message, result, fallback=draft)
+            report = self._check_memo(draft, user_message, result)
+        result.verified, result.issues = report.ok, report.issues
+        draft = without_unbacked_figures(draft, _memo_facts(draft, result), user_message)
+        self._emit("agent.status", inst.id, status="searching_vault")
+        try:
+            memo, artifact = await asyncio.to_thread(
+                write_memo,
+                self.ctx_factory(inst.id),
+                draft,
+                upstream,
+                verified=report.ok,
+                agent_id=inst.id,
+            )
+        except (ValueError, OSError, VaultError) as exc:
+            logger.warning("The memo could not be written: {}", exc)
+            result.status, result.error = "failed", str(exc)
+            result.verified = False
+            return
+        result.memo = memo
+        result.artifacts.append(artifact)
+        self._emit("agent.artifact", inst.id, artifact=artifact.model_dump(mode="json"))
+        result.text = (
+            f"Memo written to {memo.path} (status {memo.status}, review date {memo.review_date}). "
+            f"Prediction: {memo.predictions[0]}"
+        )
+
+    async def _draft_memo(
+        self,
+        spec: AgentType,
+        messages: list[Message],
+        user_message: str,
+        result: AgentResult,
+        fallback: MemoDraft | None = None,
+    ) -> MemoDraft:
+        try:
+            completion = await self.router.complete(
+                spec.privacy, messages, json_schema=MEMO_SCHEMA, agent_type=spec.name
+            )
+            self._account(result, completion)
+            return with_required_fields(MemoDraft.model_validate(completion.json()), user_message)
+        except (LLMError, ValueError, TypeError) as exc:
+            logger.warning(
+                "Memo draft from the model failed, using {}: {}", "the last one" if fallback else "rules", exc
+            )
+            if fallback is not None:
+                return fallback
+            result.provider, result.model = "rules", ""
+            return with_required_fields(rule_draft(user_message), user_message)
+
+    @staticmethod
+    def _check_memo(draft: MemoDraft, user_message: str, result: AgentResult) -> Any:
+        return verify(draft.prose(), _memo_facts(draft, result), [], needs_citations=False, context=user_message)
 
     async def _look_up_past_decisions(
         self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult
@@ -410,7 +604,7 @@ class AgentRunner:
 
     async def _data_context(self, spec: AgentType) -> str:
         """Tell the Financial Analyst which months exist, so it does not invent a `month` argument."""
-        if spec.name != "financial_analyst":
+        if not {"get_metric", "request_metric"} & set(spec.tools):
             return ""
         try:
             months = await asyncio.to_thread(self.ctx_factory("").finance.metrics.available_months)
@@ -433,7 +627,7 @@ class AgentRunner:
         cited = not honest_blank and (bool(result.past_decisions) or (searched and bool(result.retrieved)))
         report = verify(
             result.text,
-            result.facts,
+            result.known_facts,
             result.retrieved,
             needs_citations=spec.name == "librarian" and cited,
             # Only the founder's own words may supply numbers: a Planner-written brief is LLM text (PRD R1).
@@ -448,7 +642,10 @@ class AgentRunner:
         tool = TOOLS.get(call.name)
         self._emit("agent.status", inst.id, status=tool.status if tool else "thinking")
         self._emit("agent.step", inst.id, step=f"running {call.name}({_args_preview(call.arguments)})")
-        outcome = await run_tool(call.name, self.ctx_factory(inst.id), call.arguments, spec.tools)
+        if call.name == "web_search" and "web_search" in spec.tools:
+            outcome = await self._search_web(spec, inst, call)
+        else:
+            outcome = await run_tool(call.name, self.ctx_factory(inst.id), call.arguments, spec.tools)
         result.tool_calls.append({"tool": call.name, "arguments": call.arguments, "error": outcome.error})
         result.facts.extend(outcome.facts)
         # The first scenario is the founder's: later ones are the model exploring.
@@ -463,12 +660,24 @@ class AgentRunner:
             self._emit("agent.artifact", inst.id, artifact=artifact.model_dump(mode="json"))
         return outcome
 
+    async def _search_web(self, spec: AgentType, inst: AgentInstance, call: ToolCall) -> ToolOutcome:
+        query = str(call.arguments.get("query", "")).strip()
+        if not query or not self._can_search_web(spec):
+            return ToolOutcome({}, error="web search is not available: use the vault")
+        try:
+            answer = await self.router.web_search(spec.privacy, query, agent_type=spec.name)
+        except LLMError as exc:
+            return ToolOutcome({}, error=f"web search failed: {type(exc).__name__}")
+        return web_outcome(self.ctx_factory(inst.id), answer)
+
     async def _loop(self, spec: AgentType, inst: AgentInstance, messages: list[Message], result: AgentResult) -> None:
-        tools = specs_for(spec.tools) or None
+        tools = [t for t in specs_for(spec.tools) if t.name != "web_search" or self._can_search_web(spec)] or None
         for step in range(self.max_steps + 1):
             final = step == self.max_steps
             self._emit("agent.status", inst.id, status="waiting_cloud" if inst.is_cloud else "thinking")
-            completion = await self.router.complete(spec.privacy, messages, tools=None if final else tools)
+            completion = await self.router.complete(
+                spec.privacy, messages, tools=None if final else tools, agent_type=spec.name
+            )
             self._account(result, completion)
             if not completion.tool_calls or final:
                 result.text = completion.text.strip()
@@ -482,6 +691,10 @@ class AgentRunner:
     def _account(result: AgentResult, completion: Completion) -> None:
         result.provider, result.model = completion.provider, completion.model
         result.usage = result.usage + completion.usage
+        if result.est_cost_usd is not None:
+            result.est_cost_usd = (
+                None if completion.est_cost_usd is None else round(result.est_cost_usd + completion.est_cost_usd, 6)
+            )
         if completion.fallback_from:
             result.fallback_from = completion.fallback_from
 
@@ -516,6 +729,28 @@ class AgentRunner:
                 if hits
                 else "Nothing relevant was found in the vault."
             )
+        elif spec.name in ("market_scout", "regulatory_tax"):
+            outcome = await self._call_tool(
+                spec, inst, ToolCall(name="search_vault", arguments={"query": inst.brief, "k": 2}), result
+            )
+            hits = [a for a in outcome.artifacts if a.citations][:2]
+            result.text = (
+                " ".join(f"{_plain(a.data['snippet'])} [{a.citations[0].path}]" for a in hits)
+                if hits
+                else RULE_TEXT[spec.name]
+            )
+        elif spec.name == "revenue_customer":
+            lines = []
+            for metric in ("mrr", "logo_churn", "nrr"):
+                outcome = await self._call_tool(
+                    spec, inst, ToolCall(name="request_metric", arguments={"name": metric}), result
+                )
+                if not outcome.error:
+                    c = outcome.content
+                    lines.append(f"{c['label']}: {_fmt(c['value'], c['unit'])}")
+            result.text = "; ".join(lines) + ("." if lines else "")
+        elif spec.name in RULE_TEXT:
+            result.text = RULE_TEXT[spec.name]
         if not result.text:
             result.status, result.error = "failed", "the language model is unavailable and no rule applies"
 
@@ -555,6 +790,19 @@ def hires_in_message(message: str) -> int | None:
     return int(word) if word.isdigit() else _NUMBER_WORDS[word]
 
 
+_NAMES_THE_JOURNAL = re.compile(r"\b(my|our|the) journal\b", re.I)
+
+
+def _memo_facts(draft: MemoDraft, result: AgentResult) -> list[Fact]:
+    """The team's numbers, plus the memo's own forecasts: a stated belief, not a financial figure."""
+    forecasts = [_forecast_fact(p) for p in draft.predictions]
+    return [*result.known_facts, *forecasts]
+
+
+def _forecast_fact(prediction: MemoPrediction) -> Fact:
+    return Fact(round(prediction.probability * 100, 2))
+
+
 def _written_by_code(impact: DecisionImpact | None) -> Callable[[list[ClaimIssue]], str]:
     """What replaces a sentence whose figure had the wrong meaning: the impact, or the figure with its own label."""
 
@@ -569,7 +817,8 @@ def _written_by_code(impact: DecisionImpact | None) -> Callable[[list[ClaimIssue
 
 def _replace_wrong_claims(result: AgentResult, user_message: str) -> None:
     """Sent back once and still wrong: not verified, and the sentence is replaced by one written in code."""
-    result.text, _ = repair_claims(result.text, result.facts, user_message, _written_by_code(result.decision_impact))
+    impact = result.decision_impact or result.inherited_impact
+    result.text, _ = repair_claims(result.text, result.known_facts, user_message, _written_by_code(impact))
 
 
 def team_impact(results: list[AgentResult]) -> DecisionImpact | None:
@@ -727,7 +976,7 @@ def findings_for_advisor(results: list[AgentResult]) -> str:
         if r.status != "done":
             blocks.append(f"- {r.name}: failed ({r.error}).")
             continue
-        blocks.append(f"- {r.name}{flag}: {r.text}")
+        blocks.append(f"- {r.name}{flag}: {_short(r.text)}")
         # With a computed impact, a raw total such as total payroll only invites being called the decision's cost.
         for art in [] if impact is not None else r.artifacts:
             if art.kind == "metric_card":
@@ -741,6 +990,11 @@ def findings_for_advisor(results: list[AgentResult]) -> str:
         blocks.append("Past decisions on this topic, already on record (lead with these):")
         blocks.extend(f"- {record.summary()}" for record in records)
     return "\n".join(blocks) if blocks else "(no findings)"
+
+
+def _short(text: str, limit: int = 900) -> str:
+    """A team's findings must fit an 8k context, however many agents ran."""
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
 
 def _team_decisions(results: list[AgentResult]) -> list[DecisionRecord]:
@@ -817,6 +1071,14 @@ def in_one_voice(text: str) -> str:
     return one_money_format(_THE_FOUNDER.sub(_to_you, text))
 
 
+def advisor_memo_note(answer: str, results: list[AgentResult]) -> str:
+    """A memo that was written is never a surprise: the reply names it and its review date."""
+    memo = next((r.memo for r in results if r.memo is not None), None)
+    if memo is None or (memo.path in answer and memo.review_date in answer):
+        return ""
+    return f" The memo is at {memo.path}, for review on {memo.review_date}."
+
+
 def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) -> str:
     impact = team_impact(results) if plan_.intent == "decision" else None
     if impact is None:
@@ -863,7 +1125,7 @@ async def advise(
     facts = [fact for r in results for fact in r.facts]
     gate = _SentenceGate(facts, user_message, team_impact(results), issues if issues is not None else [])
     try:
-        async for chunk in router.stream(spec.privacy, messages):
+        async for chunk in router.stream(spec.privacy, messages, agent_type=spec.name):
             ready = gate.feed(chunk.delta) if chunk.delta else ""
             if ready:
                 sent.append(ready)
@@ -875,6 +1137,7 @@ async def advise(
                     yield StreamChunk(delta=ready)
                 note = advisor_decision_note("".join(sent), results)
                 note += advisor_impact_note("".join(sent) + note, plan_, results)
+                note += advisor_memo_note("".join(sent) + note, results)
                 if note:
                     sent.append(note)
                     yield StreamChunk(delta=note)
@@ -897,6 +1160,7 @@ async def advise(
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
         text = in_one_voice(template_answer(results))
         text += advisor_impact_note(text, plan_, results)
+        text += advisor_memo_note(text, results)
         yield StreamChunk(delta=text)
         yield StreamChunk(
             done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)

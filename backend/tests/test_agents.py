@@ -82,11 +82,13 @@ def inst(agent_type: str, brief: str = "What's our runway?") -> AgentInstance:
 
 # --- registry and tools ----------------------------------------------------------------------------------------
 def test_registry_has_the_five_core_agents_with_prompts() -> None:
-    assert set(REGISTRY) == {"advisor", "planner", "financial_analyst", "librarian", "verifier"}
-    assert spawnable_types() == ["financial_analyst", "librarian"]
+    core = {"advisor", "planner", "financial_analyst", "librarian", "verifier"}
+    assert core <= set(REGISTRY)
+    assert set(spawnable_types()) == set(REGISTRY) - {"advisor", "planner", "verifier"}
     for spec in REGISTRY.values():
-        assert spec.prompt().strip() and spec.privacy == "local"
+        assert spec.prompt().strip()
         assert all(tool in TOOLS for tool in spec.tools)
+    assert all(REGISTRY[name].privacy == "local" for name in core)
     # Only the Financial Analyst may touch numbers (PRD F3).
     finance_tools = {"get_metric", "run_scenario", "run_monte_carlo", "run_sql"}
     assert [n for n, s in REGISTRY.items() if finance_tools & set(s.tools)] == ["financial_analyst"]
@@ -290,7 +292,7 @@ async def test_planner_decision_team_from_llm_and_default() -> None:
         '{"decision_type": "hiring", "reversibility": "one_way", "tasks": ['
         '{"agent_type": "financial_analyst", "brief": "Runway after two SDR hires"},'
         '{"agent_type": "financial_analyst", "brief": "Monte Carlo of the hire"},'
-        '{"agent_type": "devils_advocate", "brief": "ignored: not registered"},'
+        '{"agent_type": "fortune_teller", "brief": "ignored: not registered"},'
         '{"agent_type": "librarian", "brief": "Past SDR decision"}]}'
     )
     p = await plan(
@@ -381,7 +383,7 @@ async def test_fan_out_respects_the_local_cap(finance: Any) -> None:
 
     orch = orchestrator(SlowFake([plan_reply]), finance, None, max_local=2)
     result = await orch.start("Should we expand?").task  # type: ignore[misc]
-    assert len(result.agents) == 4 and peak == 2
+    assert [a.type for a in result.agents] == ["financial_analyst"] * 4 + ["librarian"] and peak == 2
 
 
 async def test_team_approval_policy(finance: Any) -> None:

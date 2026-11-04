@@ -1,14 +1,16 @@
 """The agent graph (LangGraph) and the run manager.
 
     plan ──Send(instance)──▶ agent (N instances, in parallel, capped) ──▶ verify ──▶ advise ──▶ END
-      └──(no team: chitchat)──────────────────────────────────────────────▲
+      │                        ▲                                           │           ▲
+      │                        └───────────── next stage of the team ──────┘           │
+      └──(no team: chitchat)───────────────────────────────────────────────────────────┘
 
 - **plan**: the Planner picks the intent and the team; then the team-approval policy applies (`TEAM_APPROVAL`:
   `always` | `cloud_only` (default: only teams with a cloud agent wait for the founder) | `never`).
 - **agent**: one node per instance via LangGraph `Send`. Concurrency is capped by two semaphores shared by all
   runs (`MAX_LOCAL_AGENTS`=2, `MAX_CLOUD_AGENTS`=6); extra instances wait as `queued`. Each instance's answer is
   checked by the Verifier and sent back once (inside `AgentRunner`).
-- **verify**: joins the fan-out and records the team-level verdict.
+- **verify**: joins the fan-out, then sends the next stage of the team, which sees the earlier stages' findings.
 - **advise**: the Advisor streams the reply to the chat; its numbers are verified against all tool results.
 """
 
@@ -28,7 +30,9 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.agents.events import Artifact, Citation, EventBus
-from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, advise, plan, team_impact
+from app.agents.registry import REGISTRY
+from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, _team, advise, plan, team_impact
+from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
 from app.agents.verifier import verify_numbers
 from app.decision.base import DecisionService
@@ -85,6 +89,8 @@ class ChatResult(BaseModel):
     decision_impact: DecisionImpact | None = Field(
         default=None, description="What this decision does to costs and runway, computed in code"
     )
+    memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
+    est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     verified: bool
     issues: list[str]
     advisor_provider: str
@@ -106,6 +112,26 @@ class RunContext:
     task: asyncio.Task[ChatResult] | None = None
     result: ChatResult | None = None
     plan: Plan | None = None
+    plan_override: Plan | None = None
+    team_edit: TeamEdit | None = None
+    agent_tasks: dict[str, asyncio.Task[AgentResult]] = field(default_factory=dict)
+    stop_agents: set[str] = field(default_factory=set)
+    new_briefs: dict[str, str] = field(default_factory=dict)
+    context: Any = None  # the conversation lane's frozen run snapshot
+
+
+class TeamEdit(BaseModel):
+    """What the founder changed when approving a team (PRD F3: approve / edit briefs / add / remove)."""
+
+    briefs: dict[str, str] = Field(default_factory=dict, description="Agent id -> new brief")
+    remove: list[str] = Field(default_factory=list, description="Agent ids to leave out")
+    add: list[dict[str, str]] = Field(default_factory=list, description='Each {"type": ..., "brief": ...}')
+
+
+class RerunOutcome(BaseModel):
+    restarted: bool = Field(description="True: restarted inside the running team; false: a new run was started")
+    run_id: str
+    agent_id: str | None = None
 
 
 class AgentOrchestrator:
@@ -147,7 +173,7 @@ class AgentOrchestrator:
         g.add_edge(START, "plan")
         g.add_conditional_edges("plan", self._fan_out, ["agent", "advise"])
         g.add_edge("agent", "verify")
-        g.add_edge("verify", "advise")
+        g.add_conditional_edges("verify", self._next_stage, ["agent", "advise"])
         g.add_edge("advise", END)
         return g.compile()
 
@@ -159,7 +185,7 @@ class AgentOrchestrator:
     async def _plan_node(self, state: GraphState) -> dict[str, Any]:
         run = self.runs[state["run_id"]]
         started = time.perf_counter()
-        the_plan = await plan(state["message"], self.router, self.decisions)
+        the_plan = run.plan_override or await plan(state["message"], self.router, self.decisions)
         run.plan = the_plan
         run.timings["plan"] = _ms(started)
         team = [i.model_dump() for i in the_plan.team]
@@ -184,6 +210,9 @@ class AgentOrchestrator:
                 run.approved = False
                 run.approval.set()  # closed: /api/runs no longer shows it as waiting, and /approve returns 409
             run.timings["approval_wait"] = _ms(started) - run.timings["plan"]
+            if approved and run.team_edit is not None:
+                the_plan = self._edited(the_plan, run.team_edit)
+                run.plan = the_plan
         if not approved:
             self.bus.emit("team.rejected", run.run_id, reason="not approved")
             for inst in the_plan.team:
@@ -197,33 +226,81 @@ class AgentOrchestrator:
         run.timings["agents_start"] = time.perf_counter()
         return {"plan": the_plan, "approved": True}
 
+    def _edited(self, the_plan: Plan, edit: TeamEdit) -> Plan:
+        team = [
+            i.model_copy(update={"brief": edit.briefs.get(i.id, i.brief)})
+            for i in the_plan.team
+            if i.id not in edit.remove
+        ]
+        added = [(a["type"], a.get("brief", "")) for a in edit.add if a.get("type") in REGISTRY]
+        added = [(t, brief) for t, brief in added if REGISTRY[t].spawnable]
+        return the_plan.model_copy(update={"team": [*team, *_team(added, self.router)]})
+
     @staticmethod
-    def _fan_out(state: GraphState) -> list[Send] | str:
+    def _stage_of(state: GraphState, done: set[str]) -> list[Send]:
+        waiting = [i for i in state["plan"].team if i.id not in done]
+        if not waiting:
+            return []
+        stage = min(REGISTRY[i.type].stage for i in waiting)
+        return [Send("agent", {**state, "instance": i}) for i in waiting if REGISTRY[i.type].stage == stage]
+
+    def _fan_out(self, state: GraphState) -> list[Send] | str:
         if not state.get("approved") or not state["plan"].team:
             return "advise"
-        return [Send("agent", {**state, "instance": inst}) for inst in state["plan"].team]
+        return self._stage_of(state, set()) or "advise"
 
-    async def _agent_node(self, state: GraphState) -> dict[str, Any]:
-        inst = state["instance"]
+    def _next_stage(self, state: GraphState) -> list[Send] | str:
+        return self._stage_of(state, {r.agent_id for r in state.get("results", [])}) or "advise"
+
+    async def _in_a_slot(self, inst: AgentInstance, state: GraphState) -> AgentResult:
         slots = self.cloud_slots if inst.is_cloud else self.local_slots
         runner = AgentRunner(self.router, self.bus, state["run_id"], self.ctx_factory, self.max_steps)
         async with slots:
+            return await runner.run(inst, state["message"], state.get("results", []))
+
+    async def _agent_node(self, state: GraphState) -> dict[str, Any]:
+        """One instance, as its own task, so the founder can cancel or re-run it without touching the rest."""
+        run = self.runs[state["run_id"]]
+        inst = state["instance"]
+        while True:
+            task = asyncio.create_task(self._in_a_slot(inst, state))
+            run.agent_tasks[inst.id] = task
             try:
-                result = await runner.run(inst, state["message"])
+                result = await task
             except asyncio.CancelledError:
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():  # the whole run was cancelled
+                    task.cancel()
+                    self.bus.emit("agent.status", state["run_id"], inst.id, status="cancelled")
+                    raise
+                brief = run.new_briefs.pop(inst.id, None)
+                if brief is not None:
+                    inst = inst.model_copy(update={"brief": brief})
+                    self.bus.emit("agent.rerun", state["run_id"], inst.id, brief=brief)
+                    continue
+                run.stop_agents.discard(inst.id)
                 self.bus.emit("agent.status", state["run_id"], inst.id, status="cancelled")
-                raise
+                result = AgentResult(
+                    agent_id=inst.id,
+                    type=inst.type,
+                    name=inst.name,
+                    brief=inst.brief,
+                    status="cancelled",
+                    error="cancelled by the founder",
+                )
             except Exception as exc:  # one broken agent must not sink the team
                 logger.exception("Agent {} failed", inst.name)
                 result = AgentResult(
                     agent_id=inst.id, type=inst.type, name=inst.name, brief=inst.brief, status="failed", error=str(exc)
                 )
                 self.bus.emit("agent.done", state["run_id"], inst.id, status="failed", error=str(exc))
-        return {"results": [result]}
+            finally:
+                run.agent_tasks.pop(inst.id, None)
+            return {"results": [result]}
 
     async def _verify_node(self, state: GraphState) -> dict[str, Any]:
         run = self.runs[state["run_id"]]
-        started = run.timings.pop("agents_start", time.perf_counter())
+        started = run.timings.get("agents_start", time.perf_counter())
         run.timings["agents"] = _ms(started)
         return {}
 
@@ -254,8 +331,10 @@ class AgentOrchestrator:
         return {"answer": "".join(parts).strip(), "advisor": meta}
 
     # ---------------------------------------------------------------- runs
-    def start(self, message: str) -> RunContext:
-        run = RunContext(run_id=f"run_{uuid.uuid4().hex[:10]}", message=message)
+    def start(self, message: str, *, plan_override: Plan | None = None, context: Any = None) -> RunContext:
+        run = RunContext(
+            run_id=f"run_{uuid.uuid4().hex[:10]}", message=message, plan_override=plan_override, context=context
+        )
         self.runs[run.run_id] = run
         self._trim()
         run.task = asyncio.create_task(self._execute(run))
@@ -310,6 +389,7 @@ class AgentOrchestrator:
             citations.extend(c for c in r.citations if c not in citations)
         answer = state.get("answer", "")
         known = [n for r in results for n in r.numbers]
+        cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
         advisor_issues = [f"advisor number without lineage: {n}" for n in verify_numbers(answer, known, context)]
         advisor = state.get("advisor", {})
@@ -335,6 +415,8 @@ class AgentOrchestrator:
             citations=citations,
             past_decisions=past_decisions,
             decision_impact=team_impact(results),
+            memo=next((r.memo for r in results if r.memo is not None), None),
+            est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             verified=not issues and all(r.status == "done" for r in results),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
@@ -345,11 +427,12 @@ class AgentOrchestrator:
             status="done" if approved else "rejected",
         )
 
-    def approve(self, run_id: str, approved: bool = True) -> bool:
+    def approve(self, run_id: str, approved: bool = True, edit: TeamEdit | None = None) -> bool:
         run = self.runs.get(run_id)
         if run is None or run.approval.is_set():
             return False
         run.approved = approved
+        run.team_edit = edit
         run.approval.set()
         return True
 
@@ -360,10 +443,52 @@ class AgentOrchestrator:
         run.task.cancel()
         return True
 
+    def cancel_agent(self, run_id: str, agent_id: str) -> bool:
+        run = self.runs.get(run_id)
+        task = run.agent_tasks.get(agent_id) if run else None
+        if run is None or task is None or task.done():
+            return False
+        run.stop_agents.add(agent_id)
+        task.cancel()
+        return True
+
+    def rerun_agent(self, run_id: str, agent_id: str, brief: str | None = None) -> RerunOutcome | None:
+        """Running instance: restart it with the new brief. Finished run: a new run with this brief edited.
+
+        None when the run or the agent is unknown, or when the agent is done but its team is still working (its
+        findings have already gone to the next stage, so re-running it alone would leave the rest out of date).
+        """
+        run = self.runs.get(run_id)
+        if run is None or run.plan is None:
+            return None
+        inst = next((i for i in run.plan.team if i.id == agent_id), None)
+        if inst is None:
+            return None
+        new_brief = (brief or inst.brief).strip()
+        task = run.agent_tasks.get(agent_id)
+        if task is not None and not task.done():
+            run.new_briefs[agent_id] = new_brief
+            task.cancel()
+            return RerunOutcome(restarted=True, run_id=run_id, agent_id=agent_id)
+        if run.task is not None and not run.task.done():
+            return None
+        team = [
+            i.model_copy(update={"id": _new_agent_id(), "brief": new_brief if i.id == agent_id else i.brief})
+            for i in run.plan.team
+        ]
+        return RerunOutcome(
+            restarted=False,
+            run_id=self.start(run.message, plan_override=run.plan.model_copy(update={"team": team})).run_id,
+        )
+
     def _trim(self, keep: int = 100) -> None:
         finished = [rid for rid, r in self.runs.items() if r.task is not None and r.task.done()]
         for rid in finished[: max(0, len(self.runs) - keep)]:
             self.runs.pop(rid, None)
+
+
+def _new_agent_id() -> str:
+    return f"agt_{uuid.uuid4().hex[:8]}"
 
 
 def _ms(started: float) -> float:

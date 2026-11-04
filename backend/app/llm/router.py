@@ -78,18 +78,17 @@ class LLMRouter:
         failed_from: str | None = None,
         error: str | None = None,
     ) -> None:
-        if completion is not None:
-            completion.fallback_from = failed_from or completion.fallback_from
-        if self.ledger is None:
-            return
         usage = completion.usage if completion is not None else None
         cost = None
         if not provider.is_cloud:
             cost = 0.0
-        elif usage is not None:
+        elif usage is not None and self.ledger is not None:
             cost = self.ledger.estimate(provider.model, usage)
         if completion is not None:
+            completion.fallback_from = failed_from or completion.fallback_from
             completion.est_cost_usd = cost
+        if self.ledger is None:
+            return
         self.ledger.record(
             CallRecord(
                 agent_type=agent_type,
