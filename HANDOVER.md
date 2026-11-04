@@ -55,7 +55,7 @@
 | M0 Scaffold | [Sree1959GIT/Founder-OS#2](https://github.com/Sree1959GIT/Founder-OS/pull/2) | Light | ACCEPTED (merged) |
 | M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | ACCEPTED (SM, 2026-11-03) after re-test R1–R8 on Windows; fix in #4 |
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
-| M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium | AWAITING FOUNDER (re-test) |
+| M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 
 ## Current session
 - Started (UTC): 2026-11-04 (second local bug-fix session for the M3a gate, time-box 1 hour), branch `claude/m3a-agents`, PR #6
@@ -508,6 +508,12 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+
+### [M3a → M3b] Small items found in the M3a re-test (not blocking)
+- Live eval `journal` question passes 4/4 when run alone (`--only journal`) but failed in 2 of 3 full `--live` runs (did not cite journal/2026-10-28.md). Likely an order or state effect between questions; investigate and make the full run pass reliably.
+- Advisor wording: says "The founder has already committed..." instead of "You have..."; mixes "$11,423.62" and "11,423.62 USD" in one answer. Use second person and one money format.
+- Windows PowerShell 5.1 shows curly apostrophes as "â€™" (display only; check the API sends `charset=utf-8`).
+- Priority: low
 ### [M3a] Verifier passes a correct number with the wrong meaning
 - Did: RT6 "Should we hire a designer?".
 - Got: "The financial impact of hiring a designer would be a monthly cost of $308,437.67, reducing runway by that amount." and verified = True. Wrong twice: $308,437.67 is not a designer's cost (it is some other tool figure), and runway is in months, not dollars.
