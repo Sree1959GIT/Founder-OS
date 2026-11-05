@@ -40,7 +40,9 @@ _DATE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 _COMPARE = re.compile(r"(>=|<=|>|<)\s*\$?\d|\d")
 _NOT_YOU = re.compile(r"\b(?:we|We|us|our|Our)\b")
 _CONTRADICTS = re.compile(r"\baligns? with\b[^.\n]*\bgoal|\bassumptions are confirmed\b", re.I)
-_ALIGNS = re.compile(r"\b(?:aligns?|aligned|in line|supports?|within reach|on track)\b[^.\n]*\bgoal|\bgoal\b[^.\n]*\bwithin reach", re.I)
+_ALIGNS = re.compile(
+    r"\b(?:aligns?|aligned|in line|supports?|within reach|on track)\b[^.\n]*\bgoal|\bgoal\b[^.\n]*\bwithin reach", re.I
+)
 _DECIDED_TO_DECIDE = re.compile(r"\bdecided to [\"\u201c']?decide\b", re.I)
 _THIRD_PERSON = re.compile(r"\bthe founder\b|\blegal team\b|\btax team\b", re.I)
 _ONE_HIRE = re.compile(r"\b(1|one|a single) hire\b|not a quote for this role|\bper hire\b", re.I)
@@ -151,7 +153,11 @@ def check_decision(
     moves_away = bool(case.goal_moves_away)
     chosen_gives_back = bool(reply.get("decision_frame")) and _gives_back(reply, str(memo_ref.get("chosen", "")))
     if moves_away and not chosen_gives_back:
-        for name, text in (("Decision", _section(memo, "Decision")), ("Context", _section(memo, "Context")), ("answer", answer)):
+        for name, text in (
+            ("Decision", _section(memo, "Decision")),
+            ("Context", _section(memo, "Context")),
+            ("answer", answer),
+        ):
             if _ALIGNS.search(_without_goals(text, case.goal_moves_away)):
                 problems.append(f"the {name} says it helps a goal the goal check says it moves away from")
     if _DECIDED_TO_DECIDE.search(memo + " " + answer):
@@ -262,7 +268,9 @@ def _sloppy(messages: list[Any], tools: Any, schema: Any) -> str:
             "Mitigation: use the vault for market data."
         )
     if "Advisor" in system or "advisor" in system:
-        return "The founder has already decided this. It aligns with your goal of extending runway. It needs the Tax Team."
+        return (
+            "The founder has already decided this. It aligns with your goal of extending runway. It needs the Tax Team."
+        )
     return "The founder has already decided this. It needs the Tax Team."
 
 

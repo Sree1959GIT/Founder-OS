@@ -904,7 +904,12 @@ def test_what_is_true_about_a_goal_is_left_alone(ctx: ToolContext) -> None:
 
 def test_an_option_that_gives_runway_back_may_help_the_goal(ctx: ToolContext) -> None:
     frame = build_frame("Should we raise our prices by 10%?", ctx)
-    assert goal_contradiction("This keeps you on track for your goal of bringing logo churn down.", frame, "No price change") is None
+    assert (
+        goal_contradiction(
+            "This keeps you on track for your goal of bringing logo churn down.", frame, "No price change"
+        )
+        is None
+    )
 
 
 def test_the_memo_drops_the_contradiction_and_the_answer_replaces_it(ctx: ToolContext) -> None:

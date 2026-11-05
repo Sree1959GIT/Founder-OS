@@ -697,10 +697,10 @@ def _option(
 
 
 _TRADE_OFFS = {
-    "Travel-led pilot": "you learn more slowly from trips than from a local presence, so it is slower to win customers.",
+    "Travel-led pilot": "you learn more slowly from trips than from a local presence, and win customers later.",
     "One remote rep": "one person is a key-person risk, and hiring takes time before you learn anything.",
-    "Partner or distributor": "a partner keeps the customer relationship and a share, so you have less control of price "
-    "and learn less about demand.",
+    "Partner or distributor": "a partner keeps the customer relationship and a share, so you have less control of "
+    "price and learn less about demand.",
     "Free-zone desk": "it adds a licence and a local hire, which take more commitment and are harder to undo.",
     "Full office": "it is the slowest to set up and the hardest to undo.",
     "No price change": "it teaches you nothing about what customers would pay.",

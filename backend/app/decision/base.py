@@ -5,8 +5,8 @@ numbers. `DecisionService` wraps a provider: it logs every decision to `data/<ws
 fine-tuning set for Laya in M3c) and escalates to a fallback provider (the LLM) when the probability is below
 `DECISION_MIN_CONFIDENCE`.
 
-Implementations: `LLMDecisionProvider` (JSON-schema output on the local LLM, the default) and `FakeDecisionProvider`
-(tests). `LayaProvider` and `JevProvider` arrive in M3c.
+Implementations: `LLMDecisionProvider` (JSON-schema output on the local LLM, the default), `FakeDecisionProvider`
+(tests), and `laya.LayaProvider` and `jev.JevProvider` (optional, chosen by `DECISION_PROVIDER` after the bake-off).
 """
 
 from __future__ import annotations

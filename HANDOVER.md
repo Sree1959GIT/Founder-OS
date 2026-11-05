@@ -5,7 +5,7 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3c: Decision models (Laya / Jev)**, after the founder re-tests M3b (steps RD1–RD10; PR #7 open, branch `claude/m3b-specialists`). M0, M1, M2 and M3a are ACCEPTED and merged.
+- **Next milestone:** **M3c: Decision models (Laya / Jev)**, in progress on branch `claude/m3c-decision-models`. M0, M1, M2, M3a and M3b are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-05 (M3b fix session wrap-up)
 
@@ -16,8 +16,8 @@
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
-| M3b | Specialist agents | DONE (PR #7 open, Medium gate: founder re-test after fixes) | Plus the cloud layer and the conversation lane backend |
-| M3c | Decision models (Laya / Jev) | NOT STARTED | |
+| M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
+| M3c | Decision models (Laya / Jev) | IN PROGRESS | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
@@ -59,6 +59,18 @@
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 
 ## Current session
+- Started (UTC): 2026-11-05 14:12 (local Windows session, time-box 2 hours), branch `claude/m3c-decision-models`, target **M3c** (gate tier: **Light**)
+- Plan, in the founder's priority order (an "M3c (partial)" PR is fine if time runs out):
+  - [x] Tidy the stale "Next milestone" and M3b table lines
+  - [x] (1) Words never contradict the goal check; a cheaper option not proposed states a reason; off-brief wording; offline and live eval cases
+  - [x] (2) Privacy filter pseudonymises customer and person names before any cloud use
+  - [x] (3) 58 labelled questions; offline prompt tuning script; versioned prompts
+  - [x] (4) `LayaProvider`, `JevProvider`, bake-off harness with 212 routing examples, confidence fallback, Laya fine-tune script
+  - [x] (5) Provider bake-off harness
+  - [x] (6) Embedding bake-off (EmbeddingGemma vs nomic-embed-text), licence point
+  - [ ] Read the tuning and provider results; PRD §12 proposals; Windows checklist; self-review; PR; CI green
+
+Previous session (2026-11-05, M3b gate fixes):
 - Started (UTC): 2026-11-05 10:56 (local Windows bug-fix session for the M3b gate, time-box 2 hours), branch `claude/m3b-specialists`, PR #7
 - Plan:
   - [x] Record the founder feedback first

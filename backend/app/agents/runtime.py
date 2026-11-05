@@ -88,17 +88,24 @@ _KNOWLEDGE_CUES = re.compile(r"\b(notes?|vault|journal|documents?|wrote|board up
 # Naming the notes says where to look, whatever the topic: "What do my notes say about churn?" is not a metric.
 _ASKS_THE_NOTES = re.compile(
     r"\b((my|our|the) (notes?|journal|vault|documents?|board update|memo)|what (did|have) (we|i) (decide|decided)|"
-    r"past decisions?)\b",
+    r"past decisions?|company profile)\b",
     re.I,
 )
 _ASKS_TO_DECIDE = re.compile(r"\b(should|shall) (we|i)\b", re.I)
-_ASKS_WHAT_WAS_DECIDED = re.compile(r"\b(what (did|have) (we|i) (decide|decided)|past decisions?)\b", re.I)
+_ASKS_WHAT_WAS_DECIDED = re.compile(
+    r"\b(what (did|have) (we|i) (decide|decided)|did (we|i) (already )?(decide|agree)|have (we|i) (already )?decided|"
+    r"past decisions?|review date)\b",
+    re.I,
+)
 _SAYS_NOTHING_FOUND = re.compile(
     r"\b(nothing|no (relevant|information|notes?|mention|details?|sources?)|not (found|mentioned|covered)|"
     r"(do|does|did) not (say|mention|cover|contain))\b",
     re.I,
 )
-_CHITCHAT = re.compile(r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening))\b[\s!.?]*$", re.I)
+_CHITCHAT = re.compile(
+    r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening))\b(\s+(there|team|all|everyone))?[\s!.?]*$",
+    re.I,
+)
 
 KILL_CRITERIA_OVERLAP = 0.6
 
@@ -794,7 +801,7 @@ class AgentRunner:
                 )
                 c = outcome.content
                 result.text = (
-                    f"{c['label']}: {_fmt(c['value'], c['unit'])} as of {c['as_of']}."
+                    f"{c['label']}: {_fmt(c['value'], c['unit'], metric)} as of {c['as_of']}."
                     if not outcome.error
                     else f"Could not compute {metric}: {outcome.error}"
                 )
@@ -1053,13 +1060,14 @@ def _keep_used_sources(result: AgentResult) -> None:
     result.artifacts = [a for a in result.artifacts if a.kind != "citation" or any(c.path in used for c in a.citations)]
 
 
-def _fmt(value: Any, unit: str) -> str:
+def _fmt(value: Any, unit: str, metric: str = "") -> str:
     if value is None:
         return "n/a"
     if unit == "months":
         return f"{value} months"
     if unit in ("ratio",):
-        return f"{value}"
+        # LTV:CAC is a multiple. The other ratios read as a share: "72.13 %", not "0.7213".
+        return f"{value}" if metric == "ltv_cac" else f"{float(value) * 100:.2f} %"
     if unit == "percent":
         return f"{value} %"
     if unit == "count":
@@ -1189,6 +1197,9 @@ def advisor_memo_note(answer: str, results: list[AgentResult], frame: DecisionFr
     return f"{proposes} It is at {memo.path}, for review on {memo.review_date}."
 
 
+_SAYS_AWAY = re.compile(r"\b(away|against|further from|short of|hurts?|conflicts?)\b", re.I)
+
+
 def advisor_frame_note(answer: str, frame: DecisionFrame | None) -> str:
     """The cost of a decision that is not a hire, and what it does to the goals: said plainly by code."""
     if frame is None:
@@ -1201,9 +1212,16 @@ def advisor_frame_note(answer: str, frame: DecisionFrame | None) -> str:
             notes.append(frame.cost_sentence())
         elif model is not None and model.assumption_count and "assum" not in answer.lower():
             notes.append("Those costs are assumptions: confirm them.")
+    moving_away = {g.goal for g in frame.goals if g.status == "moves_away"}
     for sentence in frame.goal_sentences():
         goal = sentence[sentence.find('"') + 1 : sentence.rfind('"')]
-        if goal and not names_goal(goal, answer):
+        # Quoting the goal is not telling the founder this moves away from it. Seen in a rule answer's vault passage.
+        told = (
+            any(names_goal(goal, s) and _SAYS_AWAY.search(s) for s in split_sentences(answer))
+            if goal in moving_away
+            else names_goal(goal, answer)
+        )
+        if goal and not told:
             notes.append(sentence)
     return "".join(f" {note}" for note in notes if note)
 

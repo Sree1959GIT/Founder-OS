@@ -44,7 +44,12 @@ _CUES: list[tuple[str, re.Pattern[str]]] = [
         re.compile(r"\b(regulat\w*|tax\w*|legal|complian\w*|licen[cs]\w*|open\w* (an?|our) .*(office|branch))\b", re.I),
     ),
     ("revenue_customer", re.compile(r"\b(pricing|price|prices|churn|pipeline|segments?|upsell|discounts?)\b", re.I)),
-    ("people_ops", re.compile(r"\b(capacity|key[- ]person|execution plan|team structure|org chart|reorg\w*)\b", re.I)),
+    (
+        "people_ops",
+        re.compile(
+            r"\b(capacity|key[- ]person|execution plan|team structure|org chart|reorg\w*|who would own)\b", re.I
+        ),
+    ),
     ("prioritiser", re.compile(r"\b(prioriti[sz]\w*|rank|which of|score these|2x2)\b", re.I)),
     (
         "perspective_lens",
@@ -480,7 +485,7 @@ def _why_not(name: str, chosen: str, frame: DecisionFrame | None) -> str:
     if _costs_no_more(name, chosen, frame):
         return (
             f"Takes no more runway than {chosen} ({this.runway_change_months:+.2f} against "
-            f"{proposed.runway_change_months:+.2f} months), but {trade_off or 'it teaches you less about the decision.'}"
+            f"{proposed.runway_change_months:+.2f} months), but {trade_off or 'it teaches you less.'}"
         )
     if this.modelled and proposed.modelled:
         return (

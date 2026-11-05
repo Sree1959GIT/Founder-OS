@@ -88,11 +88,11 @@ def _backed_by_a_record(sentence: str, records: Iterable[DecisionRecord]) -> boo
     return any(words & set(bm25_tokens(f"{r.title} {r.decision}")) for r in decided)
 
 
-_QUOTED = re.compile(r"[\"“'‘][^\"”’]{3,}[\"”'’]")
+_QUOTED = re.compile(r"[\"\u201c\u2018][^\"\u201d\u2019]{3,}[\"\u201d\u2019]")
 
 
 def unbacked_decision_claim(sentence: str, records: Iterable[DecisionRecord]) -> bool:
-    # The words of a quoted goal say nothing about the claim. Seen live: 'You have already decided to "Decide whether..."'.
+    # A quoted goal's words say nothing about the claim. Seen live: 'You have already decided to "Decide whether..."'.
     outside_quotes = _QUOTED.sub(" ", sentence)
     return (
         _CLAIMS_DECIDED.search(sentence) is not None
@@ -101,7 +101,7 @@ def unbacked_decision_claim(sentence: str, records: Iterable[DecisionRecord]) ->
     )
 
 
-# --- the words never contradict the goal check -------------------------------------------------------------------------
+# --- the words never contradict the goal check -----------------------------------------------------------------------
 _HELPS = re.compile(
     r"\b(?:aligns?|aligned|aligning|alignment|supports?|supporting|advances?|furthers?|serves?|meets?|achieves?|"
     r"helps?|consistent|in line|fits?|compatible|moves? (?:you )?(?:toward|towards|closer)|"
@@ -120,7 +120,7 @@ _RUNWAY_CLAIM = re.compile(
 )
 _CHURN_CLAIM = re.compile(r"\b(?:reduces?|lowers?|cuts?|improves?|brings? down)\b[^.!?]{0,30}\bchurn\b", re.I)
 _NEGATED_BEFORE = re.compile(
-    r"(?:\bnot\b|\bnever\b|\bcannot\b|n['’]t\b|\bno longer\b|\bfails? to\b|\bunlikely to\b|\bhard to\b|"
+    r"(?:\bnot\b|\bnever\b|\bcannot\b|n['\u2019]t\b|\bno longer\b|\bfails? to\b|\bunlikely to\b|\bhard to\b|"
     r"\bwithout\b|\bnor\b)[^.!?]{0,25}$",
     re.I,
 )
@@ -157,7 +157,10 @@ def goal_contradiction(sentence: str, frame: DecisionFrame | None, chosen: str =
         if status not in ("moves_away", "moves_towards"):
             continue
         text = re.sub(re.escape(goal.goal), " the goal ", sentence, flags=re.I)
-        names_it = re.search(r"\bgoals?\b", text, re.I) is not None or names_goal(goal.goal, sentence)
+        # A sentence naming another goal says nothing about this one: a rise can help one goal and hurt another.
+        other = any(g.goal != goal.goal and names_goal(g.goal, sentence) for g in frame.goals)
+        named = names_goal(goal.goal, sentence)
+        names_it = named or (re.search(r"\bgoals?\b", text, re.I) is not None and not other)
         conditional = _ONLY_IF.search(text) is not None
         if status == "moves_towards":
             if names_it and not conditional and _claims_with(_HURTS, text):
@@ -259,8 +262,24 @@ _ASKED_ABOUT_HIRING = re.compile(r"\b(hir\w*|recruit\w*|headcount|sdrs?|layoffs?
 # Seen live: People & Ops said "stop non-essential travel" with a travel-led pilot on the table.
 _STOP_VERB = r"\b(?:stop|cut|pause|avoid|freeze|halt|cease|drop|ban)\b(?:\s+[a-z-]+){0,2}?\s+"
 _OPTION_NOISE = frozenset(
-    {*("full", "pilot", "first", "then", "review", "only", "change", "amount", "test", "half", "price", "prices"),
-     *("hire", "hires", "one", "the", "now", "not", "new", "customers", "line", "product", "local", "office", "desk")}
+    {
+        *("full", "pilot", "first", "then", "review", "only", "change", "amount", "test", "half", "price", "prices"),
+        *(
+            "hire",
+            "hires",
+            "one",
+            "the",
+            "now",
+            "not",
+            "new",
+            "customers",
+            "line",
+            "product",
+            "local",
+            "office",
+            "desk",
+        ),
+    }
 )
 # Seen live: the Devil's Advocate sent the founder to the vault for market data the Scout had just said is not there.
 _VAULT_FOR_MARKET = re.compile(
@@ -294,7 +313,7 @@ def _covers_only_the_full_option(text: str, frame: DecisionFrame | None) -> bool
 
 def smaller_options_note(frame: DecisionFrame) -> str:
     return (
-        f"These points are for the full office. A smaller option, such as {frame.default_option}, may need fewer of them: "
+        f"These points are for the full office. A smaller option, such as {frame.default_option}, may need fewer: "
         "check with your adviser which still apply."
     )
 
