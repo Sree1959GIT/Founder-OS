@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3c: Decision models (Laya / Jev)**, in progress on branch `claude/m3c-decision-models`. M0, M1, M2, M3a and M3b are ACCEPTED and merged.
+- **Next milestone:** **M4: Canvas UI**, after the founder reviews M3c (PR open, branch `claude/m3c-decision-models`, checklist C1–C10) and decides proposals P1–P7 in PRD §12. M0, M1, M2, M3a and M3b are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-05 (M3b fix session wrap-up)
+- **Last updated:** 2026-11-05 (M3c wrap-up)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -17,7 +17,7 @@
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
-| M3c | Decision models (Laya / Jev) | IN PROGRESS | |
+| M3c | Decision models (Laya / Jev) | DONE (PR open, Light gate: founder review) | Laya and Jev built against their documented APIs and tested with fakes, not measured |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
@@ -68,7 +68,7 @@
   - [x] (4) `LayaProvider`, `JevProvider`, bake-off harness with 212 routing examples, confidence fallback, Laya fine-tune script
   - [x] (5) Provider bake-off harness
   - [x] (6) Embedding bake-off (EmbeddingGemma vs nomic-embed-text), licence point
-  - [ ] Read the tuning and provider results; PRD §12 proposals; Windows checklist; self-review; PR; CI green
+  - [x] Read the tuning and provider results; PRD §12 proposals; Windows checklist; self-review; PR; CI green
 
 Previous session (2026-11-05, M3b gate fixes):
 - Started (UTC): 2026-11-05 10:56 (local Windows bug-fix session for the M3b gate, time-box 2 hours), branch `claude/m3b-specialists`, PR #7
@@ -143,8 +143,54 @@ Previous session (M3a):
 - **No real cloud call was made in this session either.** The cloud rows of the provider bake-off are yours to run.
 - A person's name that is in no source is only caught after a title ("Dr", "Mr"). The goal check and role checks are word patterns: they can miss a rephrased claim.
 - All measurements are one run on a small sample vault, so a difference of a few points is noise.
+- **Wording from the live Dubai run on the final code (C4), not fixed:** People & Ops opened with "You are you." and spoke of opening the office, though a pilot was proposed (it runs the live v1 prompt: see P5). Its "You would stop focusing on the Travel-led pilot" and Regulatory's "Ensure the decision aligns with the goal" are still weak. No figure or goal status was wrong.
+- A proposed memo already on record reads "decided 2026-11-05; status proposed" in the answer's record line, because the record uses the memo's date as `decided`. It came from earlier memos in the test vault, and the status beside it is right. Fix in the next session.
+- The live labelled set ran only partly (Dubai and the price rise through `eval_agents --live`, both PASS). I stopped the rest to stay in the time-box; the offline set is 58/58.
 - There is no cash metric, so "how much cash do we have" gets the rules' metrics summary instead of one figure.
+- Jev's spend is not counted against `CLOUD_MONTHLY_CAP_USD`, and its calls are not in `llm_calls.jsonl`; the decision log records them. At its price the amounts are tiny, but the cap does not cover them.
+- A customer whose short name is an ordinary word ("Summit Foods") is only hidden in full. A person's short form is hidden only as written, so "priya" in lower case gets through.
 - This session pulled `embeddinggemma` (about 0.6 GB) into your `ollama` container for the bake-off. Remove it with `docker exec ollama ollama rm embeddinggemma` if you do not want it. Bake-off models can evict n8n's models from the GPU; those reload on their next use.
+
+**Bake-off results (one run, your PC, sample data, 2026-11-05). Proposals P1–P7 are in PRD §12.**
+
+Decision models, on the 74 held-out routing examples (the single-model rows ran with `num_ctx` 2048; the real-path row and the script now use the app's 8192):
+| Provider | Intent (35) | Team (18) | Turn (21) | p50 |
+|---|---|---|---|---|
+| Rules, when they answer | 95.8 % of 69 % | 100 % of 44 % | 100 % of 76 % | 0 ms |
+| **Rules first, then `qwen3:8b` (the app's real path)** | **94.3 %** | **100 %** | **85.7 %** | 0 ms when rules answer, up to 5.9 s (p95) |
+| `qwen3:8b` alone | 94.3 % | 100 % | 52.4 % | 3.5–3.7 s |
+| `phi4-mini` | 91.4 % | 94.4 % | 57.1 % | 4.7–5.5 s |
+| `mistral` | 77.1 % | 50.0 % | 57.1 % | 3.0–3.1 s |
+| Laya, Jev | not measured | not measured | not measured | |
+
+Calibration: `qwen3:8b` is well calibrated on intent (ECE 0.007) and team (0.050), and badly on turn (0.429): its confidence does not warn you there.
+
+Agents per model (`passed/3`, mean seconds). Local cost is $0, and no cloud model was run:
+| Agent | `qwen3:8b` | `phi4-mini` | `mistral` |
+|---|---|---|---|
+| Financial Analyst | 3/3, 7.8 | 3/3, 4.6 | 2/3, 8.9 |
+| Librarian | 3/3, 4.3 | 3/3, 6.1 | 3/3, 11.3 |
+| People & Ops (live prompt v1) | 0/3, 13.6 | 0/3, 7.5 | 0/3, 25.8 |
+| Regulatory & Tax | 2/3, 8.8 | 1/3, 8.6 | 2/3, 19.7 |
+| Devil's Advocate | 2/3, 12.3 | 0/3, 106.2 | 1/3, 15.9 |
+
+Conversation lane (5 replies): `qwen3:8b` 5 good, 5 in time, p50 2.92 s. `mistral` 5 good, 5 in time, 3.20 s. `phi4-mini` 4 good, 2 in time, 4.02 s.
+
+Prompt tuning on `qwen3:8b`:
+| Agent | v1 (live) | v2 | v3 | Best |
+|---|---|---|---|---|
+| People & Ops | 0/5 | **5/5** | 2/5 | v2 (not applied: P5) |
+| Devil's Advocate | 5/5 | 1/5 | 5/5 | v1 |
+| Regulatory & Tax | 4/4 | 3/4 | 4/4 | v1 |
+| Librarian | 3/3 | 3/3 | | v1 |
+
+Embeddings, on 36 labelled queries (MRR, recall@3):
+| Model | Hybrid (what the app uses) | Dense only | Query ms | VRAM GB | Licence |
+|---|---|---|---|---|---|
+| `nomic-embed-text` | 0.940, 100 % | 0.887, 94 % | 1796 | 0.30 | Apache-2.0 |
+| `embeddinggemma` | 0.940, 100 % | 0.938, 97 % | 2575 | 0.63 | Gemma Terms |
+| `mxbai-embed-large` | 0.944, 94 % | 0.900, 97 % | 1973 | 0.58 | not checked |
+| `nomic-embed-text-v2-moe` | 0.938, 97 % | 0.912, 100 % | 3351 | 0.55 | not checked |
 
 ### Decision frame (fix after the founder's M3b review, 2026-11-05)
 **What you can do now**
@@ -450,15 +496,45 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M3c session)
-0. **Gate check:** M3b is a **Medium** gate. The founder runs re-test steps RD1–RD10 below, tries a decision by hand and merges PR #7. Act on any "Founder feedback" first.
-1. M3c (PRD §8): `LayaProvider`, `JevProvider`, the bake-off harness and labelled set, and the Laya fine-tuning script. The turn classifier (`kind="turn"` in the decision log) is new labelled data.
-2. The bake-off also compares cloud providers on **accuracy, latency and cost per answer** (founder decision, PRD §12). `llm_calls.jsonl` already holds latency and cost per call; `scripts/eval_vault.py` and `scripts/eval_agents.py` supply the questions.
-3. The **EmbeddingGemma vs `nomic-embed-text` comparison**, deferred from M3a: retrieval quality on the sample vault plus a labelled query set, latency and VRAM. Collection names include the embedding model, so switching re-embeds cleanly.
-4. M4 builds the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
-5. Smaller ideas: a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
+## Next steps (for the M4 session)
+0. **Gate check:** M3c is a **Light** gate. The founder runs C1–C10 as far as wanted, decides P1–P7 in PRD §12 and merges the PR. Act on any "Founder feedback" first.
+1. Apply what the founder approves: `DECISION_PROVIDER`, `FAST_LANE_MODEL`, the People & Ops prompt. Each is one setting or one command.
+2. M4 (PRD §8): the canvas UI, including the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
+3. Smaller ideas: count Jev in the cost ledger; a cash metric; a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
+**M3c (Light gate). Run C1–C4 (about 10 min), then whichever bake-offs you want to decide on.** C2, C4, the real-path rows of C5 and the C8 dry-run (from the main `.venv`) ran in Windows PowerShell 5.1 here, against a test backend on port 8011 with scratch data. The full bake-offs behind C5, C6, C7 and C10 ran from Git Bash, so their PowerShell filters ran here only on smaller output. C8's training and C9 never ran. From `D:\Founder-OS`. Each check prints a summary line to compare with **Expected**. Bake-offs use a private copy of the sample data and change no default. Bake-offs with several models push `qwen3:8b` out of the GPU, and it reloads when next used (about 3 minutes).
+
+- **C1. Get the code.** `git fetch origin; git checkout claude/m3c-decision-models; git pull origin claude/m3c-decision-models; $env:PYTHONIOENCODING = 'utf-8'`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
+- **C2. Offline: no Ollama needed.**
+  `.\.venv\Scripts\python.exe scripts\eval_labelled.py | Select-Object -Last 1; .\.venv\Scripts\python.exe scripts\eval_agents.py | Select-Object -Last 1; .\.venv\Scripts\python.exe scripts\eval_vault.py | Select-Object -Last 1; Set-Location backend; ..\.venv\Scripts\python.exe -m pytest -q 2>$null | Select-Object -Last 1; Set-Location ..`
+  Expected: `OFFLINE LABELLED EVAL: 58/58 passed`, `OFFLINE AGENT EVAL: 24/24 passed`, `OFFLINE EVAL: 18/18 passed`, `883 passed` (with a time).
+- **C3. Names are hidden before any cloud call (fakes, no cloud).**
+  `Set-Location backend; ..\.venv\Scripts\python.exe -m pytest tests\test_cloud_layer.py -q -k "name or thousandth" 2>$null | Select-Object -Last 1; Set-Location ..`
+  Expected: `N passed` with no failures (N = 10).
+- **C4. The Dubai decision: the words agree with the goal check (about 3 minutes; deletes its own memo).**
+  `$b = 'http://127.0.0.1:8000'; function Ask($q) { Invoke-RestMethod -Method Post -Uri "$b/api/chat" -ContentType 'application/json' -Body (@{ message = $q; stream = $false } | ConvertTo-Json) -TimeoutSec 1200 }`
+  `$r = Ask 'Should we open a Dubai office? Write a decision memo.'; $m = (Invoke-RestMethod "$b/api/vault/notes/$($r.memo.path)").content; $d = (($m -split '## Decision')[1] -split '## Context')[0]; $rej = (($m -split '## Rejected alternatives')[1] -split '## Assumptions')[0]; $claim = '(?i)\b(aligns? with|supports?|helps?|on track)\b[^.]*\bgoal'`
+  `"C4 type $($r.decision_frame.type) | moving away $(@($r.decision_frame.goals | Where-Object { $_.status -eq 'moves_away' }).Count) | decision claims it helps $($d -match $claim) | answer claims it helps $($r.answer -match $claim) | no reason given $($rej -match 'Not proposed, though') | status $($r.memo.status)"`
+  `"C4 proposed: $($r.memo.chosen)"; "C4 rejected: $($rej.Trim())"; Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($r.memo.path)" | Out-Null`
+  Expected: `C4 type new_office | moving away 1 | decision claims it helps False | answer claims it helps False | no reason given False | status proposed`, then the proposed option (live here: `Travel-led pilot`), then the rejected options. Read the rejected lines: every cheaper option gives a reason.
+- **C5. Decision models table (about 8 minutes).** `.\.venv\Scripts\python.exe scripts\eval_decision_models.py --llm qwen3:8b,phi4-mini:latest | Where-Object { $_ -notmatch '^\.\.\.' }`
+  Expected: an aligned table ending in a `READING:` line. Compare with the table under "Bake-off results": `rules` rows exactly as there; model rows within a few points. The `rules+llm:qwen3:8b` rows are the path the app really takes. Decides P1 and P2.
+- **C6. Models per agent, and the lane (about 15 minutes).** `.\.venv\Scripts\python.exe scripts\bakeoff_providers.py --models qwen3:8b,phi4-mini:latest | Where-Object { $_ -notmatch ' (PASS|FAIL)|lane:' }`
+  Expected: two tables, what your app really used from `llm_calls.jsonl`, and a `PROPOSED DEFAULTS` list. Decides P3 and P4. Cloud rows: add `--cloud gemini:<model>` once a key is in `.env` (paid; names are hidden and local-only agents are skipped).
+- **C7. Embeddings (about 3 minutes).** `.\.venv\Scripts\python.exe scripts\bakeoff_embeddings.py --models nomic-embed-text,embeddinggemma | Where-Object { $_ -notmatch '^\.\.\.' }`
+  Expected: a table with both models at about 0.94 hybrid MRR, a real chunk count in the note (the run recorded above showed 0 by a bug, since fixed), and `READING: No model beats ollama:nomic-embed-text ...`. Decides P6, with the licence point P7.
+- **C8. Laya (optional, large download: PyTorch plus about 1 GB of weights). Never run here.**
+  `py -3.11 -m venv .venv-laya; .\.venv-laya\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu124; .\.venv-laya\Scripts\python.exe -m pip install laya; .\.venv-laya\Scripts\python.exe -m pip install -e backend`
+  `.\.venv-laya\Scripts\python.exe scripts\finetune_laya.py --dry-run` Expected: `TRAINING FILE: ...laya-founderos-train.jsonl (138 examples)` or more, a `GPU FREE` line, `DRY RUN: nothing trained.`
+  `docker exec ollama ollama stop qwen3:8b; .\.venv-laya\Scripts\python.exe scripts\finetune_laya.py` (1 to 2 hours; n8n's models can squeeze it). Expected: `DONE: ...models\laya-founderos`.
+  `.\.venv-laya\Scripts\python.exe scripts\eval_decision_models.py --laya models\laya-founderos --llm qwen3:8b | Where-Object { $_ -notmatch '^\.\.\.' }` Expected: `laya:` and `laya:...+llm` rows beside `llm:qwen3:8b`, with latency in tens of milliseconds. **This run tests my code against the real package for the first time, so an API mismatch here would be a bug for the next session.** Decides P1.
+- **C9. Jev (optional, paid, about $0.001 per run). Never run here.** With a key from TypeSafe AI, for this window only: `$env:JEV_API_KEY = '<your key>'; .\.venv\Scripts\python.exe scripts\eval_decision_models.py --jev --llm qwen3:8b | Where-Object { $_ -notmatch '^\.\.\.' }; Remove-Item Env:JEV_API_KEY`
+  Expected: `jev` rows and a `Jev cost:` line. Only the question wording and the routing text go out, with numbers masked.
+- **C10. Prompt tuning (about 10 minutes).** `.\.venv\Scripts\python.exe scripts\tune_prompts.py | Where-Object { $_ -notmatch ' (PASS|FAIL)' }`
+  Expected: a table in which People & Ops v2 beats v1. To approve P5: `.\.venv\Scripts\python.exe scripts\tune_prompts.py --agents people_ops --apply`, which prints `APPLIED people_ops: v1 -> v2`. Without `--apply` the live prompts stay; run `git checkout backend/app/agents/prompts/versions/MANIFEST.json` to drop the new scores.
+- **Optional. Labelled set through the real model.** `.\.venv\Scripts\python.exe scripts\eval_labelled.py --live --category hires | Select-Object -Last 3` (minutes; the whole set is about an hour, and memo questions write to your vault).
+
 **M3b re-test after the fixes (about 15 min). Run this one first: RD1 to RD10.** The commands ran in Windows PowerShell 5.1 here against a test backend on port 8011 with scratch data, so your vault was not touched by that run. From `D:\Founder-OS`. Each prints a summary line to compare with **Expected**. Figures are computed by code from the demo data, so they should match exactly; the model's wording varies. All the costs in these runs are **placeholders, not market data**: replacing them with real figures is what RD9 tests. Then merge, or write the issues under "Founder feedback".
 
 - **RD1. Get the code.** `git fetch origin; git checkout claude/m3b-specialists; git pull origin claude/m3b-specialists`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
@@ -675,7 +751,7 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M3b → M3c, first task] Decision prose still contradicts the structured frame (not blocking)
+### [M3b → M3c, first task] Decision prose still contradicts the structured frame (not blocking): RESOLVED in M3c (re-test C4)
 - Dubai memo (RD3): the Decision text says the travel-led pilot "aligns with the goal of extending runway past 12 months", but the Goal check (correctly) says it moves away from that goal (runway 10.65, pilot -0.21). Add a code check: Decision/answer text must never contradict goal statuses in the decision frame.
 - Rejected alternatives: "Partner or distributor: Not proposed, though it takes no more runway than Travel-led pilot" gives no reason. A cheaper option that is not proposed must carry a reason (control, speed, reversibility).
 - Agents off-brief: People & Ops says "stop non-essential travel" for a travel-led pilot and "depends on one person: you, you"; Regulatory & Tax talks about a physical office when a pilot is proposed; Librarian writes "You have already decided to 'Decide whether…'"; Devil's Advocate suggests using the vault for market data the Scout said is not there.
@@ -805,6 +881,13 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M3c session (2026-11-05)
+- Goal check, cheaper options and off-brief wording first. Live, the goal's own words "without new financing" read as a negation, which is why "aligns with the goal" got through.
+- The labelled set found real bugs in routing and wording, all fixed: intent gaps (notes on the company profile, "did we decide", "hello there"), ratios shown as 0.7213, a goal named without saying it moves away, and "who would own" missing People & Ops.
+- Installing `torch` and `laya` was refused by the session's permission check, and not retried. Laya and Jev are built against the documented APIs with fakes, as your note allowed.
+- Self-review found 13 issues, all fixed: Jev ignored `CLOUD_ALLOWED`; names escaped when hyphenated, in lower case or in a file path; the goal check was re-run for the wrong option; a removed contradiction could leave a blank memo line; `_stops_an_option` deleted legitimate advice; a `KeyError` on unusual casing; Laya trained and served with different option wording; the Laya environment lacked the backend; `prompts/versions/` was untracked; `LAYA_DEVICE` was ignored for a checkpoint; and three smaller ones.
+- The first live Dubai run hit a 20-minute timeout because the bake-off and the backend asked Ollama for different context sizes, and each switch reloaded the model. The bake-off now uses the app's size.
+
 
 ### M3b fix session (2026-11-05)
 - Recorded the feedback first. Built the decision frame, guards, memo enforcement, role and voice rules, narration grouping; each with tests.
@@ -852,6 +935,12 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M3c session, 2026-11-05)
+- Prompt versions are kept, scored and not applied: changing a live prompt is a default, so it waits for your approval (P5).
+- Jev needs `CLOUD_ALLOWED=true` as well as a key: "cloud off" must mean nothing leaves the PC.
+- A challenger prompt must beat the live one by a whole case, and an embedding model by 0.05 MRR on hybrid: one run on a small set is noisy.
+- Names err towards hiding. A one-word name that could be an ordinary word is hidden only as written, so "it will" survives.
 
 ## Decisions made (M3b fix session, 2026-11-05)
 In PRD §12: the decision frame is code, built before the agents.

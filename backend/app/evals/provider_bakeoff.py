@@ -223,6 +223,9 @@ def recommend_defaults(rows: list[ProviderRow], lane: list[LaneRow], ledger: Cos
             return (-r.pass_rate, cost if cost is not None else 1e9, r.mean_s)
 
         best = min(mine, key=key)
+        if not best.passed:
+            lines.append(f"{agent}: no model passed, so this is the prompt, not the model: see scripts/tune_prompts.py")
+            continue
         lines.append(f"{agent}: {best.model} ({best.passed}/{len(best.runs)}, {best.mean_s:.1f} s)")
     usable = [r for r in lane if r.replies and r.passed == len(r.replies)]
     if usable:

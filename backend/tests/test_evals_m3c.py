@@ -227,6 +227,7 @@ def test_defaults_are_proposed_by_pass_rate_then_cost_then_speed(tmp_path: Path)
     rows = [row("slow", True, 9000), row("fast", True, 1000), row("bad", False, 100), row("cloud", True, 500, True)]
     lines = recommend_defaults(rows, [], ledger)
     assert lines == ["people_ops: fast (1/1, 1.0 s)"]
+    assert "no model passed" in recommend_defaults([row("bad", False, 100)], [], ledger)[0]
     good = LaneRow("tiny", [("ok", 1.0, ""), ("ok", 1.0, "")])
     assert "tiny" in recommend_defaults(rows, [good], ledger)[-1]
     assert "keep the templates" in recommend_defaults(rows, [LaneRow("x", [("", 9.0, "empty")])], ledger)[-1]

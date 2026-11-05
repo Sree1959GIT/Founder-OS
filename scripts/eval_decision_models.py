@@ -41,7 +41,8 @@ from app.llm.router import LLMRouter
 
 
 def llm_provider(model: str, base_url: str, timeout_s: float) -> DecisionProvider:
-    local = OllamaProvider(base_url, model, think=False, keep_alive="5m", num_ctx=2048, timeout_s=timeout_s)
+    # The same context size as the app: a different one makes Ollama reload the model, about 3 minutes each time.
+    local = OllamaProvider(base_url, model, think=False, keep_alive="5m", timeout_s=timeout_s)
     provider: Any = LLMDecisionProvider(LLMRouter(local))
     provider.name = f"llm:{model}"
     return provider
@@ -102,7 +103,7 @@ def main() -> int:
     failed = sorted({r.provider for r in rows if r.errors == r.n})
     if failed:
         print(f"Did not answer at all (see the docs in app/decision): {', '.join(failed)}")
-    print("READING:", recommend([r for r in rows if not r.provider.startswith(("fake", "rules"))]))
+    print("READING:", recommend([r for r in rows if r.provider != "rules" and not r.provider.startswith("fake")]))
     return 0 if rows else 1
 
 
