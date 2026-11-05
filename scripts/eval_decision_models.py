@@ -6,9 +6,11 @@
     python scripts/eval_decision_models.py --laya models/laya-founderos  a fine-tuned checkpoint
     python scripts/eval_decision_models.py --jev                   needs JEV_API_KEY: paid, about $0.001 for the run
     python scripts/eval_decision_models.py --split all             every example (default: the held-out test split)
+    python scripts/eval_decision_models.py --llm qwen3:8b --real-path-only  only rules first, then the model
 
-Each model is also scored as a cascade with the first --llm model behind it when it is below the threshold. Nothing
-changes the app's defaults: read the table and decide. Prints one aligned table. Exit code 0 unless no provider ran.
+Each model is also scored as a cascade with the first --llm model behind it when it is below the threshold. The
+`rules+llm` rows are the path the app really takes: rules first, the model only where they abstain. Nothing changes
+the app's defaults: read the table and decide. Prints one aligned table. Exit code 0 unless no provider ran.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ def main() -> int:
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--min-confidence", type=float, default=0.75)
+    parser.add_argument("--real-path-only", action="store_true", help="only the rules+llm rows, for a quick check")
     args = parser.parse_args()
     logger.remove()
 
@@ -82,6 +85,10 @@ def main() -> int:
     for name, provider in list(providers.items()):
         if first_llm is not None and name.startswith(("laya", "jev")):
             providers[f"{name}+llm"] = CascadeProvider(provider, first_llm, args.min_confidence)
+    for name, provider in llms.items():
+        providers[f"rules+{name}"] = CascadeProvider(RulesProvider(), provider, args.min_confidence)
+    if args.real_path_only:
+        providers = {name: provider for name, provider in providers.items() if name.startswith("rules+")}
 
     def progress(row: Any) -> None:
         print(f"... {row.provider} {row.kind}: {row.accuracy:.1%} of {row.n}, p50 {row.p50_ms:.0f} ms", flush=True)

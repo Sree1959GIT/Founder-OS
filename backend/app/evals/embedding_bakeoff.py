@@ -146,19 +146,19 @@ def loaded_vram_gb(base_url: str, model: str) -> float | None:
 
 
 def recommend(scores: list[EmbedderScore], incumbent: str, tie: float = 0.05) -> str:
-    """A proposal only. A new model has to beat the incumbent by more than noise on this small set."""
+    """A proposal only. Judged on hybrid, the mode the app searches with; a new model must beat noise on this small set."""
     mine = next((s for s in scores if incumbent in s.name and not s.error), None)
-    others = [s for s in scores if s is not mine and not s.error and "dense" in s.modes]
-    if mine is None or "dense" not in mine.modes or not others:
+    others = [s for s in scores if s is not mine and not s.error and "hybrid" in s.modes]
+    if mine is None or "hybrid" not in mine.modes or not others:
         return "Not enough models answered to compare."
-    best = max(others, key=lambda s: s.modes["dense"].mrr)
-    gain = best.modes["dense"].mrr - mine.modes["dense"].mrr
+    best = max(others, key=lambda s: s.modes["hybrid"].mrr)
+    gain = best.modes["hybrid"].mrr - mine.modes["hybrid"].mrr
     if gain > tie:
         return (
-            f"{best.name} beats {mine.name} on dense MRR by {gain:.3f}. Check its licence before choosing it: "
+            f"{best.name} beats {mine.name} on hybrid MRR by {gain:.3f}. Check its licence before choosing it: "
             "see the licence note in PRD section 12."
         )
     return (
-        f"No model beats {mine.name} by more than {tie} on dense MRR (best other: {best.name}, {gain:+.3f}). "
-        f"Proposal: keep {mine.name}."
+        f"No model beats {mine.name} by more than {tie} on hybrid MRR, the mode the app uses "
+        f"(best other: {best.name}, {gain:+.3f}). Proposal: keep {mine.name}."
     )

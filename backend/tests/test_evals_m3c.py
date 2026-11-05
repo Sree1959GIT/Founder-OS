@@ -265,7 +265,7 @@ def test_a_failed_embedder_is_reported_not_raised() -> None:
 
 def test_the_embedding_reading_needs_more_than_noise() -> None:
     def scored(name: str, ranks: list[int | None]) -> EmbedderScore:
-        return EmbedderScore(name, modes={"dense": ModeScore("dense", ranks)})
+        return EmbedderScore(name, modes={"hybrid": ModeScore("hybrid", ranks)})
 
     nomic, gemma = scored("ollama:nomic-embed-text", [1, 1, 2]), scored("ollama:embeddinggemma", [1, 1, 1])
     assert "embeddinggemma beats" in recommend([nomic, gemma], "nomic")
