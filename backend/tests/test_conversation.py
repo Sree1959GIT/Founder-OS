@@ -20,7 +20,6 @@ from app.config import Settings
 from app.conversation.classifier import Classified, TurnClassifier, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.conversation.manager import (
-    ASSUMPTION_QUESTION,
     MAX_SESSIONS,
     ConversationError,
     ConversationManager,

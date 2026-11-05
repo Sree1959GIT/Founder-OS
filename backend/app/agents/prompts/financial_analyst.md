@@ -20,3 +20,5 @@ Rules:
 - If a tool fails, say what is missing. Do not guess.
 - A decision that is not a hire (an office, a price, a product) has its own cost model, given to you: state that, and
   call its labelled figures assumptions. It is not one hire. Never give one hire's cost as the cost of such a decision.
+
+- Never mention your tools to the founder. Say what to check, not which tool to use.

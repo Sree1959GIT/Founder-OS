@@ -20,7 +20,7 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agents.decision_frame import DecisionFrame, build_frame
+from app.agents.decision_frame import DecisionFrame, build_frame, names_goal
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
@@ -55,6 +55,7 @@ from app.agents.verifier import (
     named_paths,
     number_supported,
     repair_claims,
+    split_sentences,
     verify,
 )
 from app.decision.base import DecisionError, DecisionService
@@ -413,6 +414,8 @@ class AgentRunner:
         _surface_decisions(result)
         self._verify(spec, inst, user_message, result)
         out_of_role = role_problems(spec.name, result.text, user_message)
+        if not result.text.strip():
+            out_of_role = ["your answer was empty: answer your brief"]
         if out_of_role:
             result.verified = False
             result.issues = [*result.issues, *out_of_role]
@@ -435,6 +438,8 @@ class AgentRunner:
             self._verify(spec, inst, user_message, result)
         _replace_wrong_claims(result, user_message)
         result.text = guarded(in_role(spec.name, result.text, user_message), frame, _records_for(result, upstream))
+        if not result.text.strip() and spec.name in RULE_TEXT:
+            result.text = RULE_TEXT[spec.name]  # seen live: a small model can return nothing, twice
         self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
         return self._finish(inst, result, started)
@@ -459,9 +464,7 @@ class AgentRunner:
         """What a specialist's answer always carries, whatever the model wrote."""
         frame = self.frame
         if spec.name == "financial_analyst" and frame is not None and frame.non_hire:
-            sentence = frame.cost_sentence()
-            if sentence and sentence not in result.text:
-                result.text = f"{result.text} {sentence}".strip()
+            result.text = _analyst_on_a_cost_model(result.text, frame)
         if spec.name == "devils_advocate" and result.text:
             artifact = risk_register(inst.id, result.text)
             result.artifacts.append(artifact)
@@ -895,6 +898,25 @@ def _replace_wrong_claims(result: AgentResult, user_message: str) -> None:
     result.text, _ = repair_claims(result.text, result.known_facts, user_message, _written_by_code(impact))
 
 
+_RESTATES_THE_MODEL = re.compile(
+    r"\b(?:low|base|high)[- ]case\b|\bup-?front\b|\bcost model\b|"
+    r"\b(?:office|this|it|that|option|region|launch|change|product|hire)\b[^.!?]*\b(?:costs?|runway)\b",
+    re.I,
+)
+
+
+def _analyst_on_a_cost_model(text: str, frame: DecisionFrame) -> str:
+    """Code's sentence on the cost, plus anything else the Analyst found.
+
+    Seen live: asked to restate the cases, the model wrote that the office "extends the low-case runway".
+    """
+    sentence = frame.cost_sentence()
+    if not sentence or frame.cost_model is None:
+        return f"{text} {sentence}".strip()
+    others = "".join(p for p in split_sentences(text) if not _RESTATES_THE_MODEL.search(p)).strip()
+    return f"{sentence} {others}".strip()
+
+
 def _records_for(result: AgentResult, upstream: list[AgentResult]) -> list[DecisionRecord]:
     return [*result.past_decisions, *_team_decisions(upstream)]
 
@@ -1145,12 +1167,19 @@ class _SentenceGate:
         return self._checked(ready) if ready else ""
 
 
-def advisor_memo_note(answer: str, results: list[AgentResult]) -> str:
+def advisor_memo_note(answer: str, results: list[AgentResult], frame: DecisionFrame | None = None) -> str:
     """A memo that was written is never a surprise: the reply names it and its review date."""
     memo = next((r.memo for r in results if r.memo is not None), None)
     if memo is None or (memo.path in answer and memo.review_date in answer):
         return ""
-    return f" The memo is at {memo.path}, for review on {memo.review_date}."
+    option = next((o for o in frame.options if o.name == memo.chosen), None) if frame is not None else None
+    if option is not None and frame is not None and option.modelled:
+        # What is proposed may not be what the cost sentence above priced: name its own cost.
+        line = option.line(frame.currency)
+        proposes = "" if line in answer else f" The memo proposes {line}"
+    else:
+        proposes = f" The memo proposes {memo.chosen}." if memo.chosen and memo.chosen not in answer else ""
+    return f"{proposes} It is at {memo.path}, for review on {memo.review_date}."
 
 
 def advisor_frame_note(answer: str, frame: DecisionFrame | None) -> str:
@@ -1167,7 +1196,7 @@ def advisor_frame_note(answer: str, frame: DecisionFrame | None) -> str:
             notes.append("Those costs are assumptions: confirm them.")
     for sentence in frame.goal_sentences():
         goal = sentence[sentence.find('"') + 1 : sentence.rfind('"')]
-        if goal and goal.lower() not in answer.lower():
+        if goal and not names_goal(goal, answer):
             notes.append(sentence)
     return "".join(f" {note}" for note in notes if note)
 
@@ -1236,7 +1265,7 @@ async def advise(
                 note = advisor_decision_note("".join(sent), results)
                 note += advisor_impact_note("".join(sent) + note, plan_, results)
                 note += advisor_frame_note("".join(sent) + note, frame)
-                note += advisor_memo_note("".join(sent) + note, results)
+                note += advisor_memo_note("".join(sent) + note, results, frame)
                 if note:
                     sent.append(note)
                     yield StreamChunk(delta=note)
@@ -1260,7 +1289,7 @@ async def advise(
         text = guarded(template_answer(results), frame, records)
         text += advisor_impact_note(text, plan_, results)
         text += advisor_frame_note(text, frame)
-        text += advisor_memo_note(text, results)
+        text += advisor_memo_note(text, results, frame)
         yield StreamChunk(delta=text)
         yield StreamChunk(
             done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)

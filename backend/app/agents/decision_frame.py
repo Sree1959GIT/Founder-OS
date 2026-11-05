@@ -23,7 +23,7 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agents.verifier import Fact, format_money
+from app.agents.verifier import Fact, extract_figures, format_money, split_sentences
 from app.engine.scenario import Adjustments
 
 DecisionType = Literal["hire", "new_office", "pricing", "spend", "fundraise", "new_product", "other"]
@@ -56,7 +56,9 @@ _TYPE_CUES: list[tuple[DecisionType, re.Pattern[str]]] = [
         re.compile(
             r"\b(open\w*|set\w*[- ]up|start\w*|establish\w*|launch\w*|expand\w*|enter\w*)\b[^.?!]{0,50}?"
             r"\b(office|branch|region|entity|subsidiary|hub|market|country)\b|"
-            r"\b(new|second) (sales )?(office|region|branch)\b",
+            r"\b(new|second) (sales )?(office|region|branch)\b|"
+            r"\bexpand\w* (in)?to\b"
+            r"(?![^.?!]*\b(product\w*|pric\w*|tiers?|customers?|segments?|enterprise|features?)\b)",
             re.I,
         ),
     ),
@@ -906,8 +908,8 @@ def _check_goal(goal: str, frame: DecisionFrame, finance: Any) -> GoalCheck:
                 goal=goal,
                 status="moves_away",
                 sentence=(
-                    f"This moves you away from your goal {quote}: {today}, and the base case assumes {extra:+g} percentage "
-                    f"points more each month ({ASSUMPTION_LABEL})."
+                    f"This moves you away from your goal {quote}: {today}, and the base case assumes {extra:+g} "
+                    f"percentage points more each month ({ASSUMPTION_LABEL})."
                 ),
             )
         return GoalCheck(
@@ -961,7 +963,31 @@ def relevant_metric(frame: DecisionFrame | None, metric: str) -> bool:
     return frame is None or metric in _RELEVANT_METRICS[frame.type]
 
 
-def _starter_outcomes(frame: DecisionFrame, today: dt.date) -> tuple[list[Outcome], list[Outcome]]:
+def starter_outcomes_for(
+    frame: DecisionFrame, option_name: str, today: dt.date | None = None
+) -> tuple[list[Outcome], list[Outcome]]:
+    """The starters for the option actually proposed: a pilot's stop rule is not a full office's budget."""
+    option = next((o for o in frame.options if o.name == option_name), None)
+    return _starter_outcomes(frame, today or dt.date.today(), option)
+
+
+def names_goal(goal: str, text: str) -> bool:
+    """Has the text told the founder about this goal? Its exact words, or a sentence on "your goal" close to them."""
+    if goal.casefold() in text.casefold():
+        return True
+    wanted = {w[:5] for w in _words(goal)}
+    if not wanted:
+        return False
+    return any(
+        re.search(r"\bgoals?\b", sentence, re.I)
+        and len(wanted & {w[:5] for w in _words(sentence)}) >= 0.6 * len(wanted)
+        for sentence in split_sentences(text)
+    )
+
+
+def _starter_outcomes(
+    frame: DecisionFrame, today: dt.date, option: OptionCost | None = None
+) -> tuple[list[Outcome], list[Outcome]]:
     """A measurable forecast and stop rules, from the model's own numbers. Starters: the founder sets the odds."""
     six = _in_months(today, 6)
     three = _in_months(today, 3)
@@ -975,6 +1001,22 @@ def _starter_outcomes(frame: DecisionFrame, today: dt.date) -> tuple[list[Outcom
     kills: list[Outcome] = []
     if model is not None:
         base, high = model.case("base"), model.case("high")
+        partial = option is not None and not option.is_full
+        if option is not None and partial:
+            # An option has one estimate, so its limit is half as much again. The full model's MRR and round are
+            # not its results. Churn stays below as a ceiling: no smaller change should pass it.
+            base = CostCase(
+                name="base",
+                one_off=option.one_off,
+                monthly=option.monthly,
+                runway_change_months=option.runway_change_months,
+            )
+            high = CostCase(
+                name="high",
+                one_off=round(option.one_off * 1.5, 2),
+                monthly=round(option.monthly * 1.5, 2),
+                runway_change_months=option.runway_change_months,
+            )
         spend_cap = round(high.one_off + 6 * high.monthly, 2)
         if spend_cap > 0:
             kills.append(Outcome(metric="Total spent on this", threshold=f"> {money(spend_cap)}", by=six))
@@ -1020,7 +1062,7 @@ def _starter_outcomes(frame: DecisionFrame, today: dt.date) -> tuple[list[Outcom
             )
         elif frame.type == "fundraise":
             raised = next((i.base for i in model.items if i.key == "round"), 0.0)
-            if raised:
+            if raised and not partial:
                 predictions.append(Outcome(metric="Cash raised", threshold=f">= {money(raised)}", by=six))
         change = base.runway_change_months
         high_change = high.runway_change_months
@@ -1085,6 +1127,7 @@ def _facts(frame: DecisionFrame) -> list[Fact]:
             months(case.scenario_runway_months, f"Projected runway, {case.name} case")
             months(case.runway_change_months, f"Change in projected runway, {case.name} case")
     for option in frame.options:
+        facts.extend(Fact(f.value) for f in extract_figures(option.name))  # "Change prices by +5 %"
         money(option.one_off, f"{option.name}: up-front cost ({ASSUMPTION_LABEL})")
         money(option.monthly, f"{option.name}: monthly cost ({ASSUMPTION_LABEL})")
         months(option.runway_change_months, f"{option.name}: change in projected runway")
@@ -1124,6 +1167,8 @@ def build_frame(
         frame.questions = ["what this costs up front", "what it costs each month"]
     try:
         names = _BASELINE.get(kind, ("runway", "net_burn"))
+        # Stop rules are checked against today's churn whatever the decision. Metrics lists only what is relevant.
+        names = names if "logo_churn" in names else (*names, "logo_churn")
         frame.baseline = [f for f in (_metric(finance, n) for n in names) if f is not None]
         frame.currency = next((b.unit for b in frame.baseline if re.fullmatch(r"[A-Z]{3}", b.unit)), "USD")
         frame.as_of = frame.baseline[0].as_of if frame.baseline else ""

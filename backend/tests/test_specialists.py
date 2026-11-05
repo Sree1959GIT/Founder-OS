@@ -304,8 +304,8 @@ async def test_a_specialists_invented_number_is_still_caught(finance: Any, vault
 
 async def test_a_specialist_may_use_the_numbers_an_earlier_stage_found(finance: Any, vault: Any) -> None:
     analyst = await runner(
-        FakeProvider([[ToolCall(name="get_metric", arguments={"name": "arpa"})], "ARPA is known."]), finance, vault
-    ).run(instance("financial_analyst"), "ARPA?")
+        FakeProvider([[ToolCall(name="get_metric", arguments={"name": "mrr"})], "MRR is known."]), finance, vault
+    ).run(instance("financial_analyst"), "MRR?")
     mrr = analyst.artifacts[0].data["value"]
     seen: list[str] = []
 

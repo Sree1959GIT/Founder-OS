@@ -53,6 +53,24 @@ class ToolOutcome:
         return json.dumps(payload, ensure_ascii=False, default=str)[:MAX_TOOL_CHARS]
 
 
+def _is_unconfirmed_memo(frontmatter: dict[str, Any]) -> bool:
+    """FounderOS wrote it and the founder has not decided it. Once decided, its figures are the founder's own."""
+    return "proposed_option" in frontmatter and str(frontmatter.get("status", "")).lower() == "proposed"
+
+
+def _is_a_written_memo(ctx: ToolContext, path: str) -> bool:
+    """A proposed memo holds placeholders and figures awaiting confirmation. Quoting one backs nothing.
+
+    Seen in the eval: a figure listed under "Open numbers to confirm" in one memo came back as sourced in the next.
+    """
+    if not path.startswith("decisions/") or ctx.vault is None:
+        return False
+    try:
+        return _is_unconfirmed_memo(ctx.vault.vault.read_note(path).get("frontmatter") or {})
+    except (VaultError, OSError):
+        return False
+
+
 def quoted_facts(text: str) -> list[Fact]:
     """Figures in a passage from a note: backed by its citation, with no field to say what they mean."""
     return [Fact(f.value) for f in extract_figures(text)]
@@ -364,7 +382,12 @@ def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         for c, r in zip(citations, result["results"], strict=True)
     ]
     # A figure quoted from a returned passage is backed by that passage's citation.
-    quoted = [fact for h in hits for fact in quoted_facts(json.dumps(h, ensure_ascii=False))]
+    quoted = [
+        fact
+        for h in hits
+        if not _is_a_written_memo(ctx, str(h.get("path", "")))
+        for fact in quoted_facts(json.dumps(h, ensure_ascii=False))
+    ]
     return ToolOutcome(content, artifacts=cards, citations=citations, facts=quoted)
 
 
@@ -377,7 +400,12 @@ def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         _artifact(ctx, "citation", f"Past decision: {r.title}", row, citations=[c])
         for r, row, c in zip(records, rows, citations, strict=True)
     ]
-    quoted = [fact for row in rows for fact in quoted_facts(json.dumps(row, ensure_ascii=False))]
+    quoted = [
+        fact
+        for r, row in zip(records, rows, strict=True)
+        if not _is_a_written_memo(ctx, r.path)
+        for fact in quoted_facts(json.dumps(row, ensure_ascii=False))
+    ]
     return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, facts=quoted)
 
 
@@ -393,6 +421,8 @@ def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "body": str(note.get("body", ""))[:4000],
     }
     quoted = quoted_facts(f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}")
+    if _is_unconfirmed_memo(frontmatter):
+        quoted = []
     return ToolOutcome(content, citations=[citation], facts=quoted)
 
 

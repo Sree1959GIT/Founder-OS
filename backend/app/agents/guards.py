@@ -18,6 +18,7 @@ from app.vault.decisions import DecisionRecord
 
 _VERB_FORMS = {"has": "have", "is": "are", "was": "were", "does": "do"}
 _THE_FOUNDER = re.compile(r"\b(the) founder(?:(['\u2019]s)|\s+([a-z]+))?", re.I)
+_BARE_FOUNDERS = re.compile(r"\b[Ff]ounder['\u2019]s\b")  # seen live: "Founder's personal involvement"
 _NOT_A_VERB = frozenset({"and", "or", "as", "at", "by", "for", "from", "in", "of", "on", "to", "with", "this", "that"})
 _THE_DEPARTMENT = re.compile(
     r"\b(?:(?:your|the|a|an|our)\s+)?(?:(?:legal|tax|compliance|regulatory|accounting)(?:\s*(?:and|/|&)\s*)?)+"
@@ -47,7 +48,8 @@ def _to_adviser(match: re.Match[str]) -> str:
 
 def in_one_voice(text: str) -> str:
     """Spoken to the founder, not about them, with one way to write money and one word for outside advice."""
-    return _THE_DEPARTMENT.sub(_to_adviser, one_money_format(_THE_FOUNDER.sub(_to_you, text)))
+    spoken = _BARE_FOUNDERS.sub(lambda m: "Your" if m.group()[0] == "F" else "your", _THE_FOUNDER.sub(_to_you, text))
+    return _THE_DEPARTMENT.sub(_to_adviser, one_money_format(spoken))
 
 
 # --- a goal is not a decision ----------------------------------------------------------------------------------------
@@ -59,7 +61,7 @@ _CLAIMS_DECIDED = re.compile(
     re.I,
 )
 _NOT_A_CLAIM = re.compile(
-    r"\b(?:not|never|whether|if|once|when|until|before|undecided|have you|did you)\b|n['\u2019]t\b",
+    r"\b(?:not|never|whether|if|once|when|until|before|undecided|have you|did you|nothing on record)\b|n['\u2019]t\b",
     re.I,
 )
 _POINTS_BACK = re.compile(
@@ -151,8 +153,13 @@ _MEMO_LINE = re.compile(
 )
 _STOP_OTHER_WORK = re.compile(
     r"\b(?:stop|freeze|pause|halt|cease|cancel)\s+(?:all\s+|any\s+|further\s+|more\s+|new\s+)*"
-    r"(?:hiring|recruit\w*|the\s+\w+\s+hires?|sdrs?\b|hir(?:e|es)\b)[^.!?]*",
+    r"(?:hiring|recruit\w*|the\s+\w+\s+hires?|sdrs?\b|hir(?:e|es)\b)[^.!?]*|"
+    r"\bstop\s+doing\W+hiring\b[^.!?]*",
     re.I,
+)
+# Seen live: "use the web_search tool" said to a founder, with cloud off.
+_TOOL_TALK = re.compile(
+    r"\b(?:web_search|request_metric|run_scenario|run_monte_carlo|search_vault|read_note|hiring_impact)\b", re.I
 )
 _ASKED_ABOUT_HIRING = re.compile(r"\b(hir\w*|recruit\w*|headcount|sdrs?|layoffs?)\b", re.I)
 # The Librarian quotes past decisions and memos: that is its job.
@@ -161,9 +168,11 @@ _KEEPS_ITS_ROLE = frozenset({"memo_writer", "advisor", "planner", "librarian"})
 
 def role_problems(agent_type: str, text: str, message: str) -> list[str]:
     """What this answer does outside the agent's job, for the Verifier's one repair turn."""
-    if agent_type in _KEEPS_ITS_ROLE:
-        return []
     problems: list[str] = []
+    if _TOOL_TALK.search(text):
+        problems.append("you told the founder about your tools: they have none of them, so say what to check instead")
+    if agent_type in _KEEPS_ITS_ROLE:
+        return problems
     if _MEMO_LINE.search(text):
         problems.append("you wrote a memo or a final decision: the Memo Writer does that, so give only your part")
     if not _ASKED_ABOUT_HIRING.search(message) and _STOP_OTHER_WORK.search(text):
@@ -173,9 +182,11 @@ def role_problems(agent_type: str, text: str, message: str) -> list[str]:
 
 def in_role(agent_type: str, text: str, message: str) -> str:
     """Still out of role after the repair turn: the out-of-role lines and sentences go."""
+    if _TOOL_TALK.search(text):
+        text = "".join(p for p in split_sentences(text) if not _TOOL_TALK.search(p)).strip()
     if agent_type in _KEEPS_ITS_ROLE:
         return text
     kept = _MEMO_LINE.sub("", text)
     if not _ASKED_ABOUT_HIRING.search(message):
         kept = "".join(p for p in split_sentences(kept) if not _STOP_OTHER_WORK.search(p))
-    return re.sub(r"\n{3,}", "\n\n", kept).strip() if kept != text else text
+    return re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", kept)).strip() if kept != text else text

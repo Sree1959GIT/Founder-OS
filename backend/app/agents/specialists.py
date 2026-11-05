@@ -15,10 +15,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.agents.decision_frame import ASSUMPTION_LABEL, BaselineFigure, DecisionFrame, relevant_metric
+from app.agents.decision_frame import (
+    ASSUMPTION_LABEL,
+    BaselineFigure,
+    DecisionFrame,
+    relevant_metric,
+    starter_outcomes_for,
+)
 from app.agents.events import Artifact
 from app.agents.guards import guarded
-from app.agents.verifier import Fact, extract_figures, split_sentences, verify_numbers
+from app.agents.verifier import Fact, split_sentences, verify_numbers
 from app.engine.calibration import PredictionIn
 from app.vault.manager import NoteExistsError
 
@@ -79,7 +85,13 @@ RULE_TEXT: dict[str, str] = {
         "Written without the language model. Ask what this viewpoint would need to believe for this to be a good "
         "decision, and what would change its mind."
     ),
-    "regulatory_tax": "Written without the language model, so nothing specific was checked.",
+    "regulatory_tax": (
+        "Written without the language model, so nothing specific was checked. Points to verify with your adviser:\n"
+        "- Whether this needs a licence, registration or filing where it happens.\n"
+        "- What tax it creates, and where.\n"
+        "- Which employment rules apply to anyone hired or moved for it.\n"
+        "- What it changes in your contracts, customer terms and data handling."
+    ),
     "market_scout": "Written without the language model, and nothing relevant was found in the vault.",
 }
 
@@ -315,8 +327,8 @@ class MemoDraft(BaseModel):
 def memo_schema(frame: DecisionFrame | None) -> dict[str, Any]:
     names = [o.name for o in frame.options] if frame is not None else []
     outcome = {
-        "metric": {"type": "string", "description": "What is measured, for example 'Qualified Gulf pipeline'"},
-        "threshold": {"type": "string", "description": "A comparison with a number, for example '>= 200000'"},
+        "metric": {"type": "string", "description": "A result in the business that can be measured"},
+        "threshold": {"type": "string", "description": "A comparison and a number you chose for this decision"},
         "by": {"type": "string", "description": "A future date, YYYY-MM-DD"},
     }
     return {
@@ -435,11 +447,26 @@ def _chosen_option(draft: MemoDraft, names: list[str], default: str) -> tuple[st
     return (default if default in names else names[0]), False
 
 
-def _option_reason(name: str, draft: MemoDraft) -> str:
-    """The model's line on this option, when it gave one."""
-    note = next((o.note for o in draft.options if o.name.casefold() == name.casefold() and o.note), "")
-    if note:
-        return note
+def _why_not(name: str, chosen: str, frame: DecisionFrame | None) -> str:
+    """A reason from the numbers, when the model gave none."""
+    costs = {o.name: o for o in frame.options} if frame is not None else {}
+    this, proposed = costs.get(name), costs.get(chosen)
+    if this is None or proposed is None or None in (this.runway_change_months, proposed.runway_change_months):
+        return "Not chosen for now."
+    if this.modelled and proposed.modelled and this.runway_change_months < proposed.runway_change_months:  # type: ignore[operator]
+        return (
+            f"Takes more runway than {chosen}: {this.runway_change_months:+.2f} against "
+            f"{proposed.runway_change_months:+.2f} months."
+        )
+    return f"Not proposed, though it takes no more runway than {chosen}."
+
+
+def _option_reason(name: str, draft: MemoDraft, frame: DecisionFrame | None = None) -> str:
+    """The model's own line on this option, when it gave one. Repeating the option's description is not a line."""
+    given = next((o.note for o in draft.options if o.name.casefold() == name.casefold() and o.note), "")
+    described = next((o.note for o in frame.options if o.name == name), "") if frame is not None else ""
+    if given and given.strip(" .").casefold() != described.strip(" .").casefold():
+        return given
     for line in draft.rejected:
         if _best_option(line, [name])[1] >= 0.6:
             _, colon, why = line.partition(":")
@@ -447,42 +474,71 @@ def _option_reason(name: str, draft: MemoDraft) -> str:
     return ""
 
 
-_SPEND_WORDS = re.compile(r"\b(spend\w*|spent|cost\w*|budget|burn)\b", re.I)
+_SPEND_WORDS = re.compile(r"\b(spend\w*|spent|cost\w*|budget)\b", re.I)
 _RUNWAY_WORD = re.compile(r"\brunway\b", re.I)
 _BELOW = re.compile(r"(<=?|≤|\bbelow\b|\bunder\b|\bless than\b|\bfewer than\b)", re.I)
 
 
-def _kill_fits_the_model(criterion: MemoCriterion, frame: DecisionFrame | None) -> bool:
-    """A stop rule cannot fire at once: a spend limit under the plan's own cost, or a runway floor already passed."""
+_AMOUNT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(k|m|thousand|million)?\b", re.I)
+_SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6}
+
+
+def _limit_in(criterion: MemoCriterion) -> float | None:
+    """The number the rule stops at: from its threshold when it has one. "$400k" is 400,000; "11 months" is 11."""
+    text = criterion.threshold or _ISO_DAY.sub(" ", criterion.text())
+    found = list(_AMOUNT.finditer(text))
+    if not found:
+        return None
+    # "Spend in the first 6 months > $300,000": the number after the comparison is the limit.
+    after = next(
+        (m for m in found if re.search(r"[<>≤≥]|\b(?:over|above|below|under|than)\b", text[: m.start()])), None
+    )
+    match = after or found[0]
+    return float(match.group(1).replace(",", "")) * _SCALE.get((match.group(2) or "").lower(), 1)
+
+
+def _kill_fits_the_model(criterion: MemoCriterion, frame: DecisionFrame | None, chosen: str = "") -> bool:
+    """A stop rule cannot fire at once: a spend limit under what is proposed, or a runway floor already passed."""
     if frame is None:
         return True
     text = criterion.text()
-    figures = [f.value for f in extract_figures(_ISO_DAY.sub(" ", text))]
-    if not figures:
+    limit = _limit_in(criterion)
+    if limit is None:
         return True
-    if frame.cost_model is not None and _SPEND_WORDS.search(text):
-        base = frame.cost_model.case("base")
-        return abs(figures[0]) >= base.one_off + base.monthly
     runway = next((b.value for b in frame.baseline if b.metric == "runway"), None)
-    if runway is not None and _RUNWAY_WORD.search(text) and _BELOW.search(text):
-        return figures[0] < runway
+    if _RUNWAY_WORD.search(text):
+        return runway is None or not _BELOW.search(text) or limit < runway
+    churn = next((b.value for b in frame.baseline if b.metric == "logo_churn"), None)
+    if churn is not None and re.search(r"\bchurn\b", text, re.I) and not _BELOW.search(text):
+        return limit > churn * 100  # seen live: "churn above 1.5%", with churn at 1.67 % today
+    if frame.cost_model is not None and _SPEND_WORDS.search(text):
+        option = next((o for o in frame.options if o.name == chosen and o.modelled), None)
+        cost = option if option is not None else frame.cost_model.case("base")
+        return abs(limit) >= cost.one_off + cost.monthly
     return True
 
 
 def _final_outcomes(
-    draft: MemoDraft, frame: DecisionFrame | None, today: dt.date
+    draft: MemoDraft, frame: DecisionFrame | None, chosen: str, today: dt.date
 ) -> tuple[list[MemoPrediction], list[MemoCriterion]]:
     predictions = [p for p in draft.predictions if p.is_measurable(today)][:3]
-    kills = [k for k in draft.kill_criteria if k.is_measurable(today) and _kill_fits_the_model(k, frame)][:3]
-    if frame is not None and not predictions:
+    kills = [k for k in draft.kill_criteria if k.is_measurable(today) and _kill_fits_the_model(k, frame, chosen)][:3]
+    if frame is not None:
+        starter_predictions, starter_kills = starter_outcomes_for(frame, chosen, today)
+    else:
+        starter_predictions, starter_kills = [], []
+    if not predictions:
         predictions = [
             MemoPrediction(metric=o.metric, threshold=o.threshold, by=o.by, probability=o.probability, starter=True)
-            for o in frame.predictions
+            for o in starter_predictions
         ]
-    if frame is not None and not kills:
-        kills = [
-            MemoCriterion(metric=o.metric, threshold=o.threshold, by=o.by, starter=True) for o in frame.kill_criteria
-        ]
+    # Whatever else stops it, one rule must tie it to what it costs.
+    limit = next((o for o in starter_kills if _SPEND_WORDS.search(o.metric) or _RUNWAY_WORD.search(o.metric)), None)
+    tied_to_cost = any(_SPEND_WORDS.search(k.text()) or _RUNWAY_WORD.search(k.text()) for k in kills)
+    if frame is not None and frame.cost_model is not None and kills and limit is not None and not tied_to_cost:
+        kills = [*kills[:2], MemoCriterion(metric=limit.metric, threshold=limit.threshold, by=limit.by, starter=True)]
+    if not kills:
+        kills = [MemoCriterion(metric=o.metric, threshold=o.threshold, by=o.by, starter=True) for o in starter_kills]
     return predictions, kills
 
 
@@ -509,9 +565,9 @@ def with_required_fields(
     if not model_chose:
         why = "Chosen by rule as the easiest option to undo: the draft named no option from the list."
     decision = f"Proposed: {chosen}. {why}".strip() + " You have not decided yet: this is a recommendation."
-    options = [MemoOption(name=n, note=_option_reason(n, draft)) for n in names]
-    rejected = [f"{o.name}: {o.note or 'Not chosen for now.'}" for o in options if o.name != chosen]
-    predictions, kills = _final_outcomes(draft, frame, today)
+    options = [MemoOption(name=n, note=_option_reason(n, draft, frame)) for n in names]
+    rejected = [f"{o.name}: {o.note or _why_not(o.name, chosen, frame)}" for o in options if o.name != chosen]
+    predictions, kills = _final_outcomes(draft, frame, chosen, today)
     return draft.model_copy(
         update={
             "title": memo_title(title) if title else memo_title(message),
@@ -526,17 +582,31 @@ def with_required_fields(
     )
 
 
+_LIST_MARK = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+
+
 def _pull_unbacked(text: str, known: list[Fact], context: str, moved: list[str]) -> str:
-    """A sentence holding a figure with no source leaves the text and goes on the list for the founder to confirm."""
+    """A figure with no source leaves the text and goes on the list for the founder to confirm.
+
+    Its whole sentence goes, or its whole line in a list: half a risk line would make no sense on its own.
+    """
     if not verify_numbers(text, known, context):
         return text
-    kept: list[str] = []
-    for piece in split_sentences(text):
-        if piece.strip() and verify_numbers(piece, known, context):
-            moved.append(piece.strip())
+    lines: list[str] = []
+    for line in text.splitlines():
+        if not verify_numbers(line, known, context):
+            lines.append(line)
+        elif _LIST_MARK.match(line):
+            moved.append(_LIST_MARK.sub("", line).strip())
         else:
-            kept.append(piece)
-    return "".join(kept).strip()
+            kept: list[str] = []
+            for piece in split_sentences(line):
+                if piece.strip() and verify_numbers(piece, known, context):
+                    moved.append(piece.strip())
+                else:
+                    kept.append(piece)
+            lines.append("".join(kept).strip())
+    return "\n".join(line for line in lines if line.strip()).strip()
 
 
 def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) -> MemoDraft:
@@ -575,20 +645,51 @@ def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) 
     )
 
 
+_OUR_WORDS = {"we": "you", "We": "You", "us": "you", "our": "your", "Our": "Your", "ours": "yours", "Ours": "Yours"}
+_OUR_WORD = re.compile(r"\b(?:we|We|us|our|Our|ours|Ours)\b")  # lower case only for "us": "US" is a place
+_HELPS_THE_GOAL = re.compile(
+    r"\b(?:align\w*|support\w*|consistent|in line|within reach|helps?|meets?|achieves?|advances?)\b[^.!?]*\bgoals?\b|"
+    r"\bgoals?\b[^.!?]*\b(?:within reach|on track|achievable)\b",
+    re.I,
+)
+_NEGATED = re.compile(r"\b(?:not|never|no|cannot|without)\b|n['\u2019]t\b", re.I)
+_SAYS_CHECKED = re.compile(
+    r"\b(?:is|are|has been|have been|was|were)\s+(?:\w+\s+)?(?:confirmed|verified|validated|assessed|evaluated)\b", re.I
+)
+
+
+def _without_false_comfort(text: str) -> str:
+    kept = "".join(p for p in split_sentences(text) if not _HELPS_THE_GOAL.search(p) or _NEGATED.search(p))
+    return re.sub(r"[ 	]{2,}", " ", kept).strip()
+
+
 def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[Any]) -> MemoDraft:
-    """A memo speaks to the founder too, and never reports a goal or a proposal as a decision."""
+    """A memo speaks to the founder too, and never reports a goal or a proposal as a decision.
+
+    Nor does it contradict the goal check, or list as an assumption that the assumptions were checked. Seen live:
+    "aligns with the goal of extending runway" beside -0.21 months, and "Cost model assumptions are confirmed."
+    """
 
     def say(text: str) -> str:
-        return guarded(text, frame, records)
+        return guarded(_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], text), frame, records)
+
+    # The goal check prices the full model. An option that gives runway back may truly help the goal.
+    option = next((o for o in frame.options if o.name == draft.chosen), None) if frame is not None else None
+    gives_back = option is not None and (option.runway_change_months or -1) >= 0
+    moves_away = frame is not None and not gives_back and any(g.status == "moves_away" for g in frame.goals)
+
+    def reasons(text: str) -> str:
+        return say(_without_false_comfort(text) if moves_away else text)
 
     return draft.model_copy(
         update={
-            "context": say(draft.context),
-            "why_chosen": say(draft.why_chosen),
-            "decision": say(draft.decision),
+            "title": _OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], draft.title),
+            "context": reasons(draft.context),
+            "why_chosen": reasons(draft.why_chosen),
+            "decision": reasons(draft.decision),
             "options": [o.model_copy(update={"note": say(o.note)}) for o in draft.options],
             "rejected": [say(r) for r in draft.rejected],
-            "assumptions": [say(a) for a in draft.assumptions],
+            "assumptions": [say(a) for a in draft.assumptions if not _SAYS_CHECKED.search(a)],
         }
     )
 
@@ -602,7 +703,7 @@ def _metric_lines(upstream: list[Any], frame: DecisionFrame | None) -> list[str]
     lines: list[str] = []
     seen: set[str] = set()
     if frame is not None:
-        for figure in frame.baseline:
+        for figure in (f for f in frame.baseline if relevant_metric(frame, f.metric)):
             seen.add(figure.metric)
             lines.append(figure.line())
     for result in upstream:
@@ -641,7 +742,8 @@ def _cost_section(frame: DecisionFrame | None) -> str:
     lines.append(model.scope_note)
     source = ", ".join(model.sources)
     lines.append(
-        f"Runway effects come from the scenario routine{' over ' + source if source else ''}, as of {model.as_of}."
+        f"Runway effects come from the scenario routine{' over ' + source if source else ''}, as of {model.as_of}. "
+        "Projected runway includes growth assumptions, so it differs from the runway on actual burn."
     )
     return _bullets(lines)
 
@@ -653,7 +755,9 @@ def _option_lines(draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
         known = costs.get(option.name)
         line = known.line(frame.currency) if known is not None and frame is not None else option.name
         if option.note and known is not None:
-            line = f"{line} {option.note}"
+            # The model often copies the note code already wrote into the line.
+            if option.note.strip(" .").casefold() not in line.casefold():
+                line = f"{line} {option.note}"
         elif option.note:
             line = f"{line}: {option.note}"
         lines.append(f"{line} **(proposed)**" if option.name == draft.chosen else line)
@@ -670,8 +774,18 @@ def _assumption_lines(draft: MemoDraft, frame: DecisionFrame | None) -> list[str
     return lines + draft.assumptions
 
 
-def _goal_lines(frame: DecisionFrame | None) -> list[str]:
-    return [g.sentence for g in frame.goals] if frame is not None else []
+def _goal_lines(frame: DecisionFrame | None, chosen: str = "") -> list[str]:
+    if frame is None:
+        return []
+    lines = [g.sentence for g in frame.goals]
+    option = next((o for o in frame.options if o.name == chosen), None)
+    if lines and option is not None and not option.is_full and option.runway_change_months is not None:
+        lines.insert(
+            0,
+            f"The proposed option, {chosen}, changes projected runway by {option.runway_change_months:+.2f} months. "
+            "The lines below use the base case of the full model.",
+        )
+    return lines
 
 
 def render_body(draft: MemoDraft, upstream: list[Any], frame: DecisionFrame | None = None) -> str:
@@ -691,7 +805,7 @@ def render_body(draft: MemoDraft, upstream: list[Any], frame: DecisionFrame | No
             f"# {draft.title}",
             f"## Decision\n{draft.decision}",
             f"## Context\n{draft.context or 'None recorded.'}",
-            f"## Goal check\n{_bullets(_goal_lines(frame), 'No goals found in profile/company.md.')}",
+            f"## Goal check\n{_bullets(_goal_lines(frame, draft.chosen), 'No goals found in profile/company.md.')}",
             f"## Cost model\n{_cost_section(frame)}",
             f"## Options\n{_bullets(_option_lines(draft, frame))}",
             f"## Rejected alternatives\n{_bullets(draft.rejected)}",

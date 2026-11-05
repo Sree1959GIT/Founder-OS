@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M3c: Decision models (Laya / Jev)**, after the founder reviews M3b (PR open, branch `claude/m3b-specialists`). M0, M1, M2 and M3a are ACCEPTED and merged.
+- **Next milestone:** **M3c: Decision models (Laya / Jev)**, after the founder re-tests M3b (steps RD1–RD10; PR #7 open, branch `claude/m3b-specialists`). M0, M1, M2 and M3a are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-04 (M3b session wrap-up)
+- **Last updated:** 2026-11-05 (M3b fix session wrap-up)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -16,7 +16,7 @@
 | M1 | Financial spine (DuckDB) | DONE (merged, PRs #3 + #4; Major gate ACCEPTED 2026-11-03) | |
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
-| M3b | Specialist agents | DONE (PR open, Medium gate awaiting the founder) | Plus the cloud layer and the conversation lane backend |
+| M3b | Specialist agents | DONE (PR #7 open, Medium gate: founder re-test after fixes) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | NOT STARTED | |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
@@ -62,12 +62,12 @@
 - Started (UTC): 2026-11-05 10:56 (local Windows bug-fix session for the M3b gate, time-box 2 hours), branch `claude/m3b-specialists`, PR #7
 - Plan:
   - [x] Record the founder feedback first
-  - [ ] Decision frame: type, cost model (one-off + monthly, low/base/high via `run_scenario`), options with costs, goal check, key questions
-  - [ ] Goals never reported as decisions; hire framing only for hires
-  - [ ] Memo enforced in code: one chosen option, outcome predictions, measurable kill criteria, "Open numbers to confirm", plain Metrics
-  - [ ] Role discipline and second person everywhere; narration grouping and a specific question
-  - [ ] Offline and live eval rubric (Dubai office, price increase, new product line), tests
-  - [ ] Self-review, RD re-test steps, PR #7 updated, CI green
+  - [x] Decision frame: type, cost model (one-off + monthly, low/base/high via `run_scenario`), options with costs, goal check, key questions
+  - [x] Goals never reported as decisions; hire framing only for hires
+  - [x] Memo enforced in code: one chosen option, outcome predictions, measurable kill criteria, "Open numbers to confirm", plain Metrics
+  - [x] Role discipline and second person everywhere; narration grouping and a specific question
+  - [x] Offline and live eval rubric (Dubai office, price increase, new product line), tests
+  - [x] Self-review, RD re-test steps, PR #7 updated, CI green
 
 Previous session (2026-11-04, M3b):
 - Started (UTC): 2026-11-04 14:23 (local Windows session), branch `claude/m3b-specialists`, target **M3b** (gate tier: **Medium**)
@@ -113,6 +113,26 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Decision frame (fix after the founder's M3b review, 2026-11-05)
+**What you can do now**
+- Ask about a decision and it is typed first: `hire`, `new_office`, `pricing`, `spend`, `fundraise`, `new_product` or `other`. An office is priced as an office (setup, rent, local hires, travel, compliance), one-off plus monthly, low/base/high, through `run_scenario`.
+- Inputs not in your data are placeholders labelled "assumption, confirm", and a memo resting on them is never `verified`. Give your own figures in the lane ("rent is $9,000 a month") and it re-runs with them marked `founder`.
+- The memo compares realistic options with their costs, proposes exactly one, checks your goals in `profile/company.md` and says when it moves away from one.
+
+**How it works**
+- `app/agents/decision_frame.py`: `build_frame` runs in `_plan_node`, before any agent. Costs, options, the goal check and starter outcomes are code; agents get them as findings. The placeholder values in `_TEMPLATES` are not market data.
+- `app/agents/guards.py`: on words. Second person, "your adviser", one money format; a goal or proposal is never reported as decided unless a record says so; out-of-role lines go after one repair turn; FounderOS tool names never reach the founder.
+- `app/agents/specialists.py`: the model drafts and code enforces: `with_required_fields` (one chosen option, not under Rejected, Decision matches), `without_unbacked_figures` (a figure with no source moves to "Open numbers to confirm"; `[figure removed` is gone), `_final_outcomes` (predictions are outcomes; stop rules are measurable, cannot fire at once, and one is always tied to spend or runway; starters follow the option proposed), `in_your_words`.
+- `scenario.Adjustments.one_off_cost` is new. A proposed memo backs no figures for later runs (`tools._is_unconfirmed_memo`); once decided, it does.
+- Evals: `app/evals/decision_eval.py` and `decision_questions.json` (Dubai office, price rise, new product line, spend), modes `rules`, `sloppy` (every mistake seen live) and live.
+
+**Known limits**
+- Model wording inside a role can still be weak: live, People & Ops wrote "The Financial Analyst would stop providing runway projections", and the Devil's Advocate told you to confirm the costs "with the Financial Analyst". No figures or decisions are affected. Better handled by M3c or a larger model than by more guards.
+- Team findings in the memo are shortened, not rewritten, so a long list can be cut mid-point.
+- Sentence filters (`_HELPS_THE_GOAL`, `_RESTATES_THE_MODEL`, `_SAYS_CHECKED`) are word patterns: they can miss a rephrased claim, or drop a true sentence. Code's own lines always remain.
+- The goal check prices the full model, with the proposed option's own runway effect as its first line. It does not re-check each goal per option.
+- No real cloud call was made in this session either.
+
 ### Specialist agents, cloud layer and conversation lane (M3b)
 **What you can do now**
 - Ask "Should we open a Dubai office? Write a decision memo." You get a team (Financial Analyst, Librarian, Market Scout, Regulatory & Tax, People & Ops, Devil's Advocate, Memo Writer), a risk register, and `decisions/YYYY-MM-DD-<slug>.md` with options, assumptions, metrics with lineage, predictions, kill criteria and a review date 30 days out. It took about 2 minutes on the local model.
@@ -126,7 +146,7 @@ Previous session (M3a):
 - Every specialist has a no-LLM rule answer with no invented figures (R3) and goes through the Verifier and its repair turn.
 - What code guarantees: a risk register from the Devil's Advocate's lines; "not legal or tax advice" from Regulatory; the Market Scout's "vault only" note when cloud is off; web sources named; the Prioritiser sent back once if it ranks without the routine; the memo's path and review date in the reply.
 - `request_metric` gives Revenue & Customer and People & Ops the Analyst's routines with lineage. They have no `run_sql` or scenarios.
-- Memo: the model drafts JSON, the Verifier checks the prose, one repair turn, and code writes the file. A figure with no lineage is removed from the memo (`[figure removed: no lineage]`), including from the team findings section. A second memo on the same day gets `-2`.
+- Memo: the model drafts JSON, the Verifier checks the prose, one repair turn, and code writes the file. (Superseded by the decision frame section above: such a figure now moves to "Open numbers to confirm".) A figure with no lineage is removed from the memo (`[figure removed: no lineage]`), including from the team findings section. A second memo on the same day gets `-2`.
 
 **Cloud (`app/llm/`)**
 - `cloud.py`: Anthropic (API key), Gemini (AI Studio or Vertex express key), OpenAI and OpenAI-compatible. The subscription path is gone; a `.env` that still says `DEEP_PROVIDER=claude_sdk` starts up local. You can delete `CLAUDE_CODE_OAUTH_TOKEN` from your `.env`.
@@ -398,7 +418,7 @@ Known issues / notes:
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
 ## Next steps (for the M3c session)
-0. **Gate check:** M3b is a **Medium** gate. The founder runs the M3b checklist below, tries a decision by hand and merges the PR. Act on any "Founder feedback" first.
+0. **Gate check:** M3b is a **Medium** gate. The founder runs re-test steps RD1–RD10 below, tries a decision by hand and merges PR #7. Act on any "Founder feedback" first.
 1. M3c (PRD §8): `LayaProvider`, `JevProvider`, the bake-off harness and labelled set, and the Laya fine-tuning script. The turn classifier (`kind="turn"` in the decision log) is new labelled data.
 2. The bake-off also compares cloud providers on **accuracy, latency and cost per answer** (founder decision, PRD §12). `llm_calls.jsonl` already holds latency and cost per call; `scripts/eval_vault.py` and `scripts/eval_agents.py` supply the questions.
 3. The **EmbeddingGemma vs `nomic-embed-text` comparison**, deferred from M3a: retrieval quality on the sample vault plus a labelled query set, latency and VRAM. Collection names include the embedding model, so switching re-embeds cleanly.
@@ -406,12 +426,51 @@ Known issues / notes:
 5. Smaller ideas: a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M3b (about 15 min). Run this one: it is the current gate.** These commands ran in Windows PowerShell 5.1 here (5.1.26100), against a test backend on another port with scratch data, so the checks below did not touch your vault. From `D:\Founder-OS`. Each step prints one summary line; compare it with **Expected**. Then merge the PR, or write the issues under "Founder feedback". Model wording varies, and so can the number of risks and predictions.
+**M3b re-test after the fixes (about 15 min). Run this one first: RD1 to RD10.** The commands ran in Windows PowerShell 5.1 here against a test backend on port 8011 with scratch data, so your vault was not touched by that run. From `D:\Founder-OS`. Each prints a summary line to compare with **Expected**. Figures are computed by code from the demo data, so they should match exactly; the model's wording varies. All the costs in these runs are **placeholders, not market data**: replacing them with real figures is what RD9 tests. Then merge, or write the issues under "Founder feedback".
+
+- **RD1. Get the code.** `git fetch origin; git checkout claude/m3b-specialists; git pull origin claude/m3b-specialists`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
+- **RD2. Offline: no Ollama needed.**
+  `.\.venv\Scripts\python.exe scripts\eval_agents.py | Select-Object -Last 1; .\.venv\Scripts\python.exe scripts\eval_vault.py | Select-Object -Last 1; Set-Location backend; ..\.venv\Scripts\python.exe -m pytest -q 2>$null | Select-Object -Last 1; Set-Location ..`
+  Expected: `OFFLINE AGENT EVAL: 24/24 passed`, `OFFLINE EVAL: 18/18 passed`, `820 passed` (with a time).
+- **RD3. The Dubai decision (about 2 minutes). It writes a real memo to your vault; RD5 deletes it.**
+  `$b = 'http://127.0.0.1:8000'`
+  `function Ask($q) { Invoke-RestMethod -Method Post -Uri "$b/api/chat" -ContentType 'application/json' -Body (@{ message = $q; stream = $false } | ConvertTo-Json) -TimeoutSec 900 }`
+  `$r = Ask 'Should we open a Dubai office? Write a decision memo.'; $f = $r.decision_frame; $c = $f.cost_model.cases | Where-Object { $_.name -eq 'base' }; "RD3 type $($f.type) | up front $($c.one_off) | monthly $($c.monthly) | runway $($c.runway_change_months) | items $(@($f.cost_model.items).Count) | options $(@($f.options).Count) | assumptions $($r.assumptions_to_confirm) | status $($r.memo.status) | verified $($r.memo.verified)"`
+  `"RD3 goal: $(($f.goals | Where-Object { $_.status -eq 'moves_away' })[0].goal)"`
+  `"RD3 proposed: $($r.memo.chosen)"`
+  `"RD3 answer: $($r.answer)"`
+  Expected, four lines: `RD3 type new_office | up front 30000.0 | monthly 32347.24 | runway -2.07 | items 5 | options 5 | assumptions 5 | status proposed | verified False`, then `RD3 goal: Extend runway past 12 months without new financing`, then the proposed option (one of the five), then the reply. The reply must give the $30,000.00 and $32,347.24 as assumptions, say it moves you away from the runway goal, say the second-region goal is still open, and name the proposed option with its own cost.
+- **RD4. The memo, saved to a temp file.**
+  `$note = Invoke-RestMethod "$b/api/vault/notes/$($r.memo.path)"; $m = $note.content; $tmp = Join-Path $env:TEMP 'dubai-memo.md'; [IO.File]::WriteAllText($tmp, $m, (New-Object Text.UTF8Encoding($false))); $rej = ($m -split '## Rejected alternatives')[1] -split '## Assumptions' | Select-Object -First 1; "RD4 sections $((@('## Decision','## Goal check','## Cost model','## Options','## Rejected alternatives','## Assumptions','## Open numbers to confirm','## Metrics','## Predictions','## Kill criteria') | Where-Object { $m.Contains($_) }).Count) of 10 | proposed once $(([regex]::Matches($m, '\*\*\(proposed\)\*\*')).Count -eq 1) | chosen not rejected $(-not $rej.Contains("- $($r.memo.chosen):")) | figure removed $($m.Contains('[figure removed')) | the founder $($m -match '(?i)\bthe founder\b') | one hire $($m -match '(?i)\b1 hire\b') | formula dump $($m.Contains('formula:')) | payroll total $($m.Contains('308,437')) | memo saved $(Test-Path $tmp)"`
+  Expected: `RD4 sections 10 of 10 | proposed once True | chosen not rejected True | figure removed False | the founder False | one hire False | formula dump False | payroll total False | memo saved True`. Read it with `notepad $tmp`: predictions and kill criteria should be outcomes with a metric, a threshold and a date; the first Goal check line gives the proposed option's own runway effect.
+- **RD5. Delete the memo from the vault (the temp copy stays).**
+  `Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($r.memo.path)" | Out-Null; "RD5 memo still there $((Invoke-RestMethod "$b/api/vault/notes").notes.path -contains $r.memo.path) | copy at $tmp"`
+  Expected: `RD5 memo still there False | copy at ...\dubai-memo.md`. Its starter predictions are never stored in the calibration store, so nothing else is left behind.
+- **RD6. A price rise (about 2 minutes; deletes its own memo).**
+  `$p = Ask 'Should we raise our prices by 10%? Write a decision memo.'; $pc = ($p.decision_frame.cost_model.cases | Where-Object { $_.name -eq 'base' }); "RD6 type $($p.decision_frame.type) | items $(($p.decision_frame.cost_model.items | ForEach-Object { $_.name }) -join ', ') | mrr in 3 months $($pc.mrr_in_3_months) | runway $($pc.runway_change_months) | proposed $($p.memo.chosen) | goal $(($p.decision_frame.goals | Where-Object { $_.status -eq 'moves_away' })[0].goal)"`
+  `Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($p.memo.path)" | Out-Null`
+  Expected: `RD6 type pricing | items Price change, Extra monthly churn it causes, Customer notice and billing changes | mrr in 3 months 282096.51 | runway 1.12 | proposed` (one option) `| goal Bring logo churn under 1.5 % a month`.
+- **RD7. A new product line (about 2 minutes; deletes its own memo).**
+  `$n = Ask 'Should we launch a new product line? Write a decision memo.'; $nc = ($n.decision_frame.cost_model.cases | Where-Object { $_.name -eq 'base' }); "RD7 type $($n.decision_frame.type) | items $(($n.decision_frame.cost_model.items | ForEach-Object { $_.name }) -join ', ') | up front $($nc.one_off) | monthly $($nc.monthly) | runway $($nc.runway_change_months) | proposed $($n.memo.chosen)"`
+  `Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($n.memo.path)" | Out-Null`
+  Expected: `RD7 type new_product | items Build and launch, Dedicated team, Go-to-market, Hosting and support | up front 80000.0 | monthly 27347.24 | runway -2.09 | proposed` (one option).
+- **RD8. A real hire keeps the hire numbers (no memo).**
+  `$h = Ask 'Should we hire two SDRs?'; "RD8 type $($h.decision_frame.type) | hires $($h.decision_frame.hires) | cost model $($null -ne $h.decision_frame.cost_model) | impact $($h.decision_impact.new_hires) | impact runway $($h.decision_impact.runway_change_months) | says decided $($h.answer -match '(?i)you have decided')"`
+  Expected: `RD8 type hire | hires 2 | cost model True | impact 2 | impact runway -1.42 | says decided False`.
+- **RD9. Give your own figures: the question, then the re-run (about 4 minutes; no memo).**
+  `function Say($s, $text) { Invoke-RestMethod -Method Post -Uri "$b/api/conversation/turn" -ContentType 'application/json; charset=utf-8' -Body (@{ session_id = $s; text = $text } | ConvertTo-Json) }`
+  `$t = Say $null 'Should we open a Dubai office?'; $s = $t.session_id; do { Start-Sleep 3; $v = Invoke-RestMethod "$b/api/conversation/$s" } while ($v.running); $q = @($v.narration | Where-Object { $_ -like 'While the team works*' })[0]; $a = Say $s 'rent is $9,000 a month and one-off setup is $40,000'; do { Start-Sleep 3; $v2 = Invoke-RestMethod "$b/api/conversation/$s" } while ($v2.running); $g = Invoke-RestMethod "$b/api/runs/$($a.run_id)"; $gc = $g.result.decision_frame.cost_model; $bc = $gc.cases | Where-Object { $_.name -eq 'base' }; "RD9 question '$q'"; "RD9 kind $($a.kind) | reply '$($a.reply)' | up front $($bc.one_off) | monthly $($bc.monthly) | rent basis $(($gc.items | Where-Object { $_.name -like 'Rent*' }).basis) | setup basis $(($gc.items | Where-Object { $_.name -like 'Setup*' }).basis)"`
+  `"RD9 narration: $(@($v.narration) -join ' / ')"`
+  Expected, three lines. `RD9 question 'While the team works, for a full Dubai office: tell me what setup and licences would cost, the monthly rent or desk and how many local hires. Until you do, I use assumptions you can correct.'`, then `RD9 kind amendment | reply 'Running it again with your figures.' | up front 40000.0 | monthly 36347.24 | rent basis founder | setup basis founder`, then the narration, grouped: `Librarian, Market Scout and Financial Analyst are done; three to go.` and so on, ending `The answer is ready. It rests on assumptions you should confirm.` Team order can vary.
+- **RD10. Live eval (optional, about 20 minutes).** `.\.venv\Scripts\python.exe scripts\eval_agents.py --live | Select-Object -Last 1`
+  Expected: `LIVE AGENT EVAL: 12/12 passed`. Model wording varies, so one miss can be noise: read its line. **The Memo Writer and decision cases write memos to your vault:** remove them afterwards from `decisions/`.
+
+**M3b, the first round (the founder has passed M1–M11; reference only, expected values updated for the fixes).** These commands ran in Windows PowerShell 5.1 here (5.1.26100), against a test backend on another port with scratch data, so the checks below did not touch your vault. From `D:\Founder-OS`. Each step prints one summary line; compare it with **Expected**. Then merge the PR, or write the issues under "Founder feedback". Model wording varies, and so can the number of risks and predictions.
 
 - **M1. Get the code.** `git fetch origin; git checkout claude/m3b-specialists; git pull origin claude/m3b-specialists`, close the backend window, then start `run.bat`. No new dependencies, so `setup.bat` is not needed. Wait for `Ollama model qwen3:8b is loaded`. Optional: delete `CLAUDE_CODE_OAUTH_TOKEN` from your `.env`; it is no longer used.
 - **M2. Offline: no Ollama needed.**
   `.\.venv\Scripts\python.exe scripts\eval_agents.py | Select-Object -Last 1; .\.venv\Scripts\python.exe scripts\eval_vault.py | Select-Object -Last 1; Set-Location backend; ..\.venv\Scripts\python.exe -m pytest -q 2>$null | Select-Object -Last 1; Set-Location ..`
-  Expected: `OFFLINE AGENT EVAL: 16/16 passed`, `OFFLINE EVAL: 18/18 passed`, `722 passed` (with a time).
+  Expected: `OFFLINE AGENT EVAL: 24/24 passed`, `OFFLINE EVAL: 18/18 passed`, `820 passed` (with a time).
 - **M3. Agents, cost and cap.**
   `$b = 'http://127.0.0.1:8000'; $a = Invoke-RestMethod "$b/api/agents"; "types $($a.agents.Count) | specialists $(($a.agents | Where-Object { -not $_.core }).Count) | cloud allowed $($a.cloud.allowed) | cap $($a.cloud.cap_usd) | memo writer on $(($a.agents | Where-Object { $_.type -eq 'memo_writer' }).provider)"`
   Expected: `types 13 | specialists 8 | cloud allowed False | cap 25.0 | memo writer on ollama`.
@@ -420,9 +479,9 @@ Known issues / notes:
 - **M5. The Dubai office decision (about 2 minutes).** This writes a real memo to your vault; step M7 deletes it.
   `$r = Invoke-RestMethod -Method Post -Uri "$b/api/chat" -ContentType 'application/json' -Body '{"message": "Should we open a Dubai office? Write a decision memo.", "stream": false}' -TimeoutSec 900; $risks = (($r.agents | Where-Object { $_.type -eq 'devils_advocate' }).artifacts | Where-Object { $_.kind -eq 'risk_register' }).data.risks; "agents $($r.agents.Count) | scout, regulatory, devil, memo $(@('market_scout','regulatory_tax','devils_advocate','memo_writer' | Where-Object { $r.agents.type -contains $_ }).Count) | risks $(@($risks).Count) | status $($r.memo.status) | review in days $(([datetime]$r.memo.review_date - (Get-Date).Date).Days) | predictions $(@($r.memo.predictions).Count) | memo in reply $($r.answer.Contains($r.memo.path)) | vault only $(($r.agents | Where-Object { $_.type -eq 'market_scout' }).text.Contains('vault only'))"`
   Expected: `agents 6` or `7` `| scout, regulatory, devil, memo 4 | risks` 3 to 5 `| status proposed | review in days 30 | predictions` 1 to 3 `| memo in reply True | vault only True`.
-  Then read it: `$r.agents.name` (the team), `$risks | Format-Table risk, likelihood, impact -Wrap` (the Devil's Advocate), `$r.memo.predictions`, `$r.answer`. The reply should give $11,423.62 a month and -0.76 months of runway, call that cost the company's average, name the memo and its review date, and never say you already decided.
+  Then read it: `$r.agents.name` (the team), `$risks | Format-Table risk, likelihood, impact -Wrap` (the Devil's Advocate), `$r.memo.predictions`, `$r.answer`. The reply should give the office's modelled cost as assumptions, say what it does to your runway goal, name the memo, the proposed option and its review date, and never say you already decided.
 - **M6. The memo file.**
-  `$note = Invoke-RestMethod "$b/api/vault/notes/$($r.memo.path)"; "sections $((@('## Options','## Rejected alternatives','## Assumptions','## Metrics','## Predictions','## Kill criteria') | Where-Object { $note.content.Contains($_) }).Count) of 6 | lineage $($note.content.Contains('formula:'))"`
+  `$note = Invoke-RestMethod "$b/api/vault/notes/$($r.memo.path)"; "sections $((@('## Options','## Rejected alternatives','## Assumptions','## Metrics','## Predictions','## Kill criteria') | Where-Object { $note.content.Contains($_) }).Count) of 6 | lineage $($note.content.Contains('From your data'))"`
   Expected: `sections 6 of 6 | lineage True`. To read it: `$note.content`.
 - **M7. Delete the test memo.**
   `Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($r.memo.path)" | Out-Null; "memo still there $((Invoke-RestMethod "$b/api/vault/notes").notes.path -contains $r.memo.path)"`
@@ -584,7 +643,8 @@ write the issues under "Founder feedback".
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
 
-### [M3b] Dubai decision: plumbing works, decision reasoning is not trustworthy
+### [M3b] Dubai decision: plumbing works, decision reasoning is not trustworthy: RESOLVED (founder re-test RD1–RD10 pending)
+**Fixed 2026-11-05, items 1–10;** see "Decision frame" under Current state. Item 10 (narration grouping, the specific question) is done in the backend lane too. A new `new_product` type was added beyond the list below.
 M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a decision memo."
 1. Wrong cost model: the office was modelled as "1 hire at $11,423.62/month, -0.76 months" ("not a quote for this role"). Decisions need a type (hire N people / new office or region / pricing change / spend change / fundraise / other). Multi-component decisions need a cost model with one-off and recurring costs. Inputs not in the data are founder-editable assumptions labelled "assumption, confirm", never shown as verified, with a low/base/high runway impact from `run_scenario`. Ask the founder for the 2–3 key inputs through the conversation lane. Never present a one-hire cost as the cost of a non-hire decision.
 2. Goals are not decisions: the Librarian and memo said "the founder has decided to expand into a second sales region", but `profile/company.md` only has the goal "Decide whether to open a second sales region".
@@ -707,6 +767,13 @@ Second planning round (2026-11-02):
 
 ## Progress log
 
+### M3b fix session (2026-11-05)
+- Recorded the feedback first. Built the decision frame, guards, memo enforcement, role and voice rules, narration grouping; each with tests.
+- Live on `qwen3:8b` (scratch backend, port 8011, your vault untouched), Dubai took about 2 to 4 minutes per run. Live runs showed what the fakes could not: duplicated option notes, rejected reasons repeating the description, a Goal check silent on the proposed option, "aligns with the goal" beside a runway loss, "assumptions are confirmed" listed as an assumption, an empty Regulatory answer, "use the web_search tool", and a churn stop rule already passed today. All fixed, with regression tests.
+- Self-review (`/code-review medium`): 10 findings, all fixed: loose goal matching, "expand into a product" typed as an office, a smaller option inheriting the full model's MRR, stop-rule limits judged against the full model and misread ("$400k"), the Analyst's true figures being dropped, past decisions and decided memos treated wrongly as sources, false-comfort filter ignoring negation, ordinary "CRM tool" advice treated as tool talk.
+- Results: `pytest` 820 passed, ruff clean, offline agent eval 24/24, vault eval 18/18. Live eval 11/12 before the last fixes; the miss was the churn stop rule, now fixed, and new-product-line was re-run on the final code. RD3–RD9 ran in PowerShell 5.1 on the final code bar the one-word "Founder's" fix.
+- Process slip: one checkpoint was staged with `git add app tests` rather than explicit paths. I checked its contents: only intended files. It was not pushed alone.
+
 ### M3b session (2026-11-04)
 - Tidied the stale status lines. Re-checked Anthropic's docs (decision in PRD §12).
 - Cloud layer, privacy filter, cost ledger and cap, small items: committed and pushed.
@@ -746,6 +813,14 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M3b fix session, 2026-11-05)
+In PRD §12: the decision frame is code, built before the agents.
+- New decision type `new_product`, beyond the founder's list: a new line has its own cost shape and would otherwise be `other`.
+- Placeholder cost inputs in `_TEMPLATES` are round starting points, not market data, and always carry "assumption, confirm". No web lookup: cloud is off.
+- Starter predictions and stop rules are labelled for the founder to set, and are not stored in the calibration store: scoring a placeholder would corrupt calibration.
+- A proposed memo backs no figures in later runs; a decided one does.
+- For a non-hire with a cost model the agents do not get `run_scenario` or `run_monte_carlo`: the frame has run them, so a model cannot offer a one-hire figure.
 
 ## Decisions made (M3b session, 2026-11-04)
 Significant ones are in PRD §12: no Claude subscription path and the cloud layer; two lanes; stages rather than `depends_on`.

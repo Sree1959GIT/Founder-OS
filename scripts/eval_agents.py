@@ -1,4 +1,5 @@
-"""Specialist eval: does each M3b agent join the team and carry what it must? Prints one line per check.
+"""Specialist and decision-quality eval. Does each M3b agent join the team and carry what it must, and does a memo pass
+the decision rubric (type, costs, goal check, options, outcomes, voice)? Prints one line per check.
 
     python scripts/eval_agents.py                 offline: no Ollama, no backend, seconds
     python scripts/eval_agents.py --live          the real model, through a running backend (minutes)
@@ -12,17 +13,20 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
 import httpx
 from loguru import logger
 
-from app.evals.agents_eval import AgentEvalResult, check_reply, load_cases, run_offline
+from app.evals import decision_eval
+from app.evals.agents_eval import check_reply, load_cases, run_offline
 
 
-def run_live(url: str, only: str | None) -> list[AgentEvalResult] | None:
-    results: list[AgentEvalResult] = []
+def run_live(url: str, only: str | None) -> list[Any] | None:
+    results: list[Any] = []
     with httpx.Client(base_url=url, timeout=1200.0) as client:
-        for case in load_cases():
+        cases: list[Any] = [*load_cases(), *decision_eval.load_cases()]
+        for case in cases:
             if only and case.id != only:
                 continue
             try:
@@ -31,7 +35,10 @@ def run_live(url: str, only: str | None) -> list[AgentEvalResult] | None:
             except httpx.HTTPError as exc:
                 print(f"Cannot get an answer from {url}: {type(exc).__name__}: {exc}. Is run.bat running?")
                 return None
-            result = check_reply(case, "live", response.json())
+            if isinstance(case, decision_eval.DecisionCase):
+                result: Any = decision_eval.check_decision(case, "live", response.json())
+            else:
+                result = check_reply(case, "live", response.json())
             print(result.line(), flush=True)
             results.append(result)
     return results
@@ -49,7 +56,7 @@ def main() -> int:
         if results is None:
             return 2
     else:
-        results = run_offline()
+        results = [*run_offline(), *decision_eval.run_offline()]
         for result in results:
             print(result.line())
     passed = sum(r.passed for r in results)
