@@ -6,7 +6,7 @@ import re
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,9 +20,10 @@ WORKSPACE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 class DeepProvider(StrEnum):
     """Which provider "deep work" agents use. Falls back to Ollama when not usable."""
 
-    CLAUDE_SDK = "claude_sdk"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    OPENAI = "openai"
+    OPENAI_COMPATIBLE = "openai_compatible"
     OLLAMA = "ollama"
 
 
@@ -73,6 +74,11 @@ class Settings(BaseSettings):
     decision_provider: Literal["llm", "fake"] = "llm"
     decision_min_confidence: float = Field(default=0.75, ge=0, le=1)
 
+    # Conversation lane (M3b): stays responsive while agents run. No model set: it answers from templates.
+    fast_lane_model: str = ""
+    fast_lane_timeout_s: float = Field(default=4.0, gt=0, le=60)
+    conversation_quiet: bool = False
+
     # Vector store (Qdrant, Docker)
     qdrant_host: str = "localhost"
     qdrant_port: int = Field(default=6333, ge=1, le=65535)
@@ -93,11 +99,25 @@ class Settings(BaseSettings):
     # Cloud providers for deep-work agents
     deep_provider: DeepProvider = DeepProvider.OLLAMA
     cloud_allowed: bool = False
-    claude_code_oauth_token: SecretStr | None = None
+    # Per agent type, "provider" or "provider:model", as JSON: {"memo_writer": "anthropic:claude-opus-5-5"}.
+    agent_models: dict[str, str] = Field(default_factory=dict)
+    # At or over this month's estimated spend, cloud agents use Ollama. 0 means no cloud calls at all.
+    cloud_monthly_cap_usd: float = Field(default=25.0, ge=0)
+    # USD per million tokens, added to the built-in table, as JSON: {"my-model": [0.5, 1.5]}.
+    llm_prices: dict[str, list[float]] = Field(default_factory=dict)
     anthropic_api_key: SecretStr | None = None
     claude_model: str = "claude-sonnet-5-5"
+    gemini_backend: Literal["ai_studio", "vertex"] = "ai_studio"
     gemini_api_key: SecretStr | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    vertex_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-3.8-flash"
+    openai_api_key: SecretStr | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-6.1-terra"
+    # Any endpoint that speaks OpenAI's API: OpenRouter, DeepSeek and others.
+    openai_compatible_api_key: SecretStr | None = None
+    openai_compatible_base_url: str = ""
+    openai_compatible_model: str = ""
 
     # Display
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
@@ -109,7 +129,20 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     health_probe_timeout_s: float = Field(default=2.0, gt=0, le=30)
 
-    @field_validator("claude_code_oauth_token", "anthropic_api_key", "gemini_api_key", mode="before")
+    @field_validator("deep_provider", mode="before")
+    @classmethod
+    def _removed_provider_is_local(cls, value: Any) -> Any:
+        """`claude_sdk` was removed: a `.env` that still names it starts up local rather than failing."""
+        return DeepProvider.OLLAMA if value == "claude_sdk" else value
+
+    @field_validator(
+        "anthropic_api_key",
+        "gemini_api_key",
+        "vertex_api_key",
+        "openai_api_key",
+        "openai_compatible_api_key",
+        mode="before",
+    )
     @classmethod
     def _blank_secret_is_none(cls, value: object) -> object:
         """Treat an empty value in `.env` (e.g. `GEMINI_API_KEY=`) as not configured."""
@@ -146,12 +179,19 @@ class Settings(BaseSettings):
     def provider_configured(self, provider: DeepProvider) -> bool:
         """Whether the credentials needed by `provider` are present (no network call)."""
         match provider:
-            case DeepProvider.CLAUDE_SDK:
-                return self.claude_code_oauth_token is not None
             case DeepProvider.ANTHROPIC:
                 return self.anthropic_api_key is not None
             case DeepProvider.GEMINI:
-                return self.gemini_api_key is not None
+                key = self.vertex_api_key if self.gemini_backend == "vertex" else self.gemini_api_key
+                return key is not None
+            case DeepProvider.OPENAI:
+                return self.openai_api_key is not None
+            case DeepProvider.OPENAI_COMPATIBLE:
+                return (
+                    self.openai_compatible_api_key is not None
+                    and bool(self.openai_compatible_base_url)
+                    and bool(self.openai_compatible_model)
+                )
             case DeepProvider.OLLAMA:
                 return True
 

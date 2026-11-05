@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agents.events import AgentEvent, EventBus
-from app.agents.graph import AgentOrchestrator, ChatResult, RunContext
+from app.agents.graph import AgentOrchestrator, ChatResult, RerunOutcome, RunContext, TeamEdit
 from app.agents.registry import REGISTRY
 
 router = APIRouter(tags=["agents"])
@@ -125,6 +125,11 @@ async def events(
 
 class ApprovalRequest(BaseModel):
     approved: bool = True
+    edit: TeamEdit | None = Field(None, description="Briefs edited, agents removed or added when approving")
+
+
+class RerunRequest(BaseModel):
+    brief: str | None = Field(None, max_length=2000, description="The edited brief. Empty keeps the old one")
 
 
 @router.get("/runs/{run_id}")
@@ -140,13 +145,14 @@ async def get_run(run_id: str, orchestrator: OrchestratorDep, bus: BusDep) -> di
         and not run.approval.is_set()
         and orchestrator.needs_approval(run.plan.team),
         "result": run.result.model_dump(mode="json") if run.result else None,
+        "snapshot": run.context.model_dump(mode="json") if run.context is not None else None,
         "events": [e.model_dump(mode="json") for e in bus.history(run_id)],
     }
 
 
 @router.post("/runs/{run_id}/approve")
 async def approve_run(run_id: str, body: ApprovalRequest, orchestrator: OrchestratorDep) -> dict[str, Any]:
-    if not orchestrator.approve(run_id, body.approved):
+    if not orchestrator.approve(run_id, body.approved, body.edit):
         raise HTTPException(status_code=409, detail="run not found or not waiting for approval")
     return {"run_id": run_id, "approved": body.approved}
 
@@ -158,12 +164,31 @@ async def cancel_run(run_id: str, orchestrator: OrchestratorDep) -> dict[str, An
     return {"run_id": run_id, "cancelled": True}
 
 
+@router.post("/runs/{run_id}/agents/{agent_id}/cancel")
+async def cancel_agent(run_id: str, agent_id: str, orchestrator: OrchestratorDep) -> dict[str, Any]:
+    """Cancel one instance. The rest of the team goes on."""
+    if not orchestrator.cancel_agent(run_id, agent_id):
+        raise HTTPException(status_code=409, detail="agent not found or not running")
+    return {"run_id": run_id, "agent_id": agent_id, "cancelled": True}
+
+
+@router.post("/runs/{run_id}/agents/{agent_id}/rerun")
+async def rerun_agent(run_id: str, agent_id: str, body: RerunRequest, orchestrator: OrchestratorDep) -> RerunOutcome:
+    """Re-run with an edited brief: restarts a running instance, or starts a new run once this one has finished."""
+    outcome = orchestrator.rerun_agent(run_id, agent_id, body.brief)
+    if outcome is None:
+        raise HTTPException(status_code=409, detail="unknown agent, or its team is still working: wait for the run")
+    return outcome
+
+
 @router.get("/agents")
 async def agents(orchestrator: OrchestratorDep) -> dict[str, Any]:
-    """The registered agent types, where each one runs now, and the concurrency and approval settings."""
+    """The registered agent types, where each one runs now, this month's cost and latency, and the settings."""
     out = []
+    ledger = orchestrator.router.ledger
+    stats = ledger.stats() if ledger is not None else {}
     for spec in REGISTRY.values():
-        provider = orchestrator.router.primary(spec.privacy, needs_tools=bool(spec.tools))
+        provider = orchestrator.router.primary(spec.privacy, needs_tools=bool(spec.tools), agent_type=spec.name)
         out.append(
             {
                 "type": spec.name,
@@ -174,8 +199,11 @@ async def agents(orchestrator: OrchestratorDep) -> dict[str, Any]:
                 "cost": spec.cost,
                 "core": spec.core,
                 "spawnable": spec.spawnable,
+                "stage": spec.stage,
                 "provider": provider.name,
                 "model": provider.model,
+                "is_cloud": provider.is_cloud,
+                "this_month": stats.get(spec.name),
             }
         )
     return {
@@ -183,4 +211,9 @@ async def agents(orchestrator: OrchestratorDep) -> dict[str, Any]:
         "approval_policy": orchestrator.approval_policy,
         "max_local_agents": orchestrator.max_local,
         "max_cloud_agents": orchestrator.max_cloud,
+        "cloud": {
+            "allowed": orchestrator.router.cloud_allowed,
+            "default_provider": orchestrator.router.cloud.name if orchestrator.router.cloud else None,
+            **(ledger.summary() if ledger is not None else {}),
+        },
     }

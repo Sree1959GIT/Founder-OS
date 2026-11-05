@@ -31,6 +31,13 @@ EventType = Literal[
     "agent.artifact",
     "agent.done",
     "run.finished",
+    "agent.rerun",
+    "turn.classified",
+    "narration",
+    "amendment.offered",
+    "queue.added",
+    "queue.offered",
+    "recap",
 ]
 AgentStatus = Literal[
     "queued",
@@ -51,6 +58,7 @@ ArtifactKind = Literal[
     "priority_matrix",
     "risk_register",
     "decision_memo",
+    "cost_model",
     "chart",
     "table",
     "citation",

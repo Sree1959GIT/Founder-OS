@@ -1,0 +1,6 @@
+[
+  {"id": "dubai-office", "question": "Should we open a Dubai office? Write a decision memo.", "type": "new_office", "components": ["Setup and licences", "Rent or desk", "Local hires", "Travel", "Compliance"], "goal_moves_away": ["Extend runway past 12 months without new financing"]},
+  {"id": "price-increase", "question": "Should we raise our prices by 10%? Write a decision memo.", "type": "pricing", "components": ["Price change", "Extra monthly churn", "Customer notice"], "goal_moves_away": ["Bring logo churn under 1.5 % a month"]},
+  {"id": "new-product-line", "question": "Should we launch a new product line? Write a decision memo.", "type": "new_product", "components": ["Build and launch", "Dedicated team", "Go-to-market", "Hosting"], "goal_moves_away": ["Extend runway past 12 months without new financing"]},
+  {"id": "marketing-spend", "question": "Should we spend $20,000 more a month on marketing? Write a decision memo.", "type": "spend", "components": ["Added monthly spend"], "assumes": false, "goal_moves_away": ["Extend runway past 12 months without new financing"]}
+]

@@ -74,8 +74,9 @@ class DecisionRecord(BaseModel):
 
     def summary(self) -> str:
         """One line for the model, the Advisor's findings and the answer itself. Only what the note says."""
-        parts = [f"status {self.status}"]
-        if self.decided:
+        # Seen live: a model called a proposed memo something "you already decided".
+        parts = [f"status {self.status}" + ("" if self.is_decided else " (not decided yet)")]
+        if self.decided and self.is_decided:
             parts.append(f"decided {self.decided}")
         if self.decision:
             parts.append(f"decision: {self.decision.rstrip('.')}")

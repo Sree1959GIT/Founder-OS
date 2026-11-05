@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.events import Artifact, ArtifactKind, Citation
-from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields
+from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields, format_money
 from app.engine.decision_science import EVOption, ScoringRequest, expected_values, weighted_scoring
 from app.engine.duckdb_engine import NoDataError
 from app.engine.lineage import Lineage
@@ -28,7 +28,7 @@ from app.engine.metrics import METRICS, SUMMARY_METRICS, MetricError
 from app.engine.montecarlo import MonteCarloRequest, run_monte_carlo
 from app.engine.scenario import Adjustments
 from app.engine.sql_guard import SqlGuardError, run_guarded_query
-from app.llm.base import ToolSpec
+from app.llm.base import ToolSpec, WebAnswer
 from app.vault.manager import VaultError
 
 WRITABLE_FOLDERS = ("decisions/", "journal/")
@@ -51,6 +51,24 @@ class ToolOutcome:
     def for_model(self) -> str:
         payload = {"error": self.error} if self.error else self.content
         return json.dumps(payload, ensure_ascii=False, default=str)[:MAX_TOOL_CHARS]
+
+
+def _is_unconfirmed_memo(frontmatter: dict[str, Any]) -> bool:
+    """FounderOS wrote it and the founder has not decided it. Once decided, its figures are the founder's own."""
+    return "proposed_option" in frontmatter and str(frontmatter.get("status", "")).lower() == "proposed"
+
+
+def _is_a_written_memo(ctx: ToolContext, path: str) -> bool:
+    """A proposed memo holds placeholders and figures awaiting confirmation. Quoting one backs nothing.
+
+    Seen in the eval: a figure listed under "Open numbers to confirm" in one memo came back as sourced in the next.
+    """
+    if not path.startswith("decisions/") or ctx.vault is None:
+        return False
+    try:
+        return _is_unconfirmed_memo(ctx.vault.vault.read_note(path).get("frontmatter") or {})
+    except (VaultError, OSError):
+        return False
 
 
 def quoted_facts(text: str) -> list[Fact]:
@@ -76,11 +94,11 @@ class DecisionImpact(BaseModel):
 
     def sentence(self) -> str:
         """The impact in words. The same numbers the tool returned, written by code."""
-        cost = f"{self.monthly_cost_delta:,.2f} {self.currency} a month"
+        cost = f"{format_money(self.monthly_cost_delta, self.currency)} a month"
         if self.new_hires and self.cost_per_hire_monthly is not None:
             people = "1 hire" if abs(self.new_hires) == 1 else f"{abs(self.new_hires)} hires"
             verb = "Adding" if self.new_hires > 0 else "Removing"
-            each = f"{self.cost_per_hire_monthly:,.2f} {self.currency}"
+            each = format_money(self.cost_per_hire_monthly, self.currency)
             kind = "average loaded cost" if self.cost_is_company_average else "stated cost"
             lead = f"{verb} {people} at the {kind} per hire of {each} a month changes costs by {cost}"
         else:
@@ -159,6 +177,17 @@ def _get_metric(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     }
     card = _artifact(ctx, "metric_card", result.label, data, lineage=[result.lineage])
     return ToolOutcome(content, artifacts=[card], facts=_metric_facts(content))
+
+
+def web_outcome(ctx: ToolContext, answer: WebAnswer) -> ToolOutcome:
+    """A grounded search's answer. Its figures are backed by the pages it names, like a passage from a note."""
+    citations = [Citation(path=s.url, heading=s.title or s.url, chunk_id="web") for s in answer.sources]
+    content = {"answer": answer.text, "sources": [s.model_dump() for s in answer.sources]}
+    return ToolOutcome(content, citations=citations, facts=quoted_facts(answer.text))
+
+
+def _web_search(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
+    return ToolOutcome({}, error="web search runs through the LLM router and is not available here")
 
 
 def _metrics_summary(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -353,7 +382,12 @@ def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         for c, r in zip(citations, result["results"], strict=True)
     ]
     # A figure quoted from a returned passage is backed by that passage's citation.
-    quoted = [fact for h in hits for fact in quoted_facts(json.dumps(h, ensure_ascii=False))]
+    quoted = [
+        fact
+        for h in hits
+        if not _is_a_written_memo(ctx, str(h.get("path", "")))
+        for fact in quoted_facts(json.dumps(h, ensure_ascii=False))
+    ]
     return ToolOutcome(content, artifacts=cards, citations=citations, facts=quoted)
 
 
@@ -366,7 +400,12 @@ def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         _artifact(ctx, "citation", f"Past decision: {r.title}", row, citations=[c])
         for r, row, c in zip(records, rows, citations, strict=True)
     ]
-    quoted = [fact for row in rows for fact in quoted_facts(json.dumps(row, ensure_ascii=False))]
+    quoted = [
+        fact
+        for r, row in zip(records, rows, strict=True)
+        if not _is_a_written_memo(ctx, r.path)
+        for fact in quoted_facts(json.dumps(row, ensure_ascii=False))
+    ]
     return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, facts=quoted)
 
 
@@ -382,6 +421,8 @@ def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "body": str(note.get("body", ""))[:4000],
     }
     quoted = quoted_facts(f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}")
+    if _is_unconfirmed_memo(frontmatter):
+        quoted = []
     return ToolOutcome(content, citations=[citation], facts=quoted)
 
 
@@ -422,6 +463,26 @@ TOOLS: dict[str, Tool] = {
     t.spec.name: t
     for t in (
         Tool(_spec("list_metrics", "List the metric routines that get_metric can run.", {}), _list_metrics),
+        Tool(
+            _spec(
+                "request_metric",
+                "Ask the Financial Analyst's routines for one metric. Returns the value, unit and lineage. "
+                f"Names: {', '.join(sorted(METRICS))}. 'headcount_cost' is the whole company's monthly payroll.",
+                {"name": {"type": "string"}, "month": _MONTH},
+                ["name"],
+            ),
+            _get_metric,
+        ),
+        Tool(
+            _spec(
+                "web_search",
+                "Search the web for facts outside the vault. Never put company figures or customer names in the query.",
+                {"query": {"type": "string"}},
+                ["query"],
+            ),
+            _web_search,
+            status="searching_web",
+        ),
         Tool(
             _spec(
                 "get_metric",

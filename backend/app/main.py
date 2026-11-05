@@ -17,8 +17,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app import __version__
-from app.agents.setup import build_orchestrator
-from app.api import chat, data, health, metrics, scenario, vault
+from app.agents.setup import build_conversation, build_orchestrator
+from app.api import chat, conversation, data, health, metrics, scenario, vault
 from app.config import Settings, get_settings
 from app.deps import FinanceServices
 from app.engine.calibration import CalibrationError
@@ -29,6 +29,7 @@ from app.engine.sql_guard import SqlGuardError
 from app.llm.base import LLMError
 from app.llm.ollama import OllamaProvider
 from app.logging_setup import configure_logging
+from app.responses import Utf8JSONResponse
 from app.vault.manager import NoteExistsError, NoteNotFoundError, VaultError, VaultPathError
 from app.vault.service import VaultService
 
@@ -83,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         orchestrator = build_orchestrator(settings, services, vault_service)
         app.state.event_bus = orchestrator.bus
         app.state.orchestrator = orchestrator
+        app.state.conversation = build_conversation(settings, orchestrator, services)
         logger.info(
             "Agents ready: local LLM {}:{} (thinking {}), deep provider {}, team approval {}",
             orchestrator.router.local.name,
@@ -112,7 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 logger.info("Shutting down while the vault is still indexing")
             await app.state.http_client.aclose()
 
-    app = FastAPI(title="FounderOS", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="FounderOS", version=__version__, lifespan=lifespan, default_response_class=Utf8JSONResponse)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -128,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(scenario.router, prefix="/api")
     app.include_router(vault.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
+    app.include_router(conversation.router, prefix="/api")
     _add_error_handlers(app)
     return app
 

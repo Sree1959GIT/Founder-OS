@@ -88,8 +88,11 @@ def test_chitchat_needs_no_team(client: TestClient) -> None:
 def test_agents_endpoint_and_errors(client: TestClient) -> None:
     agents = client.get("/api/agents").json()
     assert agents["approval_policy"] == "cloud_only" and agents["max_local_agents"] == 2
-    assert {a["type"] for a in agents["agents"]} == {"advisor", "planner", "financial_analyst", "librarian", "verifier"}
-    assert all(a["provider"] == "fake" for a in agents["agents"])
+    assert {"advisor", "planner", "financial_analyst", "memo_writer", "market_scout"} <= {
+        a["type"] for a in agents["agents"]
+    }
+    assert all(a["provider"] == "fake" and "this_month" in a for a in agents["agents"])
+    assert agents["cloud"]["allowed"] is False and agents["cloud"]["cap_usd"] > 0
     assert client.get("/api/runs/run_nope").status_code == 404
     assert client.post("/api/runs/run_nope/approve", json={"approved": True}).status_code == 409
     assert client.post("/api/runs/run_nope/cancel").status_code == 409

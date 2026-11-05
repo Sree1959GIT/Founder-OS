@@ -95,6 +95,21 @@ _ALSO_ABOUT = {
 _NAME_ALIASES = {"delta": "cash delta"}  # the scenario's cash difference at the end of the projection
 
 
+_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹"}
+_WRITTEN_CODE = re.compile(r"(?:[$€£₹]\s?)?(\d[\d,]*(?:\.\d+)?)\s?(USD|EUR|GBP|INR)\b")
+
+
+def format_money(value: float, currency: str = "USD") -> str:
+    """One way to write money everywhere: $11,423.62."""
+    symbol = _SYMBOLS.get(currency)
+    return f"{symbol}{value:,.2f}" if symbol else f"{value:,.2f} {currency}".strip()
+
+
+def one_money_format(text: str) -> str:
+    """ "11,423.62 USD" and "$11,423.62 USD" become "$11,423.62". The digits are not touched."""
+    return _WRITTEN_CODE.sub(lambda m: f"{_SYMBOLS[m.group(2)]}{m.group(1)}", text)
+
+
 def concepts_in(text: str) -> frozenset[str]:
     lowered = text.lower().replace("_", " ")
     found = {name for name, pattern in CONCEPTS.items() if pattern.search(lowered)}
@@ -125,6 +140,8 @@ class Fact:
         """The figure in a code-written sentence, for when the model's claim about it failed."""
         if self.kind == "ratio":
             written = f"{self.value * 100:,.2f} %"
+        elif self.kind == "money" and self.unit:
+            written = format_money(self.value, self.unit)
         elif self.kind == "count":
             written = f"{self.value:,.0f}"
         elif self.kind == "months":
@@ -267,6 +284,13 @@ def verify_numbers(text: str, known: Iterable[Fact | float], context: str = "") 
 
 # --- does the claim around a figure agree with what the figure is? ------------------------------------------------
 _SENTENCE_RE = re.compile(r"(?<=[.!?])(\s+)")
+
+
+def split_sentences(text: str) -> list[str]:
+    """The pieces of `text`, with the whitespace between them kept as pieces, so joining gives `text` back."""
+    return _SENTENCE_RE.split(text)
+
+
 _CLAUSE_RE = re.compile(r",\s|;\s|:\s|\s(?:and|but|while|which|whereas)\s|\s[\u2013\u2014-]\s")
 _RUNWAY_BY_AN_AMOUNT = re.compile(r"\brunway\b.*\bby\s+(?:the|that|this|the same)\s+(?:amount|sum|figure)\b", re.I)
 _RUNWAY_JUST_BEFORE = re.compile(r"\brunway\W+(?:\w+\W+){0,3}$", re.I)

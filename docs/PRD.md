@@ -21,8 +21,8 @@ Markdown vault, and shows its reasoning on a live visual canvas.
 ### Who it is for
 - **Now:** a single founder (the owner of this repo), on one Windows 11 workstation, no login.
 - **Later (design for, don't build):** sold to other business owners. Code must keep tenant/workspace
-  boundaries clean (one `workspace_id` threaded through storage paths and DB files), and the Claude adapter must
-  support an **API key** as well as a personal subscription token.
+  boundaries clean (one `workspace_id` threaded through storage paths and DB files), and Claude is reached with an
+  **API key** only (see §12, 2026-11-04).
 
 ---
 
@@ -56,7 +56,7 @@ using the per-milestone checklist in `HANDOVER.md`.
         │  voice/            agents/ (LangGraph)                engine/                  │
         │  VAD·STT·TTS       orchestrator · financial · risk    duckdb_engine (+lineage) │
         │  barge-in          memory · scout                     scenario · hybrid_rag    │
-        │                    llm/ providers: Ollama | Gemini | Claude(Agent SDK / API)   │
+        │                    llm/ providers: Ollama | Claude API | Gemini | OpenAI(-compat.)│
         └───────────────┬──────────────────────────────┬────────────────────────────────┘
                         ▼                              ▼
               ./data/<workspace>/founder.duckdb    ./vault/<workspace>/*.md  +  Qdrant :6333  +  BM25 (in-proc)
@@ -82,14 +82,17 @@ One interface: `async complete(messages, tools=None, json_schema=None, stream=Fa
 | Provider | Use | Auth |
 |---|---|---|
 | `OllamaProvider` (default) | orchestrator, voice turns, SQL generation, embeddings | none (localhost:11434) |
-| `ClaudeAgentSDKProvider` | deep-work agents | **Claude subscription** via `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) using the `claude-agent-sdk` Python package (requires Claude Code CLI installed). Personal use only. |
-| `AnthropicAPIProvider` | same as above, for the future commercial product | `ANTHROPIC_API_KEY` |
-| `GeminiProvider` | deep-work agents, web/market intelligence, multimodal (PDF/image) | `GEMINI_API_KEY` (`google-genai` SDK) |
+| `AnthropicAPIProvider` | deep-work agents, web search | `ANTHROPIC_API_KEY`. A subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) is not allowed outside Anthropic's own apps. |
+| `GeminiProvider` | deep-work agents, web search | `GEMINI_API_KEY` (AI Studio) or `VERTEX_API_KEY` (Vertex express) |
+| `OpenAICompatibleProvider` | deep-work agents | `OPENAI_API_KEY`, or `OPENAI_COMPATIBLE_API_KEY` + `OPENAI_COMPATIBLE_BASE_URL` (OpenRouter, DeepSeek and so on) |
 | `FakeProvider` | tests | scripted responses |
 
-- Routing table in `config.py`: `AGENT_PROVIDERS = {orchestrator: ollama, financial: ollama, risk: deep, memo: deep, scout: deep}`;
-  `deep` resolves to `DEEP_PROVIDER` env (`claude_sdk` | `anthropic` | `gemini` | `ollama`) with automatic fallback to Ollama.
-- Claude Agent SDK calls are multi-second; never used in the real-time voice path. Results arrive on the canvas
+- Each agent type has a privacy class in its registry entry. `cloud_allowed` and `cloud` types use the type's choice in
+  `AGENT_MODELS` (`{"market_scout": "gemini:gemini-3.8-flash"}`), else `DEEP_PROVIDER` (`anthropic` | `gemini` | `openai` |
+  `openai_compatible` | `ollama`), with automatic fallback to Ollama. Cloud is off by default.
+- Every cloud payload goes through a deterministic privacy filter (no raw financial rows). Each call's cost and latency is
+  recorded, a monthly cap sends further calls to Ollama, and `/api/agents` shows both.
+- Cloud calls are multi-second; never used in the real-time voice path. Results arrive on the canvas
   and the advisor says e.g. *"The risk review just landed on the right."*
 - Model IDs come from `.env`, never hard-coded in agent code (defaults: latest Claude Sonnet/Opus, `gemini-2.5-flash`).
 
@@ -283,7 +286,7 @@ founder-os/
 │   ├── pyproject.toml (or requirements.txt + requirements-dev.txt)
 │   ├── app/ main.py  config.py  deps.py  events.py (SSE bus)
 │   │   ├── api/   health.py data.py metrics.py scenario.py chat.py vault.py voice_ws.py
-│   │   ├── llm/   base.py ollama.py gemini.py claude_sdk.py anthropic_api.py fake.py router.py
+│   │   ├── llm/   base.py ollama.py cloud.py costs.py privacy.py fake.py router.py
 │   │   ├── agents/ registry.py graph.py planner.py advisor.py financial.py librarian.py verifier.py
 │   │   │          specialists/ (devils_advocate, market_scout, revenue, people_ops, regulatory, prioritiser, memo_writer, lens) prompts/
 │   │   ├── decision/ base.py llm.py laya.py jev.py fake.py log.py
@@ -303,7 +306,7 @@ founder-os/
 | 500 ms voice latency unrealistic on 7B + Whisper small on a 3060 | Honest 900 ms target, sentence-streaming, warm models, optional `qwen2.5:3b` for voice turns |
 | VRAM contention (LLM + STT + TTS) | Kokoro on CPU option; Ollama `keep_alive`; health page shows VRAM |
 | No GPU/Ollama in dev container | Fakes + founder's Windows checklist each milestone |
-| Claude subscription via Agent SDK not allowed for resale | Separate `AnthropicAPIProvider`; documented in README |
+| Cloud costs run away, or raw data reaches a provider | Monthly cap with fallback to Ollama; privacy filter on every payload; team approval for cloud agents |
 | Windows path/encoding issues | pathlib, UTF-8 everywhere, CI job on `windows-latest` |
 | Messy real spreadsheets | Column-mapping layer + mapping UI in M4 |
 
@@ -340,3 +343,7 @@ founder-os/
 | 2026-11-03 | M3a: providers in `app/llm/` (`base`, `ollama`, `cloud` = Anthropic API + Gemini over REST/httpx + Claude Agent SDK imported lazily, `fake`, `router`); no `anthropic`/`google-genai` packages needed. Agents in `app/agents/` (registry, prompts, tools, runtime, verifier, graph, events). The Verifier is deterministic code: numbers must match what the model was shown from tools (1 % rounding), and Librarian paths must be returned citations. Intent routing tries rules first, then the decision model. Every agent falls back to rules when the LLM is down (R3). The chat model is preloaded at startup. |
 | 2026-11-04 | M3a founder review: past decisions are surfaced by code. Notes under `decisions/` have a `DecisionRecord` (status, dates, prediction, kill criteria), and frontmatter is indexed. The Librarian gets a code-run decision lookup and whole-vault search before the model's first turn, and any fact the answer omits is added by code. `citations` lists only sources the answer names (`retrieved` keeps the rest). BM25 gains a light stemmer. Eval: `scripts/eval_vault.py` (offline in CI, `--live` on Windows). |
 | 2026-11-04 | M3a founder review: a figure must keep its meaning. Tool numbers are `Fact`s (label, unit, quantity, flow or balance); the deterministic Verifier also checks the claim around each figure. A failing sentence is sent back once, then replaced by a code-written one and left unverified; the Advisor's reply is checked per sentence, so it streams per sentence. Counted hires get a code-run scenario and a code-computed `decision_impact` in `/api/chat`. The cost per hire is the company's average, labelled as such. |
+| 2026-11-04 | **Correction, founder decision (M3b): no Claude subscription path.** Anthropic does not allow Claude Free, Pro or Max OAuth tokens outside Claude Code and Claude.ai, including in Agent SDK apps (re-checked 2026-11-04: code.claude.com/docs/en/agent-sdk/overview and /legal-and-compliance). Replaces the 2026-11-02 row. Claude is reached with an API key. New provider-agnostic cloud layer: per-agent-type choice among Anthropic, Gemini (AI Studio or Vertex), OpenAI and an OpenAI-compatible endpoint; keys only in `.env`, never logged. Kept: cloud off by default, privacy filter on every payload, team approval, automatic fallback to Ollama. Added: per-call cost and latency, a monthly cost cap (default $25), both in `/api/agents`. **Google ADK is not adopted**; LangGraph stays. The M3c bake-off compares providers on accuracy, latency and cost per answer. |
+| 2026-11-04 | **Founder decision (M3b): two lanes (F3/F5).** A fast conversation lane (small local model; narrates real agent events, asks an assumption question, recaps; never states an unverified number; quiet mode) beside the inference lane (agents + Verifier + one repair turn). Mid-run turns are classified as backchannel, answerable now, amendment, new question or stop: amendments offer cancel-and-re-run with the edited request, new questions queue first in, first out and are offered after delivery. Three contexts: global (workspace), run (snapshot frozen at start), local (session window). M3b builds the backend; M4 the text UI; M5 the voice, and M5 must test GPU sharing (Ollama parallelism, or CPU/Laya for the fast lane). |
+| 2026-11-04 | M3b: a team runs in **stages** fixed in the registry (data, then specialists, then Devil's Advocate, then Memo Writer), not model-written `depends_on`: a small planning model does not get dependencies right, and a fixed order is testable. Each stage sees earlier findings, and the Verifier accepts earlier stages' numbers. The founder's words add specialists by rule on top of the Planner's choice. The Memo Writer's prose goes through the Verifier; code writes the file, metrics with lineage, review date (+30 days) and predictions. A memo is `proposed`: the founder decides. A figure with no lineage is removed from a memo, not just flagged. |
+| 2026-11-05 | M3b founder review: every decision gets a **decision frame in code, before the agents**: type (`hire`, `new_office`, `pricing`, `spend`, `fundraise`, `new_product`, `other`; `new_product` added beyond the founder's list), a one-off plus recurring cost model at low/base/high through `run_scenario` (new `one_off_cost`), costed options, and a goal check against `profile/company.md`. Inputs not in the data are founder-editable placeholders, labelled "assumption, confirm", not market data, and a memo resting on them is never `verified`. Memo structure is enforced in code: one proposed option, outcome predictions, measurable stop rules, "Open numbers to confirm" in place of removed figures. |

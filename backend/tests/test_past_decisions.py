@@ -42,7 +42,13 @@ def make_vault(root: Path) -> Any:
     manager = VaultManager(root)
     index = HybridIndex(manager, FakeEmbedder(), None, ApproxTokenizer())
     index.refresh(dense=False)
-    return SimpleNamespace(vault=manager, index=index, ensure_started=lambda: None, wait_ready=lambda: True)
+    return SimpleNamespace(
+        apply_changes=lambda paths: None,
+        vault=manager,
+        index=index,
+        ensure_started=lambda: None,
+        wait_ready=lambda: True,
+    )
 
 
 @pytest.fixture
@@ -556,7 +562,7 @@ async def _team_types(tasks: list[dict[str, str]]) -> list[str]:
 async def test_a_decision_team_always_has_a_librarian() -> None:
     analyst = {"agent_type": "financial_analyst", "brief": "Numbers"}
     assert await _team_types([analyst, analyst]) == ["financial_analyst", "financial_analyst", "librarian"]
-    assert await _team_types([analyst] * 4) == ["financial_analyst"] * 3 + ["librarian"]
+    assert await _team_types([analyst] * 6) == ["financial_analyst"] * 5 + ["librarian"]
     assert await _team_types([analyst, {"agent_type": "librarian", "brief": "Notes"}]) == [
         "financial_analyst",
         "librarian",
