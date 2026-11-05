@@ -58,6 +58,7 @@ ArtifactKind = Literal[
     "priority_matrix",
     "risk_register",
     "decision_memo",
+    "cost_model",
     "chart",
     "table",
     "citation",

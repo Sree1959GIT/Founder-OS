@@ -7,6 +7,7 @@ store). The model supplies only the prose and its forecasts, and those go throug
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import re
 import uuid
@@ -14,8 +15,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.agents.decision_frame import ASSUMPTION_LABEL, BaselineFigure, DecisionFrame, relevant_metric
 from app.agents.events import Artifact
-from app.agents.verifier import Fact, extract_figures, verify_numbers
+from app.agents.guards import guarded
+from app.agents.verifier import Fact, extract_figures, split_sentences, verify_numbers
 from app.engine.calibration import PredictionIn
 from app.vault.manager import NoteExistsError
 
@@ -23,9 +26,6 @@ REVIEW_AFTER_DAYS = 30
 MAX_TEAM = 8
 REGULATORY_NOTE = "This flags points to verify with a qualified adviser; it is not legal or tax advice."
 SCOUT_LOCAL_NOTE = "This comes from your vault only: cloud is off, so no web research was done."
-PLACEHOLDER_PREDICTION = "This decision meets its goal by the review date (placeholder: replace it with your own)."
-PLACEHOLDER_KILL = "None set yet: decide what result by the review date would make you stop."
-FIGURE_REMOVED = "[figure removed: no lineage]"
 
 # Words that call for a type whatever the plan says. A small model can leave a specialist out; the founder asked.
 _CUES: list[tuple[str, re.Pattern[str]]] = [
@@ -170,9 +170,74 @@ def risk_register(agent_id: str, text: str) -> Artifact:
 
 
 # --- the memo --------------------------------------------------------------------------------------------------------
-class MemoPrediction(BaseModel):
-    statement: str
-    probability: float
+_OUTCOME_COMPARE = re.compile(
+    r"(>=|<=|>|<|≥|≤|\bat least\b|\bat most\b|\bmore than\b|\bless than\b|\bfewer than\b|\bover\b|\bunder\b|"
+    r"\bbelow\b|\babove\b|\bexceeds?\b)",
+    re.I,
+)
+_A_TASK = re.compile(
+    r"^\s*(?:the\s+)?(?:complete|completed|finish|finished|conduct|conducted|research|researched|prepare|prepared|"
+    r"draft|drafted|engage|engaged|obtain|obtained|identify|identified|finalise|finalize|review|reviewed|meet with|"
+    r"talk to|speak to|consult)\b|\b(?:research|study|analysis|report|plan|assessment|review)\b[^.]*\b(?:done|"
+    r"complete|completed|finished|delivered|ready)\b",
+    re.I,
+)
+_WITHIN = re.compile(r"\b(?:within|in|after)\s+(\d{1,2}|one|two|three|six|nine|twelve)\s+(months?|weeks?)\b", re.I)
+_WORD_COUNT = {"one": 1, "two": 2, "three": 3, "six": 6, "nine": 9, "twelve": 12}
+_ISO_DAY = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+_MONTH_YEAR = re.compile(
+    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(20\d{2})\b",
+    re.I,
+)
+_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+
+def outcome_date(text: str, today: dt.date) -> dt.date | None:
+    """The date in a forecast or a stop rule, or None. A date already past checks nothing."""
+    found: dt.date | None = None
+    if match := _ISO_DAY.search(text):
+        try:
+            found = dt.date.fromisoformat(match.group(1))
+        except ValueError:
+            return None
+    elif match := _MONTH_YEAR.search(text):
+        index = _MONTHS.index(match.group(1).lower()[:3]) + 1
+        found = dt.date(int(match.group(2)), index, calendar.monthrange(int(match.group(2)), index)[1])
+    elif match := _WITHIN.search(text):
+        word = match.group(1).lower()
+        count = int(word) if word.isdigit() else _WORD_COUNT[word]
+        days = count * 7 if match.group(2).lower().startswith("week") else count * 30
+        found = today + dt.timedelta(days=days)
+    return found if found is not None and found > today else None
+
+
+class _Measurable(BaseModel):
+    """A metric, a threshold and a date. A model can give the three fields, or one sentence that has all three."""
+
+    statement: str = ""
+    metric: str = ""
+    threshold: str = ""
+    by: str = ""
+
+    def text(self) -> str:
+        if self.metric and self.threshold:
+            return f"{self.metric.strip()} {self.threshold.strip()} by {self.by.strip()}".strip()
+        return self.statement.strip()
+
+    def is_measurable(self, today: dt.date) -> bool:
+        text = self.text()
+        has_number = re.search(r"\d", _ISO_DAY.sub(" ", _MONTH_YEAR.sub(" ", _WITHIN.sub(" ", text)))) is not None
+        return (
+            has_number
+            and _OUTCOME_COMPARE.search(text) is not None
+            and outcome_date(text, today) is not None
+            and _A_TASK.search(self.metric or text) is None
+        )
+
+
+class MemoPrediction(_Measurable):
+    probability: float = 0.5
+    starter: bool = Field(False, description="Written by code from the cost model; the founder sets the odds")
 
     @field_validator("probability", mode="before")
     @classmethod
@@ -182,59 +247,119 @@ class MemoPrediction(BaseModel):
         number = number / 100 if number > 1 else number
         return min(0.99, max(0.01, number))
 
+    def line(self) -> str:
+        odds = f"{self.probability:.0%}" + (" (starter: set your own)" if self.starter else "")
+        return f"{odds}: {self.text()}"
+
+
+class MemoCriterion(_Measurable):
+    starter: bool = False
+
+    def line(self) -> str:
+        rule = re.sub(r"^stop if ", "", self.text(), flags=re.I)
+        return f"Stop if {rule}" + (" (starter: confirm)" if self.starter else "")
+
+
+class MemoOption(BaseModel):
+    name: str
+    note: str = ""
+
+
+def _as_option(value: Any) -> Any:
+    if isinstance(value, str):
+        name, _, note = value.partition(":")
+        return {"name": name.strip(), "note": note.strip()}
+    return value
+
 
 class MemoDraft(BaseModel):
-    """The prose of a memo, from the model. Code adds the path, dates, metrics and lineage."""
+    """The prose of a memo, from the model. Code adds the path, dates, costs, metrics and lineage."""
 
     title: str = ""
-    decision: str = ""
+    chosen: str = Field("", description="The one option recommended")
+    why_chosen: str = ""
+    decision: str = Field("", description="Written by code from `chosen` once the memo is final")
     context: str = ""
-    options: list[str] = Field(default_factory=list)
-    rejected: list[str] = Field(default_factory=list)
+    options: list[MemoOption] = Field(default_factory=list)
+    rejected: list[str] = Field(default_factory=list, description="Written by code: every option but the chosen one")
     assumptions: list[str] = Field(default_factory=list)
     predictions: list[MemoPrediction] = Field(default_factory=list)
-    kill_criteria: list[str] = Field(default_factory=list)
+    kill_criteria: list[MemoCriterion] = Field(default_factory=list)
+    open_numbers: list[str] = Field(default_factory=list, description="Figures with no source, for you to confirm")
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _options(cls, value: Any) -> Any:
+        return [_as_option(v) for v in value] if isinstance(value, list) else value
+
+    @field_validator("predictions", "kill_criteria", mode="before")
+    @classmethod
+    def _outcomes(cls, value: Any) -> Any:
+        return [{"statement": v} if isinstance(v, str) else v for v in value] if isinstance(value, list) else value
 
     def prose(self) -> str:
+        """What the Verifier checks. A target in a forecast or stop rule is a stated aim, listed for the founder."""
         return "\n".join(
             [
                 self.title,
+                self.why_chosen,
                 self.decision,
                 self.context,
-                *self.options,
+                *(o.note for o in self.options),
                 *self.rejected,
                 *self.assumptions,
-                *(p.statement for p in self.predictions),
-                *self.kill_criteria,
             ]
         )
 
 
-MEMO_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "title": {"type": "string"},
-        "decision": {"type": "string", "description": "What is being decided or recommended, one sentence"},
-        "context": {"type": "string"},
-        "options": {"type": "array", "items": {"type": "string"}},
-        "rejected": {"type": "array", "items": {"type": "string"}, "description": "Option, then why it was rejected"},
-        "assumptions": {"type": "array", "items": {"type": "string"}},
-        "predictions": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "statement": {"type": "string", "description": "Checkable by the review date"},
-                    "probability": {"type": "number", "description": "0 to 1"},
+def memo_schema(frame: DecisionFrame | None) -> dict[str, Any]:
+    names = [o.name for o in frame.options] if frame is not None else []
+    outcome = {
+        "metric": {"type": "string", "description": "What is measured, for example 'Qualified Gulf pipeline'"},
+        "threshold": {"type": "string", "description": "A comparison with a number, for example '>= 200000'"},
+        "by": {"type": "string", "description": "A future date, YYYY-MM-DD"},
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "chosen": {
+                "type": "string",
+                "description": "The one option you recommend",
+                **({"enum": names} if names else {}),
+            },
+            "why_chosen": {"type": "string", "description": "One or two sentences to the founder, as 'you'"},
+            "context": {"type": "string"},
+            "options": {
+                "type": "array",
+                "description": "Each option with one line for or against it",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", **({"enum": names} if names else {})},
+                        "note": {"type": "string"},
+                    },
+                    "required": ["name", "note"],
                 },
-                "required": ["statement", "probability"],
+            },
+            "assumptions": {"type": "array", "items": {"type": "string"}},
+            "predictions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {**outcome, "probability": {"type": "number", "description": "0 to 1"}},
+                    "required": ["metric", "threshold", "by", "probability"],
+                },
+            },
+            "kill_criteria": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "object", "properties": outcome, "required": ["metric", "threshold", "by"]},
             },
         },
-        "kill_criteria": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["title", "decision", "context", "options", "assumptions", "predictions", "kill_criteria"],
-}
+        "required": ["title", "chosen", "why_chosen", "context", "options", "predictions", "kill_criteria"],
+    }
 
 
 class MemoRef(BaseModel):
@@ -242,41 +367,32 @@ class MemoRef(BaseModel):
     title: str
     status: str
     review_date: str
+    chosen: str = ""
+    decision_type: str = ""
     predictions: list[str]
     kill_criteria: list[str]
+    open_numbers: list[str] = Field(default_factory=list)
+    assumptions_to_confirm: int = 0
     verified: bool
+
+
+GENERIC_OPTIONS = ["Go ahead", "Run a small pilot first", "Do not do this now"]
 
 
 def rule_draft(message: str) -> MemoDraft:
     """No model: a memo that records the question and says plainly what the founder still has to fill in."""
     return MemoDraft(
         title=memo_title(message),
-        decision=f"Not decided yet: {message}",
         context="Written without the language model, from the team's findings below.",
-        options=["Go ahead", "Run a small pilot first", "Do not do this now"],
-        assumptions=["None recorded yet: add the ones this depends on."],
+        options=[MemoOption(name=name) for name in GENERIC_OPTIONS],
     )
 
 
 _MEMO_PREFIX = re.compile(r"^(decision\s+)?memo\s*[:\-\u2013\u2014]\s*", re.I)
-
-
-def with_required_fields(draft: MemoDraft, message: str) -> MemoDraft:
-    """A memo always has a title, a prediction and a kill criterion, even when the model left them out."""
-    title = _MEMO_PREFIX.sub("", draft.title.strip())
-    return draft.model_copy(
-        update={
-            "title": memo_title(title) if title else memo_title(message),
-            "decision": draft.decision.strip() or f"Not decided yet: {message}",
-            "predictions": draft.predictions or [MemoPrediction(statement=PLACEHOLDER_PREDICTION, probability=0.5)],
-            "kill_criteria": [c for c in draft.kill_criteria if c.strip()] or [PLACEHOLDER_KILL],
-        }
-    )
-
-
 _ASKS = re.compile(r"^(should|shall|can|could|would|do|does|will)\s+(we|i)\s+", re.I)
 _WANTS = re.compile(r"^(i|we)\s+(want|plan|need|would like|are thinking of|am thinking of)\s+(to\s+)?", re.I)
 _SLUG_STOP = frozenset({"a", "an", "the", "our", "my", "to", "of", "in", "on", "for"})
+_OPTION_STOP = frozenset({"a", "an", "the", "of", "to", "in", "for", "and", "or", "with", "first", "as", "now", "this"})
 
 
 def memo_title(message: str) -> str:
@@ -290,30 +406,190 @@ def memo_slug(title: str) -> str:
     return "-".join(words[:7]) or "decision"
 
 
-def _clean_figures(text: str, known: list[Fact], context: str) -> str:
-    """Removes whole figures only, longest first: taking out "15" must not touch a backed "$1,150"."""
-    unbacked = set(verify_numbers(text, known, context))
-    wanted = {figure.text for figure in extract_figures(text) if figure.text in unbacked}
-    for figure in sorted(wanted, key=len, reverse=True):
-        text = re.sub(rf"(?<![\d,.]){re.escape(figure)}(?![\d,]|\.\d)", FIGURE_REMOVED, text)
-    return text
+def _option_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _OPTION_STOP}
+
+
+def _best_option(text: str, names: list[str]) -> tuple[str, float]:
+    """The option `text` most clearly names, and how much of the option's name it covers."""
+    words = _option_words(text)
+    best, score = "", 0.0
+    for name in names:
+        wanted = _option_words(name)
+        share = len(wanted & words) / len(wanted) if wanted else 0.0
+        if share > score:
+            best, score = name, share
+    return best, score
+
+
+def _chosen_option(draft: MemoDraft, names: list[str], default: str) -> tuple[str, bool]:
+    """(the one chosen option, whether the model really chose it)."""
+    wanted = draft.chosen.strip().casefold()
+    exact = next((n for n in names if n.casefold() == wanted), None)
+    if exact:
+        return exact, True
+    for text in (draft.chosen, draft.why_chosen, draft.decision):
+        best, score = _best_option(text, names)
+        if score >= 0.6:
+            return best, True
+    return (default if default in names else names[0]), False
+
+
+def _option_reason(name: str, draft: MemoDraft) -> str:
+    """The model's line on this option, when it gave one."""
+    note = next((o.note for o in draft.options if o.name.casefold() == name.casefold() and o.note), "")
+    if note:
+        return note
+    for line in draft.rejected:
+        if _best_option(line, [name])[1] >= 0.6:
+            _, colon, why = line.partition(":")
+            return why.strip() if colon else line
+    return ""
+
+
+_SPEND_WORDS = re.compile(r"\b(spend\w*|spent|cost\w*|budget|burn)\b", re.I)
+_RUNWAY_WORD = re.compile(r"\brunway\b", re.I)
+_BELOW = re.compile(r"(<=?|≤|\bbelow\b|\bunder\b|\bless than\b|\bfewer than\b)", re.I)
+
+
+def _kill_fits_the_model(criterion: MemoCriterion, frame: DecisionFrame | None) -> bool:
+    """A stop rule cannot fire at once: a spend limit under the plan's own cost, or a runway floor already passed."""
+    if frame is None:
+        return True
+    text = criterion.text()
+    figures = [f.value for f in extract_figures(_ISO_DAY.sub(" ", text))]
+    if not figures:
+        return True
+    if frame.cost_model is not None and _SPEND_WORDS.search(text):
+        base = frame.cost_model.case("base")
+        return abs(figures[0]) >= base.one_off + base.monthly
+    runway = next((b.value for b in frame.baseline if b.metric == "runway"), None)
+    if runway is not None and _RUNWAY_WORD.search(text) and _BELOW.search(text):
+        return figures[0] < runway
+    return True
+
+
+def _final_outcomes(
+    draft: MemoDraft, frame: DecisionFrame | None, today: dt.date
+) -> tuple[list[MemoPrediction], list[MemoCriterion]]:
+    predictions = [p for p in draft.predictions if p.is_measurable(today)][:3]
+    kills = [k for k in draft.kill_criteria if k.is_measurable(today) and _kill_fits_the_model(k, frame)][:3]
+    if frame is not None and not predictions:
+        predictions = [
+            MemoPrediction(metric=o.metric, threshold=o.threshold, by=o.by, probability=o.probability, starter=True)
+            for o in frame.predictions
+        ]
+    if frame is not None and not kills:
+        kills = [
+            MemoCriterion(metric=o.metric, threshold=o.threshold, by=o.by, starter=True) for o in frame.kill_criteria
+        ]
+    return predictions, kills
+
+
+def with_required_fields(
+    draft: MemoDraft, message: str, frame: DecisionFrame | None = None, today: dt.date | None = None
+) -> MemoDraft:
+    """Exactly one chosen option, every other one rejected, and a Decision that matches: all written by code."""
+    today = today or dt.date.today()
+    title = _MEMO_PREFIX.sub("", draft.title.strip())
+    costed = bool(frame is not None and frame.options)
+    names = [o.name for o in frame.options] if frame is not None and costed else []
+    if not names:
+        names = list(dict.fromkeys(o.name.strip() for o in draft.options if o.name.strip())) or list(GENERIC_OPTIONS)
+    if frame is not None and costed:
+        default = frame.default_option
+    else:
+        default = next((n for n in names if "pilot" in n.lower()), names[0])
+    chosen, model_chose = _chosen_option(draft, names, default)
+    why = draft.why_chosen.strip() or draft.decision.strip()
+    _, score = _best_option(why, [n for n in names if n != chosen])
+    # A reason that argues for another option would contradict the choice, so it does not go in the Decision.
+    if score >= 0.6 and _best_option(why, [chosen])[1] < score:
+        why = ""
+    if not model_chose:
+        why = "Chosen by rule as the easiest option to undo: the draft named no option from the list."
+    decision = f"Proposed: {chosen}. {why}".strip() + " You have not decided yet: this is a recommendation."
+    options = [MemoOption(name=n, note=_option_reason(n, draft)) for n in names]
+    rejected = [f"{o.name}: {o.note or 'Not chosen for now.'}" for o in options if o.name != chosen]
+    predictions, kills = _final_outcomes(draft, frame, today)
+    return draft.model_copy(
+        update={
+            "title": memo_title(title) if title else memo_title(message),
+            "chosen": chosen,
+            "why_chosen": why,
+            "decision": decision,
+            "options": options,
+            "rejected": rejected,
+            "predictions": predictions,
+            "kill_criteria": kills,
+        }
+    )
+
+
+def _pull_unbacked(text: str, known: list[Fact], context: str, moved: list[str]) -> str:
+    """A sentence holding a figure with no source leaves the text and goes on the list for the founder to confirm."""
+    if not verify_numbers(text, known, context):
+        return text
+    kept: list[str] = []
+    for piece in split_sentences(text):
+        if piece.strip() and verify_numbers(piece, known, context):
+            moved.append(piece.strip())
+        else:
+            kept.append(piece)
+    return "".join(kept).strip()
 
 
 def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) -> MemoDraft:
-    """A memo is kept for years: a figure with no lineage is removed from it, not just flagged."""
+    """A memo is kept for years: a figure with no lineage is never stated as fact, and never left as a scar."""
+    moved: list[str] = list(draft.open_numbers)
 
     def clean(text: str) -> str:
-        return _clean_figures(text, known, message)
+        return _pull_unbacked(text, known, message, moved)
 
-    return MemoDraft(
-        title=clean(draft.title),
-        decision=clean(draft.decision),
-        context=clean(draft.context),
-        options=[clean(x) for x in draft.options],
-        rejected=[clean(x) for x in draft.rejected],
-        assumptions=[clean(x) for x in draft.assumptions],
-        predictions=[p.model_copy(update={"statement": clean(p.statement)}) for p in draft.predictions],
-        kill_criteria=[clean(x) for x in draft.kill_criteria],
+    title = draft.title if not verify_numbers(draft.title, known, message) else memo_title(message)
+    options = [o.model_copy(update={"note": clean(o.note)}) for o in draft.options]
+    decision = clean(draft.decision)
+    rejected = [r for r in (clean(x) for x in draft.rejected) if r]
+    context = clean(draft.context)
+    assumptions = [a for a in (clean(x) for x in draft.assumptions) if a]
+    targets = [
+        f"Target in a forecast: {p.text()}"
+        for p in draft.predictions
+        if not p.starter and verify_numbers(p.text(), known, message)
+    ]
+    targets += [
+        f"Target in a stop rule: {k.text()}"
+        for k in draft.kill_criteria
+        if not k.starter and verify_numbers(k.text(), known, message)
+    ]
+    return draft.model_copy(
+        update={
+            "title": title,
+            "decision": decision,
+            "context": context,
+            "options": options,
+            "rejected": rejected,
+            "assumptions": assumptions,
+            "open_numbers": list(dict.fromkeys([*moved, *targets])),
+        }
+    )
+
+
+def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[Any]) -> MemoDraft:
+    """A memo speaks to the founder too, and never reports a goal or a proposal as a decision."""
+
+    def say(text: str) -> str:
+        return guarded(text, frame, records)
+
+    return draft.model_copy(
+        update={
+            "context": say(draft.context),
+            "why_chosen": say(draft.why_chosen),
+            "decision": say(draft.decision),
+            "options": [o.model_copy(update={"note": say(o.note)}) for o in draft.options],
+            "rejected": [say(r) for r in draft.rejected],
+            "assumptions": [say(a) for a in draft.assumptions],
+        }
     )
 
 
@@ -321,49 +597,109 @@ def _bullets(items: list[str], blank: str = "None recorded.") -> str:
     return "\n".join(f"- {item}" for item in items) if items else blank
 
 
-def _metric_lines(upstream: list[Any]) -> list[str]:
-    """The team's numbers as the routines returned them, each with where it came from."""
+def _metric_lines(upstream: list[Any], frame: DecisionFrame | None) -> list[str]:
+    """One plain sentence per figure that bears on this decision, with where it came from in a few words."""
     lines: list[str] = []
     seen: set[str] = set()
+    if frame is not None:
+        for figure in frame.baseline:
+            seen.add(figure.metric)
+            lines.append(figure.line())
     for result in upstream:
         for artifact in result.artifacts:
-            if artifact.kind == "metric_card" and artifact.data.get("metric") not in seen:
-                seen.add(artifact.data.get("metric"))
-                lineage = artifact.lineage[0] if artifact.lineage else None
-                source = f"; formula: {lineage.formula}; files: {', '.join(lineage.source_files)}" if lineage else ""
-                data = artifact.data
-                lines.append(
-                    f"{data.get('label')}: {data.get('value')} {data.get('unit')} (as of {data.get('as_of')}{source})"
-                )
+            if artifact.kind != "metric_card" or artifact.data.get("metric") in seen:
+                continue
+            data = artifact.data
+            metric = str(data.get("metric"))
+            if not relevant_metric(frame, metric) or data.get("value") is None:
+                continue
+            seen.add(metric)
+            figure = BaselineFigure(
+                metric=metric,
+                label=str(data.get("label")),
+                value=float(data["value"]),
+                unit=str(data.get("unit")),
+                as_of=str(data.get("as_of")),
+                sources=list(artifact.lineage[0].source_files) if artifact.lineage else [],
+            )
+            lines.append(figure.line())
         if result.decision_impact is not None:
             sentence = result.decision_impact.sentence()
             if sentence not in seen:
                 seen.add(sentence)
-                lineage = next(iter(result.lineage), None)
-                source = f"; formula: {lineage.formula}; files: {', '.join(lineage.source_files)}" if lineage else ""
-                lines.append(f"{sentence} (computed by `run_scenario`{source})")
+                files = ", ".join(next(iter(result.lineage)).source_files) if result.lineage else ""
+                lines.append(f"{sentence} (Computed by the scenario routine{' from ' + files if files else ''}.)")
     return lines
 
 
-def render_body(draft: MemoDraft, upstream: list[Any]) -> str:
-    findings = [
-        f"**{r.name}{'' if r.verified else ' (not verified)'}:** "
-        f"{_one_line(_clean_figures(r.text, r.known_facts, r.brief))}"
-        for r in upstream
-        if r.status == "done" and r.text
-    ]
-    predictions = [f"{p.probability:.0%}: {p.statement}" for p in draft.predictions]
+def _cost_section(frame: DecisionFrame | None) -> str:
+    model = frame.cost_model if frame is not None else None
+    if model is None:
+        return "Not modelled: no figures are available for this decision yet."
+    lines = [model.item_line(item) for item in model.items]
+    lines += [model.case_line(case) for case in model.cases]
+    lines.append(model.scope_note)
+    source = ", ".join(model.sources)
+    lines.append(
+        f"Runway effects come from the scenario routine{' over ' + source if source else ''}, as of {model.as_of}."
+    )
+    return _bullets(lines)
+
+
+def _option_lines(draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
+    costs = {o.name: o for o in frame.options} if frame is not None else {}
+    lines = []
+    for option in draft.options:
+        known = costs.get(option.name)
+        line = known.line(frame.currency) if known is not None and frame is not None else option.name
+        if option.note and known is not None:
+            line = f"{line} {option.note}"
+        elif option.note:
+            line = f"{line}: {option.note}"
+        lines.append(f"{line} **(proposed)**" if option.name == draft.chosen else line)
+    return lines
+
+
+def _assumption_lines(draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
+    lines = []
+    if frame is not None and frame.assumption_count:
+        lines.append(
+            f"The cost model above rests on {frame.assumption_count} placeholder inputs, not quotes or market data "
+            f"({ASSUMPTION_LABEL}). Tell me the real figures and I re-run it."
+        )
+    return lines + draft.assumptions
+
+
+def _goal_lines(frame: DecisionFrame | None) -> list[str]:
+    return [g.sentence for g in frame.goals] if frame is not None else []
+
+
+def render_body(draft: MemoDraft, upstream: list[Any], frame: DecisionFrame | None = None) -> str:
+    moved: list[str] = list(draft.open_numbers)
+    findings = []
+    for r in upstream:
+        if r.status != "done" or not r.text:
+            continue
+        before = len(moved)
+        text = _pull_unbacked(r.text, r.known_facts, r.brief, moved)
+        moved[before:] = [f"{r.name}: {line}" for line in moved[before:]]
+        if text:
+            findings.append(f"**{r.name}{'' if r.verified else ' (not verified)'}:** {_one_line(text)}")
+    predictions = [p.line() for p in draft.predictions]
     return "\n\n".join(
         [
             f"# {draft.title}",
             f"## Decision\n{draft.decision}",
             f"## Context\n{draft.context or 'None recorded.'}",
-            f"## Options\n{_bullets(draft.options)}",
+            f"## Goal check\n{_bullets(_goal_lines(frame), 'No goals found in profile/company.md.')}",
+            f"## Cost model\n{_cost_section(frame)}",
+            f"## Options\n{_bullets(_option_lines(draft, frame))}",
             f"## Rejected alternatives\n{_bullets(draft.rejected)}",
-            f"## Assumptions\n{_bullets(draft.assumptions)}",
-            f"## Metrics\n{_bullets(_metric_lines(upstream), 'No metrics were computed for this decision.')}",
+            f"## Assumptions\n{_bullets(_assumption_lines(draft, frame))}",
+            f"## Open numbers to confirm\n{_bullets(list(dict.fromkeys(moved)), 'None.')}",
+            f"## Metrics\n{_bullets(_metric_lines(upstream, frame), 'No metrics were computed for this decision.')}",
             f"## Predictions\n{_bullets(predictions)}",
-            f"## Kill criteria\n{_bullets(draft.kill_criteria)}",
+            f"## Kill criteria\n{_bullets([k.line() for k in draft.kill_criteria])}",
             f"## Team findings\n{_bullets(findings)}",
         ]
     )
@@ -380,6 +716,7 @@ def write_memo(
     *,
     verified: bool,
     agent_id: str,
+    frame: DecisionFrame | None = None,
     today: dt.date | None = None,
 ) -> tuple[MemoRef, Artifact]:
     """Writes `decisions/YYYY-MM-DD-<slug>.md` as `proposed` (the founder decides) and stores the predictions."""
@@ -387,18 +724,25 @@ def write_memo(
         raise ValueError("the vault is not available, so the memo could not be written")
     today = today or dt.date.today()
     review = (today + dt.timedelta(days=REVIEW_AFTER_DAYS)).isoformat()
-    predictions = [f"{p.probability:.0%}: {p.statement}" for p in draft.predictions]
+    predictions = [p.line() for p in draft.predictions]
+    kills = [k.line() for k in draft.kill_criteria]
+    # Placeholder figures are never "verified", however well the prose checks out.
+    assumptions = frame.assumption_count if frame is not None else 0
+    is_verified = verified and not assumptions
     frontmatter = {
         "title": draft.title,
         "written": today.isoformat(),  # not `date`: the vault reads that as the day it was decided
         "status": "proposed",
+        "decision_type": frame.type if frame is not None else "other",
+        "proposed_option": draft.chosen,
         "review_date": review,
         "predictions": predictions,
-        "kill_criteria": draft.kill_criteria,
-        "verified": verified,
+        "kill_criteria": kills,
+        "assumptions_to_confirm": assumptions,
+        "verified": is_verified,
         "tags": ["decision"],
     }
-    body = render_body(draft, upstream)
+    body = render_body(draft, upstream, frame)
     base = f"decisions/{today.isoformat()}-{memo_slug(draft.title)}"
     written = ""
     for attempt in range(1, 100):
@@ -412,14 +756,15 @@ def write_memo(
         raise ValueError(f"could not find a free file name for {base}")
     ctx.vault.apply_changes({written})
     if ctx.finance is not None:
-        for prediction in [p for p in draft.predictions if p.statement != PLACEHOLDER_PREDICTION]:
+        # A starter is arithmetic on the cost model, not a forecast anyone made, so it is not scored.
+        for prediction in [p for p in draft.predictions if not p.starter]:
             ctx.finance.calibration.add(
                 PredictionIn(
-                    statement=prediction.statement[:500],
+                    statement=prediction.text()[:500],
                     probability=prediction.probability,
                     owner="memo_writer",
                     decision=written,
-                    resolve_by=dt.date.fromisoformat(review),
+                    resolve_by=outcome_date(prediction.text(), today) or dt.date.fromisoformat(review),
                 )
             )
     ref = MemoRef(
@@ -427,9 +772,13 @@ def write_memo(
         title=draft.title,
         status="proposed",
         review_date=review,
+        chosen=draft.chosen,
+        decision_type=frame.type if frame is not None else "other",
         predictions=predictions,
-        kill_criteria=draft.kill_criteria,
-        verified=verified,
+        kill_criteria=kills,
+        open_numbers=draft.open_numbers,
+        assumptions_to_confirm=assumptions,
+        verified=is_verified,
     )
     artifact = Artifact(
         id=f"art_{uuid.uuid4().hex[:10]}",

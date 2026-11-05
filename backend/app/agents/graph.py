@@ -29,6 +29,7 @@ from langgraph.types import Send
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agents.decision_frame import DecisionFrame, build_frame
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.registry import REGISTRY
 from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, _team, advise, plan, team_impact
@@ -89,6 +90,10 @@ class ChatResult(BaseModel):
     decision_impact: DecisionImpact | None = Field(
         default=None, description="What this decision does to costs and runway, computed in code"
     )
+    decision_frame: DecisionFrame | None = Field(
+        default=None, description="Type, cost model, options and goal check, computed in code"
+    )
+    assumptions_to_confirm: int = Field(0, description="Placeholder inputs the answer rests on")
     memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     verified: bool
@@ -186,6 +191,10 @@ class AgentOrchestrator:
         run = self.runs[state["run_id"]]
         started = time.perf_counter()
         the_plan = run.plan_override or await plan(state["message"], self.router, self.decisions)
+        if the_plan.intent == "decision" and the_plan.frame is None:
+            ctx = self.ctx_factory("")
+            frame = await asyncio.to_thread(build_frame, state["message"], ctx, the_plan.decision_type)
+            the_plan = the_plan.model_copy(update={"frame": frame, "decision_type": frame.type})
         run.plan = the_plan
         run.timings["plan"] = _ms(started)
         team = [i.model_dump() for i in the_plan.team]
@@ -199,6 +208,7 @@ class AgentOrchestrator:
             planner=the_plan.planner,
             team=team,
             needs_approval=needs,
+            questions=the_plan.frame.questions if the_plan.frame is not None else [],
         )
         approved = True
         if needs:
@@ -256,7 +266,7 @@ class AgentOrchestrator:
         slots = self.cloud_slots if inst.is_cloud else self.local_slots
         runner = AgentRunner(self.router, self.bus, state["run_id"], self.ctx_factory, self.max_steps)
         async with slots:
-            return await runner.run(inst, state["message"], state.get("results", []))
+            return await runner.run(inst, state["message"], state.get("results", []), state["plan"].frame)
 
     async def _agent_node(self, state: GraphState) -> dict[str, Any]:
         """One instance, as its own task, so the founder can cancel or re-run it without touching the rest."""
@@ -361,6 +371,7 @@ class AgentOrchestrator:
             run.run_id,
             status=result.status,
             verified=result.verified,
+            assumptions=result.assumptions_to_confirm,
             elapsed_ms=result.elapsed_ms,
         )
         await run.deltas.put(None)
@@ -388,7 +399,8 @@ class AgentOrchestrator:
         for r in results:
             citations.extend(c for c in r.citations if c not in citations)
         answer = state.get("answer", "")
-        known = [n for r in results for n in r.numbers]
+        frame = the_plan.frame
+        known = [*(n for r in results for n in r.numbers), *(f.value for f in (frame.facts if frame else []))]
         cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
         advisor_issues = [f"advisor number without lineage: {n}" for n in verify_numbers(answer, known, context)]
@@ -396,6 +408,10 @@ class AgentOrchestrator:
         issues = (
             [f"{r.name}: {i}" for r in results for i in r.issues] + advisor_issues + advisor.get("claim_issues", [])
         )
+        # Placeholder inputs are never "verified", however well the prose checks out.
+        assumptions = frame.assumption_count if frame is not None and results else 0
+        if assumptions:
+            issues.append(f"this rests on {assumptions} assumptions to confirm")
         usage = sum((r.usage for r in results), Usage()) + advisor.get("usage", Usage())
         approved = bool(state.get("approved", True))
         return ChatResult(
@@ -415,6 +431,8 @@ class AgentOrchestrator:
             citations=citations,
             past_decisions=past_decisions,
             decision_impact=team_impact(results),
+            decision_frame=frame,
+            assumptions_to_confirm=assumptions,
             memo=next((r.memo for r in results if r.memo is not None), None),
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             verified=not issues and all(r.status == "done" for r in results),

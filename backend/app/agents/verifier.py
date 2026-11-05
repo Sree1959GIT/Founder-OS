@@ -284,6 +284,13 @@ def verify_numbers(text: str, known: Iterable[Fact | float], context: str = "") 
 
 # --- does the claim around a figure agree with what the figure is? ------------------------------------------------
 _SENTENCE_RE = re.compile(r"(?<=[.!?])(\s+)")
+
+
+def split_sentences(text: str) -> list[str]:
+    """The pieces of `text`, with the whitespace between them kept as pieces, so joining gives `text` back."""
+    return _SENTENCE_RE.split(text)
+
+
 _CLAUSE_RE = re.compile(r",\s|;\s|:\s|\s(?:and|but|while|which|whereas)\s|\s[\u2013\u2014-]\s")
 _RUNWAY_BY_AN_AMOUNT = re.compile(r"\brunway\b.*\bby\s+(?:the|that|this|the same)\s+(?:amount|sum|figure)\b", re.I)
 _RUNWAY_JUST_BEFORE = re.compile(r"\brunway\W+(?:\w+\W+){0,3}$", re.I)

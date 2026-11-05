@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import datetime as dt
 import json
 import re
 import time
@@ -19,11 +20,12 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agents.decision_frame import DecisionFrame, build_frame
 from app.agents.events import Artifact, Citation, EventBus
+from app.agents.guards import guarded, in_role, role_problems
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
 from app.agents.specialists import (
     MAX_TEAM,
-    MEMO_SCHEMA,
     REGULATORY_NOTE,
     RULE_TEXT,
     SCOUT_LOCAL_NOTE,
@@ -32,7 +34,9 @@ from app.agents.specialists import (
     MemoRef,
     calls_for_team,
     default_brief,
+    in_your_words,
     lens_name,
+    memo_schema,
     needs_analyst,
     risk_register,
     rule_draft,
@@ -50,7 +54,6 @@ from app.agents.verifier import (
     format_money,
     named_paths,
     number_supported,
-    one_money_format,
     repair_claims,
     verify,
 )
@@ -140,6 +143,7 @@ class Plan(BaseModel):
     team: list[AgentInstance] = Field(default_factory=list)
     planner: str = Field(description="How the plan was made: rules, decision model or LLM")
     intent_decision_id: str | None = None
+    frame: DecisionFrame | None = Field(default=None, description="Type, cost model, options and goal check, by code")
 
 
 class AgentResult(BaseModel):
@@ -356,35 +360,47 @@ class AgentRunner:
         self.run_id = run_id
         self.ctx_factory = ctx_factory
         self.max_steps = max_steps
+        self.frame: DecisionFrame | None = None
 
     def _emit(self, type_: Any, agent_id: str, **data: Any) -> None:
         self.bus.emit(type_, self.run_id, agent_id, **data)
 
     async def run(
-        self, inst: AgentInstance, user_message: str, upstream: list[AgentResult] | None = None
+        self,
+        inst: AgentInstance,
+        user_message: str,
+        upstream: list[AgentResult] | None = None,
+        frame: DecisionFrame | None = None,
     ) -> AgentResult:
         spec = REGISTRY[inst.type]
         started = time.perf_counter()
         upstream = upstream or []
+        if frame is None and spec.name == "memo_writer":
+            frame = await asyncio.to_thread(build_frame, user_message, self.ctx_factory(inst.id))
+        self.frame = frame
         result = AgentResult(
             agent_id=inst.id,
             type=inst.type,
             name=inst.name,
             brief=inst.brief,
-            inherited=[fact for r in upstream for fact in r.facts],
+            inherited=[*(fact for r in upstream for fact in r.facts), *(frame.facts if frame else [])],
             inherited_impact=team_impact(upstream),
         )
         self._emit("agent.status", inst.id, status="thinking")
         await self._look_up_past_decisions(spec, inst, user_message, result)
         findings = f"\nTeam findings so far:\n{findings_for_advisor(upstream)}" if upstream else ""
+        framed = frame.for_agents() if frame is not None else ""
         messages = [
-            Message.system(spec.prompt() + await self._data_context(spec) + _decisions_context(result)),
+            Message.system(spec.prompt() + await self._data_context(spec) + _decisions_context(result) + framed),
             Message.user(f"Brief: {inst.brief}\nFounder's message: {user_message}{findings}"),
         ]
         if spec.name == "memo_writer":
+            if frame is not None:
+                messages.append(Message.user(_memo_brief(frame)))
             await self._write_memo(spec, inst, user_message, messages, upstream, result)
             return self._finish(inst, result, started)
         await self._search_first(spec, inst, user_message, messages, result)
+        await self._cost_model_first(spec, inst, messages, result)
         await self._scenario_first(spec, inst, user_message, messages, result)
         try:
             await self._loop(spec, inst, messages, result)
@@ -396,6 +412,10 @@ class AgentRunner:
         await self._surface_named_folder(spec, inst, user_message, result)
         _surface_decisions(result)
         self._verify(spec, inst, user_message, result)
+        out_of_role = role_problems(spec.name, result.text, user_message)
+        if out_of_role:
+            result.verified = False
+            result.issues = [*result.issues, *out_of_role]
         if not result.verified and result.provider not in ("rules", ""):
             result.attempts = 2
             self._emit("agent.step", inst.id, step="sent back by the Verifier: " + "; ".join(result.issues))
@@ -414,6 +434,7 @@ class AgentRunner:
             _surface_decisions(result)
             self._verify(spec, inst, user_message, result)
         _replace_wrong_claims(result, user_message)
+        result.text = guarded(in_role(spec.name, result.text, user_message), frame, _records_for(result, upstream))
         self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
         return self._finish(inst, result, started)
@@ -436,6 +457,11 @@ class AgentRunner:
 
     def _finish_specialist(self, spec: AgentType, inst: AgentInstance, result: AgentResult) -> None:
         """What a specialist's answer always carries, whatever the model wrote."""
+        frame = self.frame
+        if spec.name == "financial_analyst" and frame is not None and frame.non_hire:
+            sentence = frame.cost_sentence()
+            if sentence and sentence not in result.text:
+                result.text = f"{result.text} {sentence}".strip()
         if spec.name == "devils_advocate" and result.text:
             artifact = risk_register(inst.id, result.text)
             result.artifacts.append(artifact)
@@ -511,6 +537,7 @@ class AgentRunner:
             draft = await self._draft_memo(spec, messages, user_message, result, fallback=draft)
             report = self._check_memo(draft, user_message, result)
         result.verified, result.issues = report.ok, report.issues
+        draft = in_your_words(draft, self.frame, _records_for(result, upstream))
         draft = without_unbacked_figures(draft, _memo_facts(draft, result), user_message)
         self._emit("agent.status", inst.id, status="searching_vault")
         try:
@@ -521,6 +548,7 @@ class AgentRunner:
                 upstream,
                 verified=report.ok,
                 agent_id=inst.id,
+                frame=self.frame,
             )
         except (ValueError, OSError, VaultError) as exc:
             logger.warning("The memo could not be written: {}", exc)
@@ -532,7 +560,7 @@ class AgentRunner:
         self._emit("agent.artifact", inst.id, artifact=artifact.model_dump(mode="json"))
         result.text = (
             f"Memo written to {memo.path} (status {memo.status}, review date {memo.review_date}). "
-            f"Prediction: {memo.predictions[0]}"
+            f"It proposes: {memo.chosen}. Prediction: {memo.predictions[0]}"
         )
 
     async def _draft_memo(
@@ -545,10 +573,10 @@ class AgentRunner:
     ) -> MemoDraft:
         try:
             completion = await self.router.complete(
-                spec.privacy, messages, json_schema=MEMO_SCHEMA, agent_type=spec.name
+                spec.privacy, messages, json_schema=memo_schema(self.frame), agent_type=spec.name
             )
             self._account(result, completion)
-            return with_required_fields(MemoDraft.model_validate(completion.json()), user_message)
+            return with_required_fields(MemoDraft.model_validate(completion.json()), user_message, self.frame)
         except (LLMError, ValueError, TypeError) as exc:
             logger.warning(
                 "Memo draft from the model failed, using {}: {}", "the last one" if fallback else "rules", exc
@@ -556,7 +584,7 @@ class AgentRunner:
             if fallback is not None:
                 return fallback
             result.provider, result.model = "rules", ""
-            return with_required_fields(rule_draft(user_message), user_message)
+            return with_required_fields(rule_draft(user_message), user_message, self.frame)
 
     @staticmethod
     def _check_memo(draft: MemoDraft, user_message: str, result: AgentResult) -> Any:
@@ -598,12 +626,46 @@ class AgentRunner:
         company's payroll, and never ran a scenario.
         """
         hires = hires_in_message(user_message)
-        if spec.name != "financial_analyst" or hires is None:
+        if spec.name != "financial_analyst" or hires is None or (self.frame is not None and self.frame.non_hire):
             return
         call = ToolCall(name="run_scenario", arguments={"new_hires": hires})
         outcome = await self._call_tool(spec, inst, call, result)
         messages.append(Message.assistant("", [call]))
         messages.append(Message.tool(call, outcome.for_model()))
+
+    async def _cost_model_first(
+        self, spec: AgentType, inst: AgentInstance, messages: list[Message], result: AgentResult
+    ) -> None:
+        """A decision that is not a hire has its own costs. The Analyst states them, and shows them on the canvas.
+
+        Seen live: asked about a Dubai office, the model ran a what-if with `new_hires=1` and called that its cost.
+        So the what-if tools are not offered for it: code already ran the low, base and high cases.
+        """
+        frame = self.frame
+        if spec.name != "financial_analyst" or frame is None or not frame.non_hire or frame.cost_model is None:
+            return
+        result.facts.extend(frame.facts)
+        artifact = Artifact(
+            id=f"art_{uuid.uuid4().hex[:10]}",
+            kind="cost_model",
+            title=f"Cost model: {frame.subject}",
+            agent_id=inst.id,
+            data={**frame.cost_model.model_dump(mode="json"), "options": [o.model_dump() for o in frame.options]},
+        )
+        result.artifacts.append(artifact)
+        self._emit("agent.artifact", inst.id, artifact=artifact.model_dump(mode="json"))
+        messages.append(
+            Message.user(
+                "The what-if is already computed for you. Say what this costs and what it does to runway, calling the "
+                f"labelled figures assumptions:\n{frame.cost_model.sentence()}"
+            )
+        )
+
+    def _hidden_tools(self, spec: AgentType) -> frozenset[str]:
+        frame = self.frame
+        if spec.name == "financial_analyst" and frame is not None and frame.non_hire and frame.cost_model is not None:
+            return frozenset({"run_scenario", "run_monte_carlo"})
+        return frozenset()
 
     async def _data_context(self, spec: AgentType) -> str:
         """Tell the Financial Analyst which months exist, so it does not invent a `month` argument."""
@@ -652,7 +714,9 @@ class AgentRunner:
         result.tool_calls.append({"tool": call.name, "arguments": call.arguments, "error": outcome.error})
         result.facts.extend(outcome.facts)
         # The first scenario is the founder's: later ones are the model exploring.
-        if result.decision_impact is None and not outcome.error and isinstance(outcome.content.get("impact"), dict):
+        is_hire = self.frame is None or not self.frame.non_hire
+        has_impact = not outcome.error and isinstance(outcome.content.get("impact"), dict)
+        if is_hire and result.decision_impact is None and has_impact:
             result.decision_impact = DecisionImpact(**outcome.content["impact"])
         for citation in outcome.citations:
             if citation not in result.retrieved:
@@ -674,7 +738,12 @@ class AgentRunner:
         return web_outcome(self.ctx_factory(inst.id), answer)
 
     async def _loop(self, spec: AgentType, inst: AgentInstance, messages: list[Message], result: AgentResult) -> None:
-        tools = [t for t in specs_for(spec.tools) if t.name != "web_search" or self._can_search_web(spec)] or None
+        hidden = self._hidden_tools(spec)
+        tools = [
+            t
+            for t in specs_for(spec.tools)
+            if t.name not in hidden and (t.name != "web_search" or self._can_search_web(spec))
+        ] or None
         for step in range(self.max_steps + 1):
             final = step == self.max_steps
             self._emit("agent.status", inst.id, status="waiting_cloud" if inst.is_cloud else "thinking")
@@ -706,6 +775,8 @@ class AgentRunner:
         result.provider, result.model = "rules", ""
         if spec.name == "financial_analyst" and result.decision_impact is not None:
             result.text = result.decision_impact.sentence()
+        elif spec.name == "financial_analyst" and self._hidden_tools(spec) and self.frame is not None:
+            result.text = self.frame.cost_sentence()
         elif spec.name == "financial_analyst":
             metric = rule_metric(f"{inst.brief} {user_message}")
             if metric is None:
@@ -822,6 +893,22 @@ def _replace_wrong_claims(result: AgentResult, user_message: str) -> None:
     """Sent back once and still wrong: not verified, and the sentence is replaced by one written in code."""
     impact = result.decision_impact or result.inherited_impact
     result.text, _ = repair_claims(result.text, result.known_facts, user_message, _written_by_code(impact))
+
+
+def _records_for(result: AgentResult, upstream: list[AgentResult]) -> list[DecisionRecord]:
+    return [*result.past_decisions, *_team_decisions(upstream)]
+
+
+def _memo_brief(frame: DecisionFrame) -> str:
+    """What the Memo Writer chooses from. Code holds the costs; the model holds the judgement."""
+    lines = [f"Today is {dt.date.today().isoformat()}."]
+    if frame.options:
+        lines.append("Options, costed in code. Choose exactly one for `chosen`, using its exact name:")
+        lines.extend(f"- {o.line(frame.currency)}" for o in frame.options)
+    sentences = [g.sentence for g in frame.goals if g.status in ("moves_away", "moves_towards", "open_question")]
+    if sentences:
+        lines.append("Goal check, computed in code; weigh it in your choice: " + " ".join(sentences))
+    return "\n".join(lines)
 
 
 def team_impact(results: list[AgentResult]) -> DecisionImpact | None:
@@ -968,8 +1055,8 @@ def _args_preview(arguments: dict[str, Any]) -> str:
     return text if len(text) <= 80 else text[:77] + "..."
 
 
-def findings_for_advisor(results: list[AgentResult]) -> str:
-    blocks: list[str] = []
+def findings_for_advisor(results: list[AgentResult], frame: DecisionFrame | None = None) -> str:
+    blocks: list[str] = [*frame.findings_block()] if frame is not None else []
     impact = team_impact(results)
     for r in results:
         # A wrong-meaning sentence is already replaced, so naming its figure again would only bring it back.
@@ -1019,13 +1106,22 @@ def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
 class _SentenceGate:
     """Checks the Advisor's reply one sentence at a time, before the founder sees it (the reply streams)."""
 
-    def __init__(self, facts: list[Fact], message: str, impact: DecisionImpact | None, issues: list[str]) -> None:
+    def __init__(
+        self,
+        facts: list[Fact],
+        message: str,
+        impact: DecisionImpact | None,
+        issues: list[str],
+        frame: DecisionFrame | None = None,
+        records: list[DecisionRecord] | None = None,
+    ) -> None:
         self.facts, self.message, self.impact, self.issues = facts, message, impact, issues
+        self.frame, self.records = frame, records or []
         self.pending = ""
         self.written: set[str] = set()
 
     def _checked(self, text: str) -> str:
-        text = in_one_voice(text)
+        text = guarded(text, self.frame, self.records, self.written)
         fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
         self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
         if not failed:
@@ -1049,37 +1145,31 @@ class _SentenceGate:
         return self._checked(ready) if ready else ""
 
 
-_VERB_FORMS = {"has": "have", "is": "are", "was": "were", "does": "do"}
-_THE_FOUNDER = re.compile(r"\b(the) founder(?:(['\u2019]s)|\s+([a-z]+))?", re.I)
-_NOT_A_VERB = frozenset({"and", "or", "as", "at", "by", "for", "from", "in", "of", "on", "to", "with", "this", "that"})
-
-
-def _to_you(match: re.Match[str]) -> str:
-    capital = match.group(1)[0].isupper()
-    if match.group(2):
-        return "Your" if capital else "your"
-    word = match.group(3)
-    pronoun = "You" if capital else "you"
-    if word is None or word.lower() in _NOT_A_VERB:
-        return f"{pronoun} {word}" if word else pronoun
-    if word in _VERB_FORMS:
-        return f"{pronoun} {_VERB_FORMS[word]}"
-    if word.endswith("s") and not word.endswith("ss"):
-        return f"{pronoun} {word[:-1]}"
-    return f"{pronoun} {word}"
-
-
-def in_one_voice(text: str) -> str:
-    """The Advisor speaks to the founder, not about them, and writes money one way. Code, because prompts drift."""
-    return one_money_format(_THE_FOUNDER.sub(_to_you, text))
-
-
 def advisor_memo_note(answer: str, results: list[AgentResult]) -> str:
     """A memo that was written is never a surprise: the reply names it and its review date."""
     memo = next((r.memo for r in results if r.memo is not None), None)
     if memo is None or (memo.path in answer and memo.review_date in answer):
         return ""
     return f" The memo is at {memo.path}, for review on {memo.review_date}."
+
+
+def advisor_frame_note(answer: str, frame: DecisionFrame | None) -> str:
+    """The cost of a decision that is not a hire, and what it does to the goals: said plainly by code."""
+    if frame is None:
+        return ""
+    notes: list[str] = []
+    model = frame.cost_model
+    if frame.non_hire:
+        said = model is not None and format_money(model.case("base").monthly, model.currency) in answer
+        if not said:
+            notes.append(frame.cost_sentence())
+        elif model is not None and model.assumption_count and "assum" not in answer.lower():
+            notes.append("Those costs are assumptions: confirm them.")
+    for sentence in frame.goal_sentences():
+        goal = sentence[sentence.find('"') + 1 : sentence.rfind('"')]
+        if goal and goal.lower() not in answer.lower():
+            notes.append(sentence)
+    return "".join(f" {note}" for note in notes if note)
 
 
 def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) -> str:
@@ -1108,7 +1198,8 @@ async def advise(
     `issues`. Without an LLM it yields a template answer built from the findings.
     """
     spec = REGISTRY["advisor"]
-    findings = findings_for_advisor(results)
+    frame = plan_.frame
+    findings = findings_for_advisor(results, frame)
     context = (
         f"Founder's message: {user_message}\nIntent: {plan_.intent}"
         + (
@@ -1123,10 +1214,14 @@ async def advise(
     system = spec.prompt() + (decisions_rule if _team_decisions(results) else "")
     if team_impact(results) is not None:
         system += (PROMPTS_DIR / "advisor_decision_impact.md").read_text(encoding="utf-8")
+    if frame is not None and frame.non_hire and frame.cost_model is not None:
+        system += (PROMPTS_DIR / "advisor_cost_model.md").read_text(encoding="utf-8")
     messages = [Message.system(system), Message.user(context)]
     sent: list[str] = []
-    facts = [fact for r in results for fact in r.facts]
-    gate = _SentenceGate(facts, user_message, team_impact(results), issues if issues is not None else [])
+    facts = [*(fact for r in results for fact in r.facts), *(frame.facts if frame else [])]
+    records = _team_decisions(results)
+    claims = issues if issues is not None else []
+    gate = _SentenceGate(facts, user_message, team_impact(results), claims, frame, records)
     try:
         async for chunk in router.stream(spec.privacy, messages, agent_type=spec.name):
             ready = gate.feed(chunk.delta) if chunk.delta else ""
@@ -1140,6 +1235,7 @@ async def advise(
                     yield StreamChunk(delta=ready)
                 note = advisor_decision_note("".join(sent), results)
                 note += advisor_impact_note("".join(sent) + note, plan_, results)
+                note += advisor_frame_note("".join(sent) + note, frame)
                 note += advisor_memo_note("".join(sent) + note, results)
                 if note:
                     sent.append(note)
@@ -1161,8 +1257,9 @@ async def advise(
             yield StreamChunk(done=True, completion=Completion(text=text, provider=provider.name, model=provider.model))
             return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
-        text = in_one_voice(template_answer(results))
+        text = guarded(template_answer(results), frame, records)
         text += advisor_impact_note(text, plan_, results)
+        text += advisor_frame_note(text, frame)
         text += advisor_memo_note(text, results)
         yield StreamChunk(delta=text)
         yield StreamChunk(

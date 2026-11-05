@@ -198,7 +198,7 @@ async def test_the_lane_never_states_a_figure_even_if_the_fast_model_does(financ
     await run.task
     await _until(lambda: not manager.sessions[session_id].narrators)
     said = " ".join(manager.sessions[session_id].narration)
-    assert "10.65" not in said and "$" not in said and ASSUMPTION_QUESTION in said
+    assert "10.65" not in said and "$" not in said and "While the team works" in said
 
 
 async def test_the_fast_model_words_a_reply_and_a_slow_one_is_not_waited_for(finance: Any) -> None:
@@ -290,7 +290,7 @@ async def test_narration_follows_real_events(finance: Any) -> None:
     await _until(lambda: not manager.sessions[session_id].narrators)
     said = manager.sessions[session_id].narration
     assert said[0].startswith("Team: ") and said[-1].startswith("The answer is ready")
-    assert any(line == "Financial Analyst finished." for line in said)
+    assert any(line.startswith("Financial Analyst") and " done; " in line for line in said)
 
 
 async def test_an_idle_turn_never_waits_for_a_model_and_old_idle_sessions_make_room(finance: Any) -> None:

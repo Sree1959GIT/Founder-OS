@@ -122,8 +122,15 @@ def _careless_problems(result: ChatResult, vault_root: Path) -> list[str]:
         for a in result.agents
         if a.verified and a.status == "done" and INVENTED in a.text
     ]
-    if result.memo is not None and INVENTED.lstrip("$") in (vault_root / result.memo.path).read_text(encoding="utf-8"):
-        problems.append("the memo kept an invented figure")
+    if result.memo is not None:
+        text = (vault_root / result.memo.path).read_text(encoding="utf-8")
+        # It may only stand on the list for the founder to confirm, and never as a fact or a scar.
+        head, _, rest = text.partition("## Open numbers to confirm")
+        _, _, tail = rest.partition("## Metrics")
+        if INVENTED.lstrip("$") in head + tail:
+            problems.append("the memo kept an invented figure")
+        if "[figure removed" in text:
+            problems.append("the memo has a scar where a figure was")
     return problems
 
 

@@ -12,6 +12,7 @@ or asks the assumption question, under a short timeout, and any reply with a fig
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -19,15 +20,18 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agents.decision_frame import inputs_question, parse_inputs
 from app.agents.events import AgentEvent, EventBus, EventType
 from app.agents.graph import AgentOrchestrator, RunContext
+from app.agents.registry import REGISTRY
 from app.agents.verifier import extract_figures
 from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.llm.base import LLMError, LLMProvider, Message
 
 MAX_SESSIONS = 100
-ASSUMPTION_QUESTION = "While the team works: which assumption here would change your mind if it turned out wrong?"
+ASSUMPTION_QUESTION = 'While the team works on "{request}": which assumption would change your mind if it were wrong?'
+INPUTS_REPLY = "Those are your figures. Cancel this run and start again with them?"
 FAST_SYSTEM = (
     "You are the quick voice of FounderOS, speaking while a team of agents works. Reply in one short sentence, to "
     '"you", the founder. Use only what you are given. Never state a number, amount or date.'
@@ -68,6 +72,27 @@ class Session:
         self.amendments: dict[str, Amendment] = {}
         self.narration: list[str] = []
         self.narrators: set[asyncio.Task[None]] = set()
+        self.finished: dict[str, list[tuple[str, bool]]] = {}
+
+
+_LEFT_IN_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
+
+
+def _in_words(count: int) -> str:
+    """The lane never states a figure, and a count of agents is no exception: it would fail the same check."""
+    return _LEFT_IN_WORDS.get(count, "more")
+
+
+def _topic(request: str) -> str:
+    first = request.strip().splitlines()[0] if request.strip() else "this"
+    first = re.split(r"(?<=[.!?])\s+", first)[0].rstrip("?.! ")
+    return first if len(first) <= 60 else first[:57].rstrip() + "..."
+
+
+def _ready_line(data: dict[str, Any]) -> str:
+    if data.get("assumptions"):
+        return "The answer is ready. It rests on assumptions you should confirm."
+    return "The answer is ready." if data.get("verified") else "The answer is ready, but some of it is unverified."
 
 
 class ConversationError(ValueError):
@@ -166,11 +191,36 @@ class ConversationManager:
                 if event.type == "team.approved" and not asked:
                     asked = True
                     self._say(session, await self._assumption_question(session, run_id))
-                text = self._line_for(run_id, event)
-                if text:
+                text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
+                if text.strip():
                     self._say(session, text)
         except Exception:  # the lane must never disturb the run it is describing
             logger.exception("Narration of {} stopped", run_id)
+
+    def _grouped_line(self, session: Session, run_id: str, event: AgentEvent) -> str:
+        """Agents that work together are reported together, when the last of them ends. No figures."""
+        ended = event.type == "agent.done" or (event.type == "agent.status" and event.data.get("status") == "cancelled")
+        run = self.orchestrator.runs.get(run_id)
+        team = run.plan.team if run is not None and run.plan is not None else []
+        inst = next((i for i in team if i.id == event.agent_id), None)
+        if not ended or inst is None:
+            return ""
+        verified = bool(event.data.get("verified")) and event.data.get("status", "done") == "done"
+        ended_so_far = session.finished.setdefault(run_id, [])
+        ended_so_far.append((inst.id, verified))
+        ids = {agent_id for agent_id, _ in ended_so_far}
+        stage = REGISTRY[inst.type].stage
+        wave = [i for i in team if REGISTRY[i.type].stage == stage]
+        if any(i.id not in ids for i in wave):
+            return " "  # held until the rest of its wave ends
+        names = [i.name for i in wave]
+        joined = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+        left = sum(i.id not in ids for i in team)
+        next_step = "writing your answer now" if not left else f"{_in_words(left)} to go"
+        verb = "is" if len(names) == 1 else "are"
+        doubts = [i.name for i in wave if not dict(ended_so_far).get(i.id)]
+        caveat = f" Something from {' and '.join(doubts)} is unverified." if doubts else ""
+        return f"{joined} {verb} done; {next_step}.{caveat}"
 
     def _agent_name(self, run_id: str, agent_id: str | None) -> str:
         run = self.orchestrator.runs.get(run_id)
@@ -194,10 +244,6 @@ class ConversationManager:
             return f"The Verifier sent {name} back to check a figure."
         if event.type == "agent.rerun":
             return f"{name} restarted with your edited brief."
-        if event.type == "agent.done":
-            if data.get("status") == "done":
-                return f"{name} finished." if data.get("verified") else f"{name} finished, with something unverified."
-            return f"{name} stopped: {data.get('status')}."
         return ""
 
     def _finished(self, session: Session, run_id: str, event: AgentEvent) -> None:
@@ -208,9 +254,7 @@ class ConversationManager:
             "rejected": "The team was not approved, so nothing ran.",
         }.get(
             str(status),
-            "The answer is ready."
-            if event.data.get("verified")
-            else "The answer is ready, but some of it is unverified.",
+            _ready_line(event.data),
         )
         self._say(session, recap, "recap")
         if session.run_id == run_id:
@@ -248,9 +292,13 @@ class ConversationManager:
     async def _assumption_question(self, session: Session, run_id: str) -> str:
         run = self.orchestrator.runs.get(run_id)
         request = run.message if run is not None else ""
+        frame = run.plan.frame if run is not None and run.plan is not None else None
+        specific = inputs_question(frame) if frame is not None else ""
+        if specific:
+            return specific
         return await self._fast_line(
             f"The founder asked: {request}\nAsk one question about an assumption this depends on.",
-            ASSUMPTION_QUESTION,
+            ASSUMPTION_QUESTION.format(request=_topic(request)),
             session,
         )
 
@@ -277,6 +325,10 @@ class ConversationManager:
         session.local.add("founder", text)
         if running is None:
             return await self._turn_when_idle(session, text)
+        if self._gives_inputs(running, text):
+            classified = Classified(kind="amendment", by="rules")
+            outcome = self._offer_amendment(session, classified, running, text)
+            return outcome.model_copy(update={"reply": INPUTS_REPLY})
         classified = await self.classifier.classify(text, running.message)
         running = self._running(session)  # the run may have ended while the classifier was thinking
         if running is None:
@@ -301,8 +353,27 @@ class ConversationManager:
                 outcome = self._enqueue(session, classified, running, text)
         return outcome
 
+    @staticmethod
+    def _gives_inputs(run: RunContext | None, text: str) -> bool:
+        """The founder answering the question the lane asked: figures for this decision's own cost inputs."""
+        frame = run.plan.frame if run is not None and run.plan is not None else None
+        if frame is None or not frame.questions or text.rstrip().endswith("?"):
+            return False
+        return bool(parse_inputs(text, frame.type))
+
     async def _turn_when_idle(self, session: Session, text: str) -> TurnOutcome:
         """Rules only. With nothing to protect, an unclear turn is simply a request: no model call before the run."""
+        last = self.orchestrator.runs.get(session.run_id) if session.run_id else None
+        if self._gives_inputs(last, text) and last is not None:
+            edited = f"{last.message}\nThe founder then added: {text}"
+            run = self._start_run(session, edited, amendment_of=last.run_id)
+            return TurnOutcome(
+                session_id=session.id,
+                kind="amendment",
+                classified_by="rules",
+                reply="Running it again with your figures.",
+                run_id=run.run_id,
+            )
         kind = by_rules(text)
         if kind == "backchannel":
             return self._reply(session, Classified(kind=kind, by="rules"), "", session.run_id)

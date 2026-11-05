@@ -18,8 +18,6 @@ from app.agents.graph import AgentOrchestrator
 from app.agents.registry import REGISTRY
 from app.agents.runtime import AgentInstance, AgentRunner, advisor_decision_note, plan
 from app.agents.specialists import (
-    FIGURE_REMOVED,
-    PLACEHOLDER_KILL,
     MemoDraft,
     MemoPrediction,
     calls_for_team,
@@ -306,8 +304,8 @@ async def test_a_specialists_invented_number_is_still_caught(finance: Any, vault
 
 async def test_a_specialist_may_use_the_numbers_an_earlier_stage_found(finance: Any, vault: Any) -> None:
     analyst = await runner(
-        FakeProvider([[ToolCall(name="get_metric", arguments={"name": "mrr"})], "MRR is known."]), finance, vault
-    ).run(instance("financial_analyst"), "MRR?")
+        FakeProvider([[ToolCall(name="get_metric", arguments={"name": "arpa"})], "ARPA is known."]), finance, vault
+    ).run(instance("financial_analyst"), "ARPA?")
     mrr = analyst.artifacts[0].data["value"]
     seen: list[str] = []
 
@@ -374,15 +372,16 @@ def test_the_cancel_and_rerun_api_refuses_what_is_not_running(client: TestClient
 
 
 # --- the memo ---------------------------------------------------------------------------------------------------------
+SIX_MONTHS = (dt.date.today() + dt.timedelta(days=180)).isoformat()
 GOOD_MEMO = {
     "title": "Open a Dubai office",
-    "decision": "Run a pilot first instead of opening an office now.",
+    "chosen": "Travel-led pilot",
+    "why_chosen": "It tests demand before you commit to premises.",
     "context": "You asked about Dubai.",
-    "options": ["Open now", "Pilot first"],
-    "rejected": ["Open now: too early"],
+    "options": [{"name": "Full office", "note": "Hard to undo this early."}],
     "assumptions": ["Two customers would follow"],
-    "predictions": [{"statement": "A pilot signs one customer by the review date", "probability": 0.6}],
-    "kill_criteria": ["No customer by the review date"],
+    "predictions": [{"metric": "Dubai customers signed", "threshold": ">= 1", "by": SIX_MONTHS, "probability": 0.6}],
+    "kill_criteria": [{"metric": "Dubai customers signed", "threshold": "< 1", "by": SIX_MONTHS}],
 }
 
 
@@ -394,9 +393,10 @@ async def test_the_memo_writer_writes_a_memo_with_a_prediction_and_review_date(f
     assert result.memo.path == f"decisions/{dt.date.today().isoformat()}-open-dubai-office.md"
     text = (vault.vault.root / result.memo.path).read_text(encoding="utf-8")
     assert f"review_date: '{review}'" in text or f"review_date: {review}" in text
-    assert "60%: A pilot signs one customer" in text and "status: proposed" in text
+    assert f"60%: Dubai customers signed >= 1 by {SIX_MONTHS}" in text and "status: proposed" in text
     stored = finance.calibration.list()
-    assert stored[0].statement.startswith("A pilot signs") and stored[0].decision == result.memo.path
+    assert stored[0].statement.startswith("Dubai customers") and stored[0].decision == result.memo.path
+    assert stored[0].resolve_by.isoformat() == SIX_MONTHS
     assert any(a.kind == "decision_memo" for a in result.artifacts)
     assert result.memo.path in result.text and review in result.text
 
@@ -420,30 +420,34 @@ async def test_a_second_memo_never_overwrites_the_first(finance: Any, vault: Any
 
 async def test_a_memo_with_no_model_is_honest_about_what_is_missing(finance: Any, vault: Any) -> None:
     result = await runner(FakeProvider([LLMUnavailable("down")]), finance, vault).run(instance("memo_writer"), DUBAI)
-    assert result.memo is not None and result.provider == "rules" and result.verified
-    assert "placeholder" in result.memo.predictions[0] and result.memo.kill_criteria == [PLACEHOLDER_KILL]
+    assert result.memo is not None and result.provider == "rules"
+    assert "starter" in result.memo.predictions[0] and "Dubai pipeline" in result.memo.predictions[0]
+    assert all("starter" in k and k.startswith("Stop if") for k in result.memo.kill_criteria)
 
 
-async def test_a_memo_with_an_invented_figure_goes_back_and_then_loses_it(finance: Any, vault: Any) -> None:
+async def test_a_memo_with_an_invented_figure_goes_back_and_then_lists_it(finance: Any, vault: Any) -> None:
     bad = {**GOOD_MEMO, "context": "An office costs $48,123 a month."}
     result = await runner(FakeProvider([json.dumps(bad), json.dumps(bad)]), finance, vault).run(
         instance("memo_writer"), DUBAI
     )
     assert result.attempts == 2 and not result.verified and result.memo is not None and not result.memo.verified
     text = (vault.vault.root / result.memo.path).read_text(encoding="utf-8")
-    assert "48,123" not in text and FIGURE_REMOVED in text and "verified: false" in text
+    body = text.split("## Open numbers to confirm")
+    assert "48,123" not in body[0] and "48,123" in body[1].split("## Metrics")[0] and "verified: false" in text
+    assert "[figure removed" not in text
 
 
 async def test_the_memo_lists_the_teams_metrics_with_lineage(finance: Any, vault: Any) -> None:
     analyst = await runner(
-        FakeProvider([[ToolCall(name="get_metric", arguments={"name": "mrr"})], "MRR is known."]), finance, vault
-    ).run(instance("financial_analyst"), "MRR?")
+        FakeProvider([[ToolCall(name="get_metric", arguments={"name": "arpa"})], "ARPA is known."]), finance, vault
+    ).run(instance("financial_analyst"), "ARPA?")
     result = await runner(FakeProvider([json.dumps(GOOD_MEMO)]), finance, vault).run(
         instance("memo_writer"), DUBAI, [analyst]
     )
     assert result.memo is not None
     text = (vault.vault.root / result.memo.path).read_text(encoding="utf-8")
-    assert "formula:" in text and "No metrics were computed" not in text and "- - " not in text
+    assert "ARPA is $" in text and "subscriptions.csv" in text and "No metrics were computed" not in text
+    assert "- - " not in text and "formula:" not in text
 
 
 def test_memo_names_and_figures() -> None:
@@ -456,19 +460,18 @@ def test_memo_names_and_figures() -> None:
         title="T", context="Costs $9,999 of $1,000.", predictions=[MemoPrediction(statement="s", probability=70)]
     )
     assert draft.predictions[0].probability == pytest.approx(0.7)
-    assert without_unbacked_figures(draft, [Fact(1000.0)], "").context == f"Costs {FIGURE_REMOVED} of $1,000."
+    kept = without_unbacked_figures(draft, [Fact(1000.0)], "")
+    assert kept.context == "" and kept.open_numbers == ["Costs $9,999 of $1,000."]
 
 
-def test_removing_a_figure_never_touches_a_backed_one() -> None:
-    assert (
-        without_unbacked_figures(MemoDraft(context="Revenue was $1,150 and 1,500 more."), [Fact(1150.0)], "").context
-        == f"Revenue was $1,150 and {FIGURE_REMOVED} more."
-    )
-    kept = without_unbacked_figures(MemoDraft(context="$48,123 then $48."), [Fact(48123.0)], "").context
-    assert kept.startswith("$48,123 then ") and FIGURE_REMOVED in kept
+def test_a_figure_with_no_source_moves_its_sentence_and_leaves_the_rest() -> None:
+    kept = without_unbacked_figures(MemoDraft(context="Revenue was $1,150. Rent is 1,500 more."), [Fact(1150.0)], "")
+    assert kept.context == "Revenue was $1,150." and kept.open_numbers == ["Rent is 1,500 more."]
+    whole = without_unbacked_figures(MemoDraft(context="$48,123 then $48."), [Fact(48123.0), Fact(48.0)], "")
+    assert whole.context == "$48,123 then $48." and whole.open_numbers == []
 
 
-async def test_a_placeholder_is_not_stored_as_a_forecast(finance: Any, vault: Any) -> None:
+async def test_a_starter_is_not_stored_as_a_forecast(finance: Any, vault: Any) -> None:
     result = await runner(FakeProvider([LLMUnavailable("down")]), finance, vault).run(instance("memo_writer"), DUBAI)
     assert result.memo is not None and finance.calibration.list() == []
 

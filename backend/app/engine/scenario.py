@@ -50,6 +50,7 @@ RECURRENCE = """Monthly recurrence for projection month k = 1..H (changes apply 
     revenue_k   = mrr_k + other_revenue
     costs_k     = (variable_cogs_ratio + commission_ratio) x mrr_k + fixed_costs + marketing_k
                   + new_hires x cost_per_hire + spend_change
+                  + one_off_cost                                           (at the start month only)
     cash_k      = cash_{k-1} + revenue_k - costs_k
 """
 DRIVER_WINDOW = 3
@@ -85,6 +86,9 @@ class Adjustments(BaseModel):
     new_hires: int = Field(0, ge=-200, le=500, description="Net new hires (negative = reductions)")
     cost_per_hire_monthly: float | None = Field(None, ge=0, description="Loaded monthly cost per hire (default: data)")
     spend_change_monthly: float = Field(0.0, ge=-1e9, le=1e9, description="Other monthly operating spend change")
+    one_off_cost: float = Field(
+        0.0, ge=-1e9, le=1e9, description="Cost paid once, in the start month (negative: cash in)"
+    )
     start_month: int = Field(1, ge=1, le=MAX_HORIZON, description="Projection month the changes start (1 = next)")
     growth_mode: GrowthMode = Field(
         "trend",
@@ -269,6 +273,7 @@ def _effective(
         "marketing": marketing,
         "new": new,
         "extra": adj["new_hires"] * hire_cost + adj["spend_change_monthly"],
+        "one_off": adj["one_off_cost"],
     }
 
 
@@ -294,6 +299,8 @@ def project(
         step = scenario["price"] if k == start_month else 1.0
         mrr = mrr * (1 - e["churn"]) * step + e["new"] * d.new_customer_arpa * e["price"]
         costs = variable * mrr + d.fixed_costs + e["marketing"] + e["extra"]
+        if k == start_month:
+            costs = costs + scenario["one_off"]
         balance = balance + (mrr + d.other_revenue) - costs
         cash[:, k - 1] = balance
         mrr_path[:, k - 1] = mrr

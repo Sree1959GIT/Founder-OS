@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
-from app.agents.runtime import in_one_voice
+from app.agents.guards import in_one_voice
 from app.agents.verifier import format_money, one_money_format
 from app.config import DeepProvider, Settings
 from app.llm.base import LLMError, LLMUnavailable, Message, ToolCall, ToolSpec, Usage
