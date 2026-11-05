@@ -32,7 +32,9 @@ def build_decisions(settings: Settings, router: LLMRouter) -> DecisionService:
     elif settings.decision_provider == "laya":
         provider, fallback = LayaProvider(settings.laya_checkpoint, settings.laya_device), llm
     elif settings.decision_provider == "jev":
-        if settings.jev_api_key:
+        if not settings.cloud_allowed:  # Jev is a cloud service: "cloud off" means nothing leaves the PC
+            logger.warning("DECISION_PROVIDER=jev but CLOUD_ALLOWED is false: using the LLM for decisions")
+        elif settings.jev_api_key:
             provider, fallback = JevProvider(settings.jev_api_key, model=settings.jev_model, names=router.names), llm
         else:
             logger.warning("DECISION_PROVIDER=jev but JEV_API_KEY is empty: using the LLM for decisions")

@@ -146,7 +146,7 @@ def loaded_vram_gb(base_url: str, model: str) -> float | None:
 
 
 def recommend(scores: list[EmbedderScore], incumbent: str, tie: float = 0.05) -> str:
-    """A proposal only. Judged on hybrid, the mode the app searches with; a new model must beat noise on this small set."""
+    """A proposal only. Judged on hybrid, the mode the app uses; a new model must beat noise on this small set."""
     mine = next((s for s in scores if incumbent in s.name and not s.error), None)
     others = [s for s in scores if s is not mine and not s.error and "hybrid" in s.modes]
     if mine is None or "hybrid" not in mine.modes or not others:

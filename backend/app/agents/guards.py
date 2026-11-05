@@ -172,7 +172,7 @@ def goal_contradiction(sentence: str, frame: DecisionFrame | None, chosen: str =
             return goal.goal
         if _COMPARES.search(text):  # "uses less runway than a full office" is true
             continue
-        if re.search(r"\brunway\b", goal.goal, re.I) and _RUNWAY_CLAIM.search(text):
+        if re.search(r"\brunway\b", goal.goal, re.I) and _claims_with(_RUNWAY_CLAIM, text):
             return goal.goal
         if re.search(r"\bchurn\b", goal.goal, re.I) and _claims_with(_CHURN_CLAIM, text):
             return goal.goal
@@ -295,10 +295,21 @@ _KEEPS_ITS_ROLE = frozenset({"memo_writer", "advisor", "planner", "librarian"})
 
 
 def _stops_an_option(text: str, frame: DecisionFrame | None) -> bool:
-    if frame is None or not frame.options:
+    """Unconditional advice to stop what the option on the table runs on: "stop travel" for a travel-led pilot.
+
+    Other options can be argued against, "pause travel if no customer signs" is a stop rule, and "cut burn" is not
+    against an option that itself says "cut burn".
+    """
+    name = frame.default_option.lower() if frame is not None else ""
+    words = {
+        w
+        for w in re.findall(r"[a-z]{4,}", name)
+        if w not in _OPTION_NOISE and not re.search(_STOP_VERB + rf"{w}\b", name)
+    }
+    if not words:
         return False
-    words = {w for o in frame.options for w in re.findall(r"[a-z]{4,}", o.name.lower()) if w not in _OPTION_NOISE}
-    return bool(words) and re.search(_STOP_VERB + rf"(?:{'|'.join(sorted(words))})\b", text, re.I) is not None
+    stops = re.compile(_STOP_VERB + rf"(?:{'|'.join(sorted(words))})\b", re.I)
+    return any(stops.search(s) and not _ONLY_IF.search(s) for s in split_sentences(text))
 
 
 def _covers_only_the_full_option(text: str, frame: DecisionFrame | None) -> bool:
@@ -348,7 +359,8 @@ def in_role(agent_type: str, text: str, message: str, frame: DecisionFrame | Non
     if not _ASKED_ABOUT_HIRING.search(message):
         kept = "".join(p for p in split_sentences(kept) if not _STOP_OTHER_WORK.search(p))
     if _stops_an_option(kept, frame):
-        kept = "".join(p for p in split_sentences(kept) if not _stops_an_option(p, frame))
+        # An empty answer is worse than one wrong line.
+        kept = "".join(p for p in split_sentences(kept) if not _stops_an_option(p, frame)) or kept
     if agent_type == "devils_advocate":
         kept = _VAULT_FOR_MARKET.sub(OUTSIDE_SOURCE, kept)
     if agent_type == "regulatory_tax" and frame is not None and _covers_only_the_full_option(kept, frame):

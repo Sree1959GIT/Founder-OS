@@ -991,3 +991,49 @@ def test_off_brief_agent_wording_seen_live(ctx: ToolContext) -> None:
 def test_agents_are_told_the_options(ctx: ToolContext) -> None:
     text = build_frame(DUBAI, ctx).for_agents()
     assert "Travel-led pilot" in text and "not only the largest" in text
+
+
+def test_a_true_sentence_about_runway_is_not_a_contradiction(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    assert goal_contradiction("This does not extend your runway.", frame) is None
+    assert goal_contradiction("This extends your runway.", frame) == _RUNWAY_GOAL_TEXT
+
+
+def test_the_goal_check_uses_the_chosen_option_all_the_way_through(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    free = frame.options[-1].name
+    frame = frame.model_copy(
+        update={
+            "options": [
+                *frame.options[:-1],
+                frame.options[-1].model_copy(update={"is_full": False, "runway_change_months": 0.0}),
+            ]
+        }
+    )
+    line = "This helps your goal of extending runway."
+    out = in_your_words(MemoDraft(chosen=free, decision=f"Proposed: {free}. {line}"), frame, [])
+    assert "moves you away" not in out.decision and line in out.decision
+
+
+def test_taking_out_a_contradiction_never_leaves_a_blank_line(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    line = f"It aligns with the goal: {_RUNWAY_GOAL_TEXT}."
+    out = in_your_words(
+        MemoDraft(chosen="Travel-led pilot", decision=line, why_chosen=line, rejected=[f"Full office: {line}"]),
+        frame,
+        [],
+    )
+    assert out.decision == "Proposed: Travel-led pilot."
+    assert out.why_chosen and "aligns" not in out.why_chosen
+    assert out.rejected == ["Full office: not proposed. See the Goal check in this memo."]
+
+
+def test_only_unconditional_advice_against_the_option_on_the_table_is_off_brief(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    assert "ravel" in frame.default_option
+    assert role_problems("people_ops", "Stop non-essential travel now.", DUBAI, frame)
+    assert not role_problems("devils_advocate", "Pause travel if no customer signs by March.", DUBAI, frame)
+    assert not role_problems("devils_advocate", "Avoid a distributor if they want exclusivity.", DUBAI, frame)
+    only = frame.model_copy(update={"default_option": "No raise: cut burn instead"})
+    assert not role_problems("people_ops", "Cut burn by trimming the slowest channel.", DUBAI, only)
+    assert in_role("people_ops", "Stop non-essential travel now.", DUBAI, frame) == "Stop non-essential travel now."

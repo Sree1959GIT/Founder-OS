@@ -701,19 +701,24 @@ def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[A
     """
 
     def say(text: str) -> str:
-        return guarded(_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], text), frame, records)
+        return guarded(_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], text), frame, records, chosen=draft.chosen)
 
-    def reasons(text: str) -> str:
-        return say(without_contradictions(text, frame, draft.chosen))
+    def reasons(text: str, if_blank: str = "See the Goal check in this memo.") -> str:
+        """A section is never left blank because its only sentence was the contradiction."""
+        return say(without_contradictions(text, frame, draft.chosen)) or (if_blank if text.strip() else "")
+
+    def rejected_line(line: str) -> str:
+        name = line.split(":", 1)[0].strip()
+        return reasons(line, f"{name}: not proposed. See the Goal check in this memo.")
 
     return draft.model_copy(
         update={
             "title": _OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], draft.title),
             "context": reasons(draft.context),
             "why_chosen": reasons(draft.why_chosen),
-            "decision": reasons(draft.decision),
+            "decision": reasons(draft.decision, f"Proposed: {draft.chosen}."),
             "options": [o.model_copy(update={"note": reasons(o.note)}) for o in draft.options],
-            "rejected": [reasons(r) for r in draft.rejected],
+            "rejected": [rejected_line(r) for r in draft.rejected],
             "assumptions": [say(a) for a in draft.assumptions if not _SAYS_CHECKED.search(a)],
         }
     )

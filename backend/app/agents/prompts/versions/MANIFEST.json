@@ -1,0 +1,96 @@
+{
+  "devils_advocate": {
+    "best": "v1",
+    "date": "2026-11-05",
+    "model": "qwen3:8b",
+    "results": {
+      "v1": {
+        "cases": 5,
+        "mean_latency_s": 44.5,
+        "passed": 5,
+        "repairs": 0
+      },
+      "v2": {
+        "cases": 5,
+        "mean_latency_s": 9.9,
+        "passed": 1,
+        "repairs": 1
+      },
+      "v3": {
+        "cases": 5,
+        "mean_latency_s": 10.4,
+        "passed": 5,
+        "repairs": 0
+      }
+    }
+  },
+  "librarian": {
+    "best": "v1",
+    "date": "2026-11-05",
+    "model": "qwen3:8b",
+    "results": {
+      "v1": {
+        "cases": 3,
+        "mean_latency_s": 7.2,
+        "passed": 3,
+        "repairs": 0
+      },
+      "v2": {
+        "cases": 3,
+        "mean_latency_s": 7.2,
+        "passed": 3,
+        "repairs": 0
+      }
+    }
+  },
+  "people_ops": {
+    "best": "v2",
+    "date": "2026-11-05",
+    "model": "qwen3:8b",
+    "results": {
+      "v1": {
+        "cases": 5,
+        "mean_latency_s": 19.6,
+        "passed": 0,
+        "repairs": 3
+      },
+      "v2": {
+        "cases": 5,
+        "mean_latency_s": 10.4,
+        "passed": 5,
+        "repairs": 2
+      },
+      "v3": {
+        "cases": 5,
+        "mean_latency_s": 20.7,
+        "passed": 2,
+        "repairs": 2
+      }
+    }
+  },
+  "regulatory_tax": {
+    "best": "v1",
+    "date": "2026-11-05",
+    "model": "qwen3:8b",
+    "results": {
+      "v1": {
+        "cases": 4,
+        "mean_latency_s": 14.6,
+        "passed": 4,
+        "repairs": 0
+      },
+      "v2": {
+        "cases": 4,
+        "mean_latency_s": 8.0,
+        "passed": 3,
+        "repairs": 1
+      },
+      "v3": {
+        "cases": 4,
+        "mean_latency_s": 9.4,
+        "passed": 4,
+        "repairs": 1
+      }
+    }
+  }
+}

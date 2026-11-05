@@ -582,3 +582,45 @@ def test_names_come_from_the_customers_table_and_vault_fields(tmp_path: Path) ->
     vault.write_note("notes/b.md", body="body", frontmatter={"title": "Rao Menon", "tags": ["person"]})
     found = set(vault_names(SimpleNamespace(vault=vault)))
     assert {("person", "Priya Nair"), ("company", "Ironcrest Media"), ("person", "Rao Menon")} <= found
+
+
+def test_a_name_is_hidden_when_hyphenated_lower_case_or_a_file_slug() -> None:
+    names = _names()
+    for text in (
+        "An Ironcrest-led deal.",
+        "ironcrest churn is up.",
+        "IRONCREST renewed.",
+        "See [customers/ironcrest-media.md].",
+        "See customers/ironcrest_media.md.",
+        "Ironcrest\nMedia called.",
+    ):
+        cleaned = filter_text(text, FilterReport(), names)
+        assert "ironcrest" not in cleaned.lower(), cleaned
+        assert "Customer_001" in cleaned, cleaned
+
+
+def test_a_name_that_is_also_a_word_is_only_hidden_as_written() -> None:
+    index = NameIndex([lambda: [("person", "Will"), ("customer", "Summit")]])
+    index.refresh()
+    assert filter_text("I think it will reach the summit.", FilterReport(), index) == (
+        "I think it will reach the summit."
+    )
+    hidden = filter_text("Will met Summit.", FilterReport(), index)
+    assert "Will" not in hidden and "Summit" not in hidden
+
+
+def test_text_that_only_regex_thinks_is_the_name_is_hidden_and_never_raises() -> None:
+    index = NameIndex([lambda: [("customer", "Kim Ltd")]])
+    index.refresh()
+    cleaned = filter_text("K\u0131m Ltd signed.", FilterReport(), index)
+    assert "K\u0131m" not in cleaned
+    assert index.restore(cleaned) == "K\u0131m Ltd signed."
+
+
+def test_a_thousandth_customer_gets_its_name_back() -> None:
+    index = NameIndex([lambda: [("customer", f"Acme Number{i} Ltd") for i in range(1000)]])
+    index.refresh()
+    cleaned = filter_text("Acme Number999 Ltd left.", FilterReport(), index)
+    assert "Customer_1000" in cleaned and index.restore(cleaned) == "Acme Number999 Ltd left."
+    restorer = StreamRestorer(index)
+    assert restorer.feed("Customer_100") + restorer.feed("0 left.") + restorer.flush() == "Acme Number999 Ltd left."

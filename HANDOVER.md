@@ -125,6 +125,27 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Decision models, privacy names and evals (M3c)
+**What you can do now**
+- A memo or answer can no longer contradict its own goal check. A line saying the proposal helps a goal that the check says it moves away from is removed by code. A cheaper option that is not proposed always says why (control, speed, what you learn).
+- With cloud on, customer, person and company names are replaced by stable stand-ins (`Customer_001`, `Person_001`, `Company_001`) before anything leaves the PC, and restored in the reply. If the name list cannot be built, the call stays local.
+- Run four bake-offs and a labelled eval from one command each (Windows checklist below). No default changed: every result is a proposal in PRD §12 for you to approve.
+
+**How it works**
+- `app/agents/guards.py`: `goal_contradiction` and `without_contradictions` compare a sentence with the frame's goal statuses. `specialists.py` applies them to the Decision and to answers, and `_why_not` gives a rejected cheaper option its `OptionCost.trade_off`. `role_problems` catches the off-brief lines you reported (travel, physical office, "you, you", vault for market data).
+- `app/llm/names.py` builds the list from the `customers` table and the vault's people and company notes. `app/llm/privacy.py` has `NameIndex`, `StreamRestorer` and `FilterReport.names_replaced`. `app/llm/router.py` applies it to every cloud payload, including tool-call arguments and web searches.
+- `app/decision/laya.py` and `jev.py`: `DECISION_PROVIDER=laya|jev` with the LLM as the fallback below the confidence threshold or on any failure. `laya` is an optional install, imported only when chosen. Jev receives only an allow-list (`message`, `turn`, `running`), privacy-filtered, with numbers masked.
+- `app/evals/`: `labelled_questions.json` (58), `routing_examples.json` (212, with a stable train/test split), `embedding_queries.json` (36), and the harnesses. Scripts: `eval_labelled.py`, `tune_prompts.py`, `eval_decision_models.py`, `finetune_laya.py`, `bakeoff_providers.py`, `bakeoff_embeddings.py`.
+- Prompt versions live in `app/agents/prompts/versions/<agent>/vN.md`, with scores in `MANIFEST.json`. The app only reads `prompts/<agent>.md`; nothing rewrites a prompt at runtime.
+
+**Known limits**
+- **Laya and Jev have not been measured.** Installing `torch` and `laya` here was refused by this session's permission check, and there is no Jev key. Both are built against the documented APIs (read 2026-11-05) and tested with fakes only, so a real install may show API differences. Your checklist steps run them.
+- **No real cloud call was made in this session either.** The cloud rows of the provider bake-off are yours to run.
+- A person's name that is in no source is only caught after a title ("Dr", "Mr"). The goal check and role checks are word patterns: they can miss a rephrased claim.
+- All measurements are one run on a small sample vault, so a difference of a few points is noise.
+- There is no cash metric, so "how much cash do we have" gets the rules' metrics summary instead of one figure.
+- This session pulled `embeddinggemma` (about 0.6 GB) into your `ollama` container for the bake-off. Remove it with `docker exec ollama ollama rm embeddinggemma` if you do not want it. Bake-off models can evict n8n's models from the GPU; those reload on their next use.
+
 ### Decision frame (fix after the founder's M3b review, 2026-11-05)
 **What you can do now**
 - Ask about a decision and it is typed first: `hire`, `new_office`, `pricing`, `spend`, `fundraise`, `new_product` or `other`. An office is priced as an office (setup, rent, local hires, travel, compliance), one-off plus monthly, low/base/high, through `run_scenario`.

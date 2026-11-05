@@ -1,17 +1,19 @@
 """Fine-tune Laya for FounderOS's routing, on the founder's RTX 4080 Laptop (12 GB, shared with n8n's Ollama models).
 
-Run it from a separate environment, because `laya` brings PyTorch and FounderOS itself does not need it:
+Run it from a separate environment, because `laya` brings PyTorch and FounderOS itself does not need it. It reads the
+examples through the backend package, so that goes in too:
 
     py -3.11 -m venv .venv-laya
     .venv-laya\\Scripts\\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu124
     .venv-laya\\Scripts\\python.exe -m pip install laya
+    .venv-laya\\Scripts\\python.exe -m pip install -e backend
 
     .venv-laya\\Scripts\\python.exe scripts\\finetune_laya.py --dry-run     writes the training file and checks the GPU
     docker exec ollama ollama stop qwen3:8b                                 frees about 6 GB; it reloads when used
     .venv-laya\\Scripts\\python.exe scripts\\finetune_laya.py               1 to 2 hours; Ctrl+C stops it
 
-It uses only the standard library until the training step, so `--dry-run` works from the main `.venv` too. Training
-data: the `train` split of `backend/app/evals/routing_examples.json`, plus corrected lines of the decision log. The
+`--dry-run` needs no `laya`, so it works from the main `.venv` too. Training data: the `train` split of
+`backend/app/evals/routing_examples.json`, plus corrected lines of the decision log. The
 `test` split stays held out for `scripts/eval_decision_models.py --laya models/laya-founderos`.
 
 API as documented in github.com/NandhaKishorM/laya/blob/main/docs/finetune.md (read 2026-11-05):
@@ -31,41 +33,18 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
+from app.decision.laya import QUESTION_ID, questions_for  # noqa: E402
+
 EXAMPLES = ROOT / "backend" / "app" / "evals" / "routing_examples.json"
 DEFAULT_LOG = ROOT / "data" / "default" / "decision_log.jsonl"
 DEFAULT_OUT = ROOT / "models" / "laya-founderos"
-OPTION_TEXT = {
-    "finance": "a question answered from the company's financial metrics",
-    "knowledge": "a question answered from the founder's notes and past decisions",
-    "decision": "a choice the founder is weighing, which needs a team to analyse it",
-    "chitchat": "small talk, with nothing to look up",
-    "financial_analyst": "metrics, scenarios and runway",
-    "librarian": "the founder's notes and past decisions",
-    "market_scout": "market size, competitors and local conditions",
-    "revenue_customer": "pricing, churn, pipeline and customer segments",
-    "people_ops": "hiring plan, capacity, ownership and execution",
-    "regulatory_tax": "licences, tax and compliance",
-    "prioritiser": "ranking a list of options",
-    "perspective_lens": "one outside viewpoint, such as an investor",
-    "devils_advocate": "a pre-mortem: what could go wrong",
-    "backchannel": "an acknowledgement, nothing to do",
-    "answerable_now": "asks about the progress of the running work",
-    "amendment": "changes the running request or its inputs",
-    "new_question": "a separate request for later",
-    "stop": "stop the running work",
-}
 # Micro-batches are small because the GPU is shared: 4 x 16 keeps the effective batch at the documented 64.
 TRAIN_DEFAULTS: dict[str, Any] = {"epochs": 8, "micro_batch": 4, "grad_accum": 16, "seed": 42}
 MIN_FREE_MB = 5000
 
 
 def case_line(question: str, options: list[str], state: dict[str, Any], label: str) -> dict[str, Any]:
-    criteria = {o: OPTION_TEXT.get(o, o) for o in options}
-    return {
-        "state": state,
-        "questions": {"pick": {"type": "choice", "instructions": question, "criteria": criteria}},
-        "expected": {"pick": label},
-    }
+    return {"state": state, "questions": questions_for(question, options), "expected": {QUESTION_ID: label}}
 
 
 def corrected_log_lines(path: Path) -> list[dict[str, Any]]:

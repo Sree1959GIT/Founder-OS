@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +16,7 @@ from app.agents.setup import build_decisions
 from app.config import Settings
 from app.decision.base import Decision, DecisionError, DecisionService, FakeDecisionProvider
 from app.decision.jev import JEV_URL, JevProvider, routing_state
-from app.decision.laya import LayaProvider, parse_answer, questions_for
+from app.decision.laya import OPTION_TEXT, LayaProvider, parse_answer, questions_for
 from app.evals.decision_bakeoff import (
     QUESTIONS,
     BakeoffRow,
@@ -164,8 +166,11 @@ def test_settings_choose_the_provider_and_the_default_stays_the_llm(tmp_path: Pa
     laya = build_decisions(settings(decision_provider="laya", laya_checkpoint="models/x"), router)
     assert laya.provider.name == "laya" and laya.fallback is not None and laya.fallback.name == "llm"
     assert build_decisions(settings(decision_provider="jev"), router).provider.name == "llm"  # no key
-    jev = build_decisions(settings(decision_provider="jev", jev_api_key="k"), router)
+    jev = build_decisions(settings(decision_provider="jev", jev_api_key="k", cloud_allowed=True), router)
     assert jev.provider.name == "jev" and jev.fallback is not None
+    # Jev is a cloud service: with cloud off, nothing goes there, even with a key.
+    off = build_decisions(settings(decision_provider="jev", jev_api_key="k", cloud_allowed=False), router)
+    assert off.provider.name == "llm"
 
 
 # --- the labelled examples -------------------------------------------------------------------------------------------
@@ -267,6 +272,27 @@ def test_the_training_file_uses_the_train_split_and_corrected_log_lines_only(tmp
     assert len(out.read_text(encoding="utf-8").splitlines()) == len(lines)
 
 
-def test_every_label_has_words_for_the_model() -> None:
+def test_training_and_live_requests_describe_the_options_in_the_same_words() -> None:
     module = _finetune_module()
-    assert {e.label for e in load_examples()} <= set(module.OPTION_TEXT)
+    live = questions_for("Which?", ["finance", "chitchat"])
+    assert module.case_line("Which?", ["finance", "chitchat"], {}, "finance")["questions"] == live
+    assert live["pick"]["criteria"]["finance"] == OPTION_TEXT["finance"]
+
+
+async def test_a_failed_load_is_tried_once_and_a_checkpoint_gets_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def load(path: str, **kwargs: Any) -> Any:
+        calls.append((path, kwargs))
+        raise OSError("no such checkpoint")
+
+    monkeypatch.setitem(sys.modules, "laya", types.SimpleNamespace(load=load))
+    provider = LayaProvider("models/x", "cpu")
+    for _ in range(2):
+        with pytest.raises(DecisionError, match="could not load"):
+            await provider.choose({}, "Which?", OPTIONS)
+    assert calls == [("models/x", {"device": "cpu"})]
+
+
+def test_every_label_has_words_for_the_model() -> None:
+    assert {e.label for e in load_examples()} <= set(OPTION_TEXT)

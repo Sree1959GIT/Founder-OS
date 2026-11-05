@@ -57,9 +57,10 @@ class NamesUnavailable(Exception):
 
 NameSource = Callable[[], Iterable[tuple[str, str]]]  # yields (kind, name); kind is customer | person | company
 _PSEUDONYM_WORD = {"customer": "Customer", "person": "Person", "company": "Company"}
-_PSEUDONYM = re.compile(r"\b(?:Customer|Person|Company)_\d{3}\b")
+_PSEUDONYM = re.compile(r"\b(?:Customer|Person|Company)_\d{3,}\b")
+_NAME_SEPARATOR = re.compile(r"[\s_-]+")
 _PARTIAL_PSEUDONYM = re.compile(
-    r"(?:C|Cu|Cus|Cust|Custo|Custom|Custome|Customer|P|Pe|Per|Pers|Perso|Person|Co|Com|Comp|Compa|Compan|Company)(?:_\d{0,2})?$|(?:Customer|Person|Company)_\d{0,2}$"
+    r"(?:C|Cu|Cus|Cust|Custo|Custom|Custome|Customer|P|Pe|Per|Pers|Perso|Person|Co|Com|Comp|Compa|Compan|Company)(?:_\d*)?$|(?:Customer|Person|Company)_\d*$"
 )
 _TITLED_PERSON = re.compile(r"\b(?:Mr|Mrs|Ms|Mx|Dr|Prof)\.?\s+[A-Z][a-z]+(?:[ -][A-Z][a-z]+)?")
 # A short form stands for its full name only when it could not be an ordinary word in a business note.
@@ -79,8 +80,9 @@ class NameIndex:
     """The names that must not leave the PC, read from `sources` and cached briefly.
 
     A pseudonym stays the same for the life of the process, so a model can reason across messages and the reply can be
-    mapped back. Full names match in any case; a short form ("Ironcrest" for "Ironcrest Media") matches as capitalised,
-    and only when it is unique and not an ordinary word.
+    mapped back. A name also matches when hyphenated or written as a file slug ("ironcrest-media"). Names match in any
+    case, except those that could be ordinary words ("Will", "Summit") and people's short forms: those match as written.
+    A short form ("Ironcrest" for "Ironcrest Media") counts only when it is unique and not an ordinary word.
     """
 
     def __init__(self, sources: list[NameSource], ttl_s: float = 60.0) -> None:
@@ -91,11 +93,13 @@ class NameIndex:
         self._real: dict[str, str] = {}  # pseudonym -> the name as written in the source
         self._counts: dict[str, int] = {}
         self._full: re.Pattern[str] | None = None
+        self._full_as_written: re.Pattern[str] | None = None
         self._short: re.Pattern[str] | None = None
+        self._short_as_written: re.Pattern[str] | None = None
         self._short_to_pseudonym: dict[str, str] = {}
 
     def _pseudonym_for(self, kind: str, name: str) -> str:
-        key = name.casefold()
+        key = _key(name)
         if key not in self._pseudonyms:
             word = _PSEUDONYM_WORD.get(kind, "Company")
             self._counts[word] = self._counts.get(word, 0) + 1
@@ -123,15 +127,25 @@ class NameIndex:
         except Exception as exc:
             raise NamesUnavailable(f"{type(exc).__name__}: {exc}") from exc
         seen_short: dict[str, str | None] = {}
+        people_short: set[str] = set()
         full = sorted({name for _, name in names}, key=len, reverse=True)
+        keys = {_key(n) for n in full}
+        as_written: set[str] = set()
         for kind, name in names:
             pseudonym = self._pseudonym_for(kind, name)
+            if len(_NAME_SEPARATOR.split(name)) == 1 and (kind == "person" or name.lower() in _COMMON_WORDS):
+                as_written.add(name)
             for short in self._short_forms(kind, name):
-                if short.casefold() not in {n.casefold() for n in full}:
+                if _key(short) not in keys:
                     seen_short[short] = pseudonym if seen_short.get(short, pseudonym) == pseudonym else None
-        self._short_to_pseudonym = {s: p for s, p in seen_short.items() if p is not None}
-        self._full = _alternation(full, re.I) if full else None
-        self._short = _alternation(sorted(self._short_to_pseudonym, key=len, reverse=True), 0) or None
+                    if kind == "person":
+                        people_short.add(short)
+        shorts = sorted((s for s, p in seen_short.items() if p is not None), key=len, reverse=True)
+        self._short_to_pseudonym = {_key(s): seen_short[s] for s in shorts}  # type: ignore[misc]
+        self._full = _alternation([n for n in full if n not in as_written], re.I)
+        self._full_as_written = _alternation([n for n in full if n in as_written], 0)
+        self._short = _alternation([s for s in shorts if s not in people_short], re.I)
+        self._short_as_written = _alternation([s for s in shorts if s in people_short], 0)
         self._loaded_at = now
 
     def scrub(self, text: str, report: FilterReport) -> str:
@@ -139,10 +153,21 @@ class NameIndex:
             report.names_replaced += 1
             return replacement
 
-        if self._full is not None:
-            text = self._full.sub(lambda m: count(self._pseudonyms[m.group().casefold()]), text)
-        if self._short is not None:
-            text = self._short.sub(lambda m: count(self._short_to_pseudonym[m.group()]), text)
+        def replace(table: dict[str, str]) -> Callable[[re.Match[str]], str]:
+            # `re.I` can match text whose casefold differs from the key (Turkish dotless i). Still a name: hide it.
+            def one(match: re.Match[str]) -> str:
+                return count(table.get(_key(match.group())) or self._pseudonym_for("company", match.group()))
+
+            return one
+
+        for pattern, table in (
+            (self._full, self._pseudonyms),
+            (self._full_as_written, self._pseudonyms),
+            (self._short, self._short_to_pseudonym),
+            (self._short_as_written, self._short_to_pseudonym),
+        ):
+            if pattern is not None:
+                text = pattern.sub(replace(table), text)
         return _TITLED_PERSON.sub(lambda m: count(self._pseudonym_for("person", m.group())), text)
 
     def restore(self, text: str) -> str:
@@ -159,10 +184,16 @@ class NameIndex:
         return value
 
 
+def _key(name: str) -> str:
+    return " ".join(w for w in _NAME_SEPARATOR.split(name.casefold()) if w)
+
+
 def _alternation(names: list[str], flags: int) -> re.Pattern[str] | None:
+    """Any of the names, with spaces, hyphens and underscores alike: a hyphen or underscore also ends a name."""
     if not names:
         return None
-    return re.compile(r"(?<![\w-])(?:" + "|".join(re.escape(n) for n in names) + r")(?![\w-])", flags)
+    forms = (r"[\s_-]+".join(re.escape(w) for w in _NAME_SEPARATOR.split(n) if w) for n in names)
+    return re.compile(r"(?<![^\W_])(?:" + "|".join(forms) + r")(?![^\W_])", flags)
 
 
 class StreamRestorer:

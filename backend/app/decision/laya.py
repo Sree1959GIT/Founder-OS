@@ -26,10 +26,33 @@ from app.llm.base import Timer
 
 QUESTION_ID = "pick"
 Predictor = Callable[[Any, dict[str, Any]], dict[str, Any]]
+# What each routing option means. Training and live requests must use the same words, or a tuned model is never tested
+# on the input it learned.
+OPTION_TEXT = {
+    "finance": "a question answered from the company's financial metrics",
+    "knowledge": "a question answered from the founder's notes and past decisions",
+    "decision": "a choice the founder is weighing, which needs a team to analyse it",
+    "chitchat": "small talk, with nothing to look up",
+    "financial_analyst": "metrics, scenarios and runway",
+    "librarian": "the founder's notes and past decisions",
+    "market_scout": "market size, competitors and local conditions",
+    "revenue_customer": "pricing, churn, pipeline and customer segments",
+    "people_ops": "hiring plan, capacity, ownership and execution",
+    "regulatory_tax": "licences, tax and compliance",
+    "prioritiser": "ranking a list of options",
+    "perspective_lens": "one outside viewpoint, such as an investor",
+    "devils_advocate": "a pre-mortem: what could go wrong",
+    "backchannel": "an acknowledgement, nothing to do",
+    "answerable_now": "asks about the progress of the running work",
+    "amendment": "changes the running request or its inputs",
+    "new_question": "a separate request for later",
+    "stop": "stop the running work",
+}
 
 
 def questions_for(question: str, options: list[str]) -> dict[str, Any]:
-    return {QUESTION_ID: {"type": "choice", "instructions": question, "criteria": {o: o for o in options}}}
+    criteria = {o: OPTION_TEXT.get(o, o) for o in options}
+    return {QUESTION_ID: {"type": "choice", "instructions": question, "criteria": criteria}}
 
 
 def parse_answer(result: dict[str, Any], options: list[str], question_id: str = QUESTION_ID) -> tuple[str, float]:
@@ -54,7 +77,7 @@ def _load_predictor(checkpoint: str, device: str) -> Predictor:
     kwargs = {"device": device} if device else {}
     try:
         if checkpoint:
-            agent = laya.load(checkpoint)
+            agent = laya.load(checkpoint, **kwargs)
             return agent.predict
         router = laya.Router(max_loaded=1, **kwargs)
         return router.predict
@@ -71,12 +94,19 @@ class LayaProvider:
         self.checkpoint = checkpoint
         self.device = device
         self._predictor = predictor
+        self._load_error: DecisionError | None = None
         self._lock = threading.Lock()
 
     def _predict(self, state: dict[str, Any], questions: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
+            if self._load_error is not None:  # one failed load per process: decisions go straight to the fallback
+                raise self._load_error
             if self._predictor is None:
-                self._predictor = _load_predictor(self.checkpoint, self.device)
+                try:
+                    self._predictor = _load_predictor(self.checkpoint, self.device)
+                except DecisionError as exc:
+                    self._load_error = exc
+                    raise
             try:
                 return self._predictor(state, questions)
             except DecisionError:
