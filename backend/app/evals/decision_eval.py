@@ -40,6 +40,8 @@ _DATE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 _COMPARE = re.compile(r"(>=|<=|>|<)\s*\$?\d|\d")
 _NOT_YOU = re.compile(r"\b(?:we|We|us|our|Our)\b")
 _CONTRADICTS = re.compile(r"\baligns? with\b[^.\n]*\bgoal|\bassumptions are confirmed\b", re.I)
+_ALIGNS = re.compile(r"\b(?:aligns?|aligned|in line|supports?|within reach|on track)\b[^.\n]*\bgoal|\bgoal\b[^.\n]*\bwithin reach", re.I)
+_DECIDED_TO_DECIDE = re.compile(r"\bdecided to [\"\u201c']?decide\b", re.I)
 _THIRD_PERSON = re.compile(r"\bthe founder\b|\blegal team\b|\btax team\b", re.I)
 _ONE_HIRE = re.compile(r"\b(1|one|a single) hire\b|not a quote for this role|\bper hire\b", re.I)
 _GOAL_AS_DECISION = re.compile(r"\b(you|founder|company) (has|have|had)( already)? (decided|committed)\b", re.I)
@@ -84,6 +86,18 @@ def _section(memo: str, heading: str) -> str:
 
 def _bullets(text: str) -> list[str]:
     return [line[2:].strip() for line in text.splitlines() if line.startswith("- ")]
+
+
+def _without_goals(text: str, goals: list[str]) -> str:
+    for goal in goals:
+        text = re.sub(re.escape(goal), "the goal", text, flags=re.I)
+    return re.sub(r"\bnot\b[^.\n]{0,25}\b(?:align|support)\w*", " ", text, flags=re.I)
+
+
+def _gives_back(reply: dict[str, Any], chosen: str) -> bool:
+    options = (reply.get("decision_frame") or {}).get("options", [])
+    change = next((o.get("runway_change_months") for o in options if o.get("name") == chosen), None)
+    return change is not None and change >= 0
 
 
 def _measurable(line: str, today: dt.date) -> bool:
@@ -134,6 +148,21 @@ def check_decision(
         problems.append("the memo says we, us or our")
     if _CONTRADICTS.search(before_findings):
         problems.append("the memo contradicts the goal check, or says assumptions were confirmed")
+    moves_away = bool(case.goal_moves_away)
+    chosen_gives_back = bool(reply.get("decision_frame")) and _gives_back(reply, str(memo_ref.get("chosen", "")))
+    if moves_away and not chosen_gives_back:
+        for name, text in (("Decision", _section(memo, "Decision")), ("Context", _section(memo, "Context")), ("answer", answer)):
+            if _ALIGNS.search(_without_goals(text, case.goal_moves_away)):
+                problems.append(f"the {name} says it helps a goal the goal check says it moves away from")
+    if _DECIDED_TO_DECIDE.search(memo + " " + answer):
+        problems.append("a goal to decide something is reported as decided")
+    team = str(_section(memo, "Team findings"))
+    if re.search(r"\byou, you\b", memo + " " + answer):
+        problems.append("says 'you, you'")
+    if re.search(r"\bstop\s+(?:\w+[- ]){0,2}travel\b", team, re.I) and "Travel-led pilot" in memo:
+        problems.append("a finding tells you to stop what an option depends on")
+    if re.search(r"\b(?:use|check|search)\s+(?:\w+\s+){0,2}vault\b[^.\n]*\bmarket\b", team, re.I):
+        problems.append("a finding points at the vault for market data")
     if _GOAL_AS_DECISION.search(_CODE_SAYS_NOT.sub(" ", memo + " " + answer)):
         problems.append("reports something as already decided")
     # Options
@@ -153,6 +182,9 @@ def check_decision(
         problems.append("the chosen option is also rejected")
     if len(rejected) != len(options) - 1:
         problems.append("not every other option is rejected")
+    for line in rejected:
+        if "Not proposed, though" in line or line.rstrip().endswith("Not chosen for now."):
+            problems.append(f"a rejected option has no reason: {line}")
     costed = [line for line in options if "$" in line or "cost not modelled" in line]
     if len(costed) != len(options):
         problems.append("an option has no cost")
@@ -200,6 +232,10 @@ def _sloppy(messages: list[Any], tools: Any, schema: Any) -> str:
                 "context": "The founder has decided to expand into a second region. The Legal Team will check it.",
                 "options": [{"name": "Open now", "note": "Too early."}, {"name": "Delay", "note": "Too slow."}],
                 "assumptions": [f"Rent is ${INVENTED} a month", "Cost model assumptions are confirmed."],
+                "decision": (
+                    "It aligns with the goal of extending runway past 12 months without new financing. "
+                    "This goal is still within reach."
+                ),
                 "predictions": [{"statement": "Research done in 30 days", "probability": 0.9}],
                 "kill_criteria": ["It does not work"],
             }
@@ -209,11 +245,24 @@ def _sloppy(messages: list[Any], tools: Any, schema: Any) -> str:
     if "Financial Analyst" in system:
         return "Adding 1 hire at the average loaded cost per hire of $11,423.62 a month, not a quote for this role."
     if "Librarian" in system:
-        return "The founder has decided to expand into a second sales region. [profile/company.md]"
+        return (
+            'You have already decided to "Decide whether to open a second sales region". '
+            "The founder has decided to expand into a second sales region. [profile/company.md]"
+        )
     if "People & Ops" in system:
-        return "# Decision Memo\nDecision: go ahead.\nStop hiring SDRs. Ask the Legal Team to check it."
+        return (
+            "# Decision Memo\nDecision: go ahead.\nStop hiring SDRs. Ask the Legal Team to check it. "
+            "Stop non-essential travel. It depends on one person: you, the founder."
+        )
+    if "Regulatory" in system:
+        return "Check the lease and the physical office licence with the Tax Team."
     if "Devil's Advocate" in system:
-        return f"- Risk: this costs ${INVENTED} a month. Likelihood: high. Impact: high. Mitigation: wait."
+        return (
+            f"- Risk: this costs ${INVENTED} a month. Likelihood: high. Impact: high. "
+            "Mitigation: use the vault for market data."
+        )
+    if "Advisor" in system or "advisor" in system:
+        return "The founder has already decided this. It aligns with your goal of extending runway. It needs the Tax Team."
     return "The founder has already decided this. It needs the Tax Team."
 
 

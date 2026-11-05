@@ -23,7 +23,7 @@ from app.agents.decision_frame import (
     starter_outcomes_for,
 )
 from app.agents.events import Artifact
-from app.agents.guards import guarded
+from app.agents.guards import guarded, without_contradictions
 from app.agents.verifier import Fact, split_sentences, verify_numbers
 from app.engine.calibration import PredictionIn
 from app.vault.manager import NoteExistsError
@@ -447,18 +447,47 @@ def _chosen_option(draft: MemoDraft, names: list[str], default: str) -> tuple[st
     return (default if default in names else names[0]), False
 
 
-def _why_not(name: str, chosen: str, frame: DecisionFrame | None) -> str:
-    """A reason from the numbers, when the model gave none."""
+# What a good reason for setting an option aside talks about, when it costs no more than the one proposed.
+_STATES_A_REASON = re.compile(
+    r"\b(?:control\w*|speed|slow\w*|fast\w*|quick\w*|time|revers\w*|undo|lock\w*|commit\w*|learn\w*|depend\w*|"
+    r"quality|dilut\w*|trust|share|margin\w*|complian\w*|licen[cs]\w*|risk\w*|evidence|relationship\w*|covenant\w*|"
+    r"interest|demand)\b",
+    re.I,
+)
+
+
+def _costs_no_more(name: str, chosen: str, frame: DecisionFrame | None) -> bool:
     costs = {o.name: o for o in frame.options} if frame is not None else {}
     this, proposed = costs.get(name), costs.get(chosen)
-    if this is None or proposed is None or None in (this.runway_change_months, proposed.runway_change_months):
-        return "Not chosen for now."
-    if this.modelled and proposed.modelled and this.runway_change_months < proposed.runway_change_months:  # type: ignore[operator]
+    if this is None or proposed is None or not (this.modelled and proposed.modelled):
+        return False
+    if this.runway_change_months is None or proposed.runway_change_months is None:
+        return False
+    return this.runway_change_months >= proposed.runway_change_months
+
+
+def _why_not(name: str, chosen: str, frame: DecisionFrame | None) -> str:
+    """A reason from the numbers and the option's own trade-off, when the model gave none.
+
+    An option that costs no more than the one proposed always says why it was set aside: control, speed, what it
+    teaches. Seen live: "Not proposed, though it takes no more runway than Travel-led pilot", and nothing else.
+    """
+    costs = {o.name: o for o in frame.options} if frame is not None else {}
+    this, proposed = costs.get(name), costs.get(chosen)
+    trade_off = this.trade_off if this is not None else ""
+    if this is None or proposed is None or this.runway_change_months is None or proposed.runway_change_months is None:
+        return trade_off.capitalize() if trade_off else "Not chosen for now: its cost cannot be compared yet."
+    if _costs_no_more(name, chosen, frame):
+        return (
+            f"Takes no more runway than {chosen} ({this.runway_change_months:+.2f} against "
+            f"{proposed.runway_change_months:+.2f} months), but {trade_off or 'it teaches you less about the decision.'}"
+        )
+    if this.modelled and proposed.modelled:
         return (
             f"Takes more runway than {chosen}: {this.runway_change_months:+.2f} against "
             f"{proposed.runway_change_months:+.2f} months."
         )
-    return f"Not proposed, though it takes no more runway than {chosen}."
+    return trade_off.capitalize() if trade_off else "Not chosen for now: its runway effect is not modelled yet."
 
 
 def _option_reason(name: str, draft: MemoDraft, frame: DecisionFrame | None = None) -> str:
@@ -542,6 +571,13 @@ def _final_outcomes(
     return predictions, kills
 
 
+def _reject_line(option: MemoOption, chosen: str, frame: DecisionFrame | None) -> str:
+    """The model's reason stands, unless a cheaper option gets one that says nothing about why it lost."""
+    if option.note and (not _costs_no_more(option.name, chosen, frame) or _STATES_A_REASON.search(option.note)):
+        return option.note
+    return _why_not(option.name, chosen, frame)
+
+
 def with_required_fields(
     draft: MemoDraft, message: str, frame: DecisionFrame | None = None, today: dt.date | None = None
 ) -> MemoDraft:
@@ -566,7 +602,7 @@ def with_required_fields(
         why = "Chosen by rule as the easiest option to undo: the draft named no option from the list."
     decision = f"Proposed: {chosen}. {why}".strip() + " You have not decided yet: this is a recommendation."
     options = [MemoOption(name=n, note=_option_reason(n, draft, frame)) for n in names]
-    rejected = [f"{o.name}: {o.note or _why_not(o.name, chosen, frame)}" for o in options if o.name != chosen]
+    rejected = [f"{o.name}: {_reject_line(o, chosen, frame)}" for o in options if o.name != chosen]
     predictions, kills = _final_outcomes(draft, frame, chosen, today)
     return draft.model_copy(
         update={
@@ -647,20 +683,9 @@ def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) 
 
 _OUR_WORDS = {"we": "you", "We": "You", "us": "you", "our": "your", "Our": "Your", "ours": "yours", "Ours": "Yours"}
 _OUR_WORD = re.compile(r"\b(?:we|We|us|our|Our|ours|Ours)\b")  # lower case only for "us": "US" is a place
-_HELPS_THE_GOAL = re.compile(
-    r"\b(?:align\w*|support\w*|consistent|in line|within reach|helps?|meets?|achieves?|advances?)\b[^.!?]*\bgoals?\b|"
-    r"\bgoals?\b[^.!?]*\b(?:within reach|on track|achievable)\b",
-    re.I,
-)
-_NEGATED = re.compile(r"\b(?:not|never|no|cannot|without)\b|n['\u2019]t\b", re.I)
 _SAYS_CHECKED = re.compile(
     r"\b(?:is|are|has been|have been|was|were)\s+(?:\w+\s+)?(?:confirmed|verified|validated|assessed|evaluated)\b", re.I
 )
-
-
-def _without_false_comfort(text: str) -> str:
-    kept = "".join(p for p in split_sentences(text) if not _HELPS_THE_GOAL.search(p) or _NEGATED.search(p))
-    return re.sub(r"[ 	]{2,}", " ", kept).strip()
 
 
 def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[Any]) -> MemoDraft:
@@ -673,13 +698,8 @@ def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[A
     def say(text: str) -> str:
         return guarded(_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], text), frame, records)
 
-    # The goal check prices the full model. An option that gives runway back may truly help the goal.
-    option = next((o for o in frame.options if o.name == draft.chosen), None) if frame is not None else None
-    gives_back = option is not None and (option.runway_change_months or -1) >= 0
-    moves_away = frame is not None and not gives_back and any(g.status == "moves_away" for g in frame.goals)
-
     def reasons(text: str) -> str:
-        return say(_without_false_comfort(text) if moves_away else text)
+        return say(without_contradictions(text, frame, draft.chosen))
 
     return draft.model_copy(
         update={
@@ -687,8 +707,8 @@ def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[A
             "context": reasons(draft.context),
             "why_chosen": reasons(draft.why_chosen),
             "decision": reasons(draft.decision),
-            "options": [o.model_copy(update={"note": say(o.note)}) for o in draft.options],
-            "rejected": [say(r) for r in draft.rejected],
+            "options": [o.model_copy(update={"note": reasons(o.note)}) for o in draft.options],
+            "rejected": [reasons(r) for r in draft.rejected],
             "assumptions": [say(a) for a in draft.assumptions if not _SAYS_CHECKED.search(a)],
         }
     )

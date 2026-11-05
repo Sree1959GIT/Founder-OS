@@ -413,7 +413,7 @@ class AgentRunner:
         await self._surface_named_folder(spec, inst, user_message, result)
         _surface_decisions(result)
         self._verify(spec, inst, user_message, result)
-        out_of_role = role_problems(spec.name, result.text, user_message)
+        out_of_role = role_problems(spec.name, result.text, user_message, frame)
         if not result.text.strip():
             out_of_role = ["your answer was empty: answer your brief"]
         if out_of_role:
@@ -437,7 +437,9 @@ class AgentRunner:
             _surface_decisions(result)
             self._verify(spec, inst, user_message, result)
         _replace_wrong_claims(result, user_message)
-        result.text = guarded(in_role(spec.name, result.text, user_message), frame, _records_for(result, upstream))
+        result.text = guarded(
+            in_role(spec.name, result.text, user_message, frame), frame, _records_for(result, upstream)
+        )
         if not result.text.strip() and spec.name in RULE_TEXT:
             result.text = RULE_TEXT[spec.name]  # seen live: a small model can return nothing, twice
         self._finish_specialist(spec, inst, result)
@@ -1136,14 +1138,15 @@ class _SentenceGate:
         issues: list[str],
         frame: DecisionFrame | None = None,
         records: list[DecisionRecord] | None = None,
+        chosen: str = "",
     ) -> None:
         self.facts, self.message, self.impact, self.issues = facts, message, impact, issues
-        self.frame, self.records = frame, records or []
+        self.frame, self.records, self.chosen = frame, records or [], chosen
         self.pending = ""
         self.written: set[str] = set()
 
     def _checked(self, text: str) -> str:
-        text = guarded(text, self.frame, self.records, self.written)
+        text = guarded(text, self.frame, self.records, self.written, self.chosen)
         fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
         self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
         if not failed:
@@ -1165,6 +1168,10 @@ class _SentenceGate:
     def flush(self) -> str:
         ready, self.pending = self.pending, ""
         return self._checked(ready) if ready else ""
+
+
+def _chosen_in(results: list[AgentResult]) -> str:
+    return next((r.memo.chosen for r in results if r.memo is not None), "")
 
 
 def advisor_memo_note(answer: str, results: list[AgentResult], frame: DecisionFrame | None = None) -> str:
@@ -1250,7 +1257,7 @@ async def advise(
     facts = [*(fact for r in results for fact in r.facts), *(frame.facts if frame else [])]
     records = _team_decisions(results)
     claims = issues if issues is not None else []
-    gate = _SentenceGate(facts, user_message, team_impact(results), claims, frame, records)
+    gate = _SentenceGate(facts, user_message, team_impact(results), claims, frame, records, _chosen_in(results))
     try:
         async for chunk in router.stream(spec.privacy, messages, agent_type=spec.name):
             ready = gate.feed(chunk.delta) if chunk.delta else ""
@@ -1286,7 +1293,7 @@ async def advise(
             yield StreamChunk(done=True, completion=Completion(text=text, provider=provider.name, model=provider.model))
             return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
-        text = guarded(template_answer(results), frame, records)
+        text = guarded(template_answer(results), frame, records, chosen=_chosen_in(results))
         text += advisor_impact_note(text, plan_, results)
         text += advisor_frame_note(text, frame)
         text += advisor_memo_note(text, results, frame)

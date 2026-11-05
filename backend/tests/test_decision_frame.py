@@ -22,7 +22,16 @@ from app.agents.decision_frame import (
 )
 from app.agents.events import EventBus
 from app.agents.graph import AgentOrchestrator
-from app.agents.guards import NOTHING_ON_RECORD, guarded, in_one_voice, in_role, role_problems
+from app.agents.guards import (
+    NOTHING_ON_RECORD,
+    goal_contradiction,
+    guarded,
+    in_one_voice,
+    in_role,
+    role_problems,
+    unbacked_decision_claim,
+    without_contradictions,
+)
 from app.agents.registry import REGISTRY
 from app.agents.runtime import AgentInstance, AgentRunner, _analyst_on_a_cost_model, advisor_memo_note
 from app.agents.specialists import (
@@ -857,3 +866,123 @@ async def test_narration_groups_a_wave_and_counts_what_is_left(finance: Any, vau
 def test_the_question_names_no_figure_and_a_clear_hire_has_none(ctx: ToolContext) -> None:
     assert inputs_question(build_frame("Should we hire two SDRs?", ctx)) == ""
     assert "price change" in inputs_question(build_frame("Should we raise our prices by 10%?", ctx))
+
+
+# --- M3b -> M3c, first task: the prose never contradicts the frame ---------------------------------------------------
+_RUNWAY_GOAL_TEXT = "Extend runway past 12 months without new financing"
+
+
+def test_a_sentence_that_helps_a_goal_the_frame_moves_away_from_is_a_contradiction(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    # Seen live. "without new financing" inside the goal used to read as a negation.
+    live = f"The Travel-led pilot aligns with the goal of {_RUNWAY_GOAL_TEXT.lower()}."
+    assert goal_contradiction(live, frame, "Travel-led pilot") == _RUNWAY_GOAL_TEXT
+    for wrong in (
+        "This supports your goal.",
+        "This is on track for the goal.",
+        "It extends your runway.",
+        "It has no impact on runway.",
+        "It moves you closer to your goal of extending runway.",
+    ):
+        assert goal_contradiction(wrong, frame) == _RUNWAY_GOAL_TEXT, wrong
+
+
+def test_what_is_true_about_a_goal_is_left_alone(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    for right in (
+        "This does not align with your goal of extending runway.",
+        "It moves you away from your goal.",
+        "A pilot uses less runway than a full office.",
+        "To meet the goal you would need to cut burn.",
+        "If you cut burn, this would align with the goal.",
+        "Check the licence with your adviser.",
+    ):
+        assert goal_contradiction(right, frame) is None, right
+    for sentence in frame.goal_sentences():
+        assert goal_contradiction(sentence, frame) is None
+
+
+def test_an_option_that_gives_runway_back_may_help_the_goal(ctx: ToolContext) -> None:
+    frame = build_frame("Should we raise our prices by 10%?", ctx)
+    assert goal_contradiction("This keeps you on track for your goal of bringing logo churn down.", frame, "No price change") is None
+
+
+def test_the_memo_drops_the_contradiction_and_the_answer_replaces_it(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    mixed = "It is cheap. It aligns with your goal of extending runway. It is easy to stop."
+    assert without_contradictions(mixed, frame, "Travel-led pilot") == "It is cheap. It is easy to stop."
+    answer = guarded(mixed, frame, [], chosen="Travel-led pilot")
+    assert "aligns" not in answer
+    assert "moves you away from your goal" in answer
+
+
+def test_the_rule_memo_decision_never_says_it_helps(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    draft = MemoDraft(
+        chosen="Travel-led pilot",
+        why_chosen=f"It aligns with the goal: {_RUNWAY_GOAL_TEXT}. It is the easiest to undo.",
+    )
+    fixed = with_required_fields(in_your_words(draft, frame, []), DUBAI, frame)
+    assert "aligns" not in fixed.decision
+    assert "easiest to undo" in fixed.decision
+
+
+def test_a_cheaper_option_not_proposed_says_why(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    chosen = "Free-zone desk"
+    fixed = with_required_fields(MemoDraft(chosen=chosen), DUBAI, frame)
+    cheaper = [r for r in fixed.rejected if r.startswith(("Travel-led pilot:", "Partner or distributor:"))]
+    assert len(cheaper) == 2
+    for line in cheaper:
+        assert "Takes no more runway" in line
+        assert any(word in line for word in ("control", "slower", "slowly", "learn")), line
+    assert not any("Not proposed, though" in r for r in fixed.rejected)
+    # The model's line without a reason does not count; one with a reason does.
+    empty = MemoDraft(chosen=chosen, options=[MemoOption(name="Travel-led pilot", note="Another idea.")])
+    assert "Another idea" not in with_required_fields(empty, DUBAI, frame).rejected[0]
+    reasoned = MemoDraft(chosen=chosen, options=[MemoOption(name="Travel-led pilot", note="Too slow for this year.")])
+    assert "Too slow for this year." in with_required_fields(reasoned, DUBAI, frame).rejected[0]
+
+
+def test_every_option_of_every_type_has_a_trade_off(ctx: ToolContext) -> None:
+    for message in (
+        DUBAI,
+        "Should we raise our prices by 10%?",
+        "Should we launch a new product line?",
+        "Should we spend $20,000 more a month on marketing?",
+        "Should we raise a priced round?",
+        "Should we hire two SDRs?",
+    ):
+        frame = build_frame(message, ctx)
+        assert frame.options, message
+        assert all(o.trade_off for o in frame.options), [o.name for o in frame.options if not o.trade_off]
+
+
+def test_off_brief_agent_wording_seen_live(ctx: ToolContext) -> None:
+    frame = build_frame(DUBAI, ctx)
+    # People & Ops
+    travel = "Own this yourself. Stop non-essential travel. Start with one market."
+    assert role_problems("people_ops", travel, DUBAI, frame)
+    assert in_role("people_ops", travel, DUBAI, frame) == "Own this yourself. Start with one market."
+    assert not role_problems("people_ops", "Own this yourself.", DUBAI, frame)
+    assert in_one_voice("It depends on one person: you, the founder.") == "It depends on one person: you."
+    # Regulatory & Tax
+    office = "Check the lease and the physical office licence with your adviser."
+    assert role_problems("regulatory_tax", office, DUBAI, frame)
+    fixed = in_role("regulatory_tax", office, DUBAI, frame)
+    assert fixed.startswith(office) and "Travel-led pilot" in fixed
+    both = "For a travel-led pilot check visas. For a full office check the lease."
+    assert not role_problems("regulatory_tax", both, DUBAI, frame)
+    # Librarian
+    assert unbacked_decision_claim('You have already decided to "Decide whether to open a second sales region".', [])
+    assert not unbacked_decision_claim("Whether you have decided is not on record.", [])
+    # Devil's Advocate
+    vault = "- Risk: no demand. Likelihood: high. Impact: high. Mitigation: use the vault for market data."
+    assert role_problems("devils_advocate", vault, DUBAI, frame)
+    assert "outside source" in in_role("devils_advocate", vault, DUBAI, frame)
+    assert not role_problems("librarian", "Use the vault for market data.", DUBAI, frame)
+
+
+def test_agents_are_told_the_options(ctx: ToolContext) -> None:
+    text = build_frame(DUBAI, ctx).for_agents()
+    assert "Travel-led pilot" in text and "not only the largest" in text
