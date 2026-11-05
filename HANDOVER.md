@@ -41,7 +41,6 @@
 | M1 Financial engine | **Major** (are the numbers right?) |
 | M2 Vault & search | Light |
 | M3a Agent framework | Medium (first run with real Ollama) |
-| M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | AWAITING FOUNDER |
 | M3b Specialist agents | Medium |
 | M3c Laya / Jev | Light |
 | M4 Canvas UI | **Major** (first full demo) |
@@ -57,8 +56,20 @@
 | M1 Financial spine | [Sree1959GIT/Founder-OS#4](https://github.com/Sree1959GIT/Founder-OS/pull/4) (fix; M1 itself merged in [#3](https://github.com/Sree1959GIT/Founder-OS/pull/3)) | **Major** | ACCEPTED (SM, 2026-11-03) after re-test R1–R8 on Windows; fix in #4 |
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
+| M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | AWAITING FOUNDER (re-test) |
 
 ## Current session
+- Started (UTC): 2026-11-05 10:56 (local Windows bug-fix session for the M3b gate, time-box 2 hours), branch `claude/m3b-specialists`, PR #7
+- Plan:
+  - [x] Record the founder feedback first
+  - [ ] Decision frame: type, cost model (one-off + monthly, low/base/high via `run_scenario`), options with costs, goal check, key questions
+  - [ ] Goals never reported as decisions; hire framing only for hires
+  - [ ] Memo enforced in code: one chosen option, outcome predictions, measurable kill criteria, "Open numbers to confirm", plain Metrics
+  - [ ] Role discipline and second person everywhere; narration grouping and a specific question
+  - [ ] Offline and live eval rubric (Dubai office, price increase, new product line), tests
+  - [ ] Self-review, RD re-test steps, PR #7 updated, CI green
+
+Previous session (2026-11-04, M3b):
 - Started (UTC): 2026-11-04 14:23 (local Windows session), branch `claude/m3b-specialists`, target **M3b** (gate tier: **Medium**)
 - Plan, in the founder's priority order (an "M3b (partial)" PR is fine if time runs out):
   - [x] Tidy the stale "Next milestone" and M3a table lines
@@ -572,6 +583,19 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+
+### [M3b] Dubai decision: plumbing works, decision reasoning is not trustworthy
+M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a decision memo."
+1. Wrong cost model: the office was modelled as "1 hire at $11,423.62/month, -0.76 months" ("not a quote for this role"). Decisions need a type (hire N people / new office or region / pricing change / spend change / fundraise / other). Multi-component decisions need a cost model with one-off and recurring costs. Inputs not in the data are founder-editable assumptions labelled "assumption, confirm", never shown as verified, with a low/base/high runway impact from `run_scenario`. Ask the founder for the 2–3 key inputs through the conversation lane. Never present a one-hire cost as the cost of a non-hire decision.
+2. Goals are not decisions: the Librarian and memo said "the founder has decided to expand into a second sales region", but `profile/company.md` only has the goal "Decide whether to open a second sales region".
+3. Goal awareness: compare every decision with the goals in `profile/company.md` (here "Extend runway past 12 months without new financing", with runway at 10.65) and say plainly when a decision moves away from one.
+4. Memo consistency, enforced in code: exactly one chosen option, not under "Rejected alternatives", and the Decision text matches it. (The memo said "delay until research" but rejected both "open now" and "delay".)
+5. Predictions must be outcomes (metric + threshold + date), not tasks. Never leave "[figure removed: no lineage]" in a memo: rewrite the sentence or move it to "Open numbers to confirm".
+6. Kill criteria must be measurable (metric, threshold, date) and consistent with the cost model.
+7. The Metrics section is for a founder: one plain sentence per figure with a short lineage note, no raw formula dumps, and only figures relevant to this decision (not the $308,437.67 payroll total).
+8. Role discipline: specialists stay in role (People & Ops wrote its own "Decision Memo" and said "stop hiring SDRs" without basis). "Your adviser", not "Legal Team / Tax Team". Second person everywhere, including the memo and team findings.
+9. Options: a memo compares realistic alternatives with their costs (for a new region: travel-led pilot, one remote rep, partner/distributor, free-zone desk, full office).
+10. Narration (low priority, for M5): group "X finished" lines ("Analyst and Librarian are done; two to go"), and make the assumption question specific to the run's real brief.
 
 ### [M3a → M3b] Small items found in the M3a re-test (not blocking): RESOLVED
 **Fixed in M3b.** Journal: 3 full live rounds reproduced no order or state effect. The search returned the journal at rank 2 and the model sometimes cited only the churn note, so this was the model's choice varying, not state. Code now guarantees it: asked what "my journal" says, an answer with no journal source gets the journal's own passage and path (`_surface_named_folder`). Advisor: code turns "the founder" into "you" and writes money one way (`in_one_voice`). API: JSON answers send `application/json; charset=utf-8`.
