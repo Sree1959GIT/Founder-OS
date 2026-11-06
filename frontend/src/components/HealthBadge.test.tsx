@@ -45,7 +45,7 @@ describe("HealthBadge", () => {
 
 describe("App", () => {
   it("fetches /api/health through the proxy and renders the status", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(healthy), { status: 200 }));
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(healthy), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     await waitFor(() => expect(screen.getByText("Ollama")).toBeInTheDocument());
