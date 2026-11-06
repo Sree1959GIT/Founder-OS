@@ -139,7 +139,7 @@ Previous session (M3a):
 ## Current state
 ### Source check (fix after the founder's M3c review, 2026-11-06)
 **What you can do now**
-- A figure with a made-up source can no longer reach you. Live, on the final code, the Market Scout wrote "$166 billion" and "$160 billion" again; code removed them before any later agent saw them.
+- A figure with a made-up source can no longer reach you. Live, during this fix, the Market Scout wrote "$160 billion" and "$166 billion" unprompted; code removed them before any later agent saw them.
 - With cloud off and no market data in the vault, the Market Scout says so and lists what to find, with no figures.
 
 **How it works**
@@ -158,7 +158,7 @@ Previous session (M3a):
 - A figure written in words ("a hundred and fifty billion"), or a count of 12 or under ("5 competitors"), is not seen as a figure. A claim with no figure and no source is not caught, except for the cloud-off Market Scout. A figure that happens to match a routine's number passes.
 - Removing whole sentences can leave a section thin, and a real sentence with an unbacked figure goes too. A law or standard number ("ISO 27001") counts as a figure.
 - Live, the model still invents a market figure on most Dubai runs. Each costs a repair turn before code removes it.
-- Live runs on the final code: 4 Dubai runs (2 through the eval rubric: 1 failed on the "if needed" bug, then fixed and passed) and 2 price-rise runs after the eval pattern fix. A small sample, and the full live labelled set was not run.
+- Live runs during the fix, code changing between rounds. Dubai through the eval rubric: PASS, FAIL (the "if needed" bug), PASS. Price rise: FAIL (the eval's own pattern), PASS, PASS. Four more Dubai runs printed their cited paths: all exist or are data files. **On the final code:** two of those path runs, and one PASS each for Dubai and the price rise. A small sample, and the full live labelled set was not run.
 
 ### Decision models, privacy names and evals (M3c)
 **What you can do now**
@@ -178,7 +178,7 @@ Previous session (M3a):
 - **No real cloud call was made in this session either.** The cloud rows of the provider bake-off are yours to run.
 - A person's name that is in no source is only caught after a title ("Dr", "Mr"). The goal check and role checks are word patterns: they can miss a rephrased claim.
 - All measurements are one run on a small sample vault, so a difference of a few points is noise.
-- **Wording from the live Dubai run (C4):** People & Ops opened with "You are you." on the v1 prompt. v2 is now live and four Dubai runs did not show it, but the team varies and People & Ops was not on every run, so M4 re-checks it. Regulatory's "Ensure the decision aligns with the goal" is still weak.
+- **Wording from the live Dubai run (C4):** People & Ops opened with "You are you." on the v1 prompt. v2 is now live and the three Dubai runs whose text I read did not show it, but People & Ops is not on every team, so M4 re-checks it. Regulatory's "Ensure the decision aligns with the goal" is still weak.
 - A proposed memo already on record reads "decided 2026-11-05; status proposed" in the answer's record line, because the record uses the memo's date as `decided`. It came from earlier memos in the test vault, and the status beside it is right. Fix in the next session.
 - The live labelled set ran only partly (Dubai and the price rise through `eval_agents --live`, both PASS). I stopped the rest to stay in the time-box; the offline set is 58/58.
 - There is no cash metric, so "how much cash do we have" gets the rules' metrics summary instead of one figure.
@@ -533,7 +533,7 @@ Known issues / notes:
 
 ## Next steps (for the M4 session)
 0. **Gate check:** M3c is a **Light** gate. The founder runs RF1–RF6 and merges PR #8. Act on any "Founder feedback" first.
-1. **M4's first task:** People & Ops opening with "You are you.", if v2 did not fix it. It was seen on v1, and not in four Dubai runs on v2, though People & Ops is not on every team: check several runs. In one v2 run it also wrote "Stop traveling for the pilot": `guards._stops_an_option` matches "travel" as a whole word, so it misses "traveling".
+1. **M4's first task:** People & Ops opening with "You are you.", if v2 did not fix it. It was seen on v1, and not in the three Dubai runs on v2 whose text I read, though People & Ops is not on every team: check several runs. In one v2 run it also wrote "Stop traveling for the pilot": `guards._stops_an_option` matches "travel" as a whole word, so it misses "traveling".
 2. M4 (PRD §8): the canvas UI, including the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
 3. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
 4. Smaller ideas: count Jev in the cost ledger; a cash metric; a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
@@ -559,7 +559,7 @@ Known issues / notes:
   `$scout = @($r.agents | Where-Object { $_.type -eq 'market_scout' })[0].text; $big = '[$]\s?\d|\d\s?(%|percent|billion|million|bn|trillion)'; $asks = @($r.answer -split '(?<=[.!?])\s+' | Where-Object { $_ -match '\?\s*$' -and $_ -match $big }); $away = @($r.decision_frame.goals | Where-Object { $_.status -eq 'moves_away' }).Count; $sf = [regex]::Matches($scout, $big).Count; $bn = [regex]::Matches(($texts -join "`n"), '(?i)\d\s?(billion|bn|trillion)').Count; $caught = @($r.issues | Where-Object { $_ -match 'removed: unsupported source' }).Count`
   `"RF5 type $($r.decision_frame.type) | moving away $away | status $($r.memo.status) | scout lists what to find $($scout -match 'o find:') | scout figures $sf | billions anywhere $bn | questions with a figure $($asks.Count) | removals noted $caught"`
   `$asks | ForEach-Object { "RF5 question: $_" }; Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($r.memo.path)" | Out-Null; "RF5 memo deleted $($r.memo.path)"`
-  Expected: one `RF5 cited` line per path, each saying `exists True` or `data file` and never `exists False`. Then `RF5 type new_office | moving away 1 | status proposed | scout lists what to find True | scout figures 0 | billions anywhere 0 | questions with a figure 0 | removals noted N`, where N varies (1 here when the model invented a figure, 0 if it did not). `questions with a figure` may be 1 if the vault already holds a proposed Dubai memo: read the `RF5 question` line, and its figure must be one of that memo's targets, as stated in the answer's "on record" text. It was 1 in two of the four runs here for that reason ($36,000.00), and is a placeholder target, not market data. `$r.issues` still names the figure that was removed: that is the audit trail, not text you are given as an answer.
+  Expected: one `RF5 cited` line per path, each saying `exists True` or `data file` and never `exists False`. Then `RF5 type new_office | moving away 1 | status proposed | scout lists what to find True | scout figures 0 | billions anywhere 0 | questions with a figure 0 | removals noted N`, where N varies (1 here when the model invented a figure, 0 if it did not). `questions with a figure` may be 1 if the vault already holds a proposed Dubai memo: read the `RF5 question` line, and its figure must be one of that memo's targets, as stated in the answer's "on record" text. It was 1 in two of the four runs here for that reason ($36,000.00), which is a placeholder target, not market data. `$r.issues` still names the figure that was removed: that is the audit trail, not text you are given as an answer.
 - **RF6. Optional: the rubric through the real model (about 3 minutes each; each leaves a memo in `decisions/` to delete).**
   `.\.venv\Scripts\python.exe scripts\eval_agents.py --live --only dubai-office | Select-Object -Last 2; .\.venv\Scripts\python.exe scripts\eval_agents.py --live --only price-increase | Select-Object -Last 2`
   Expected: `decision:dubai-office live PASS` and `LIVE AGENT EVAL: 1/1 passed`, then the same for `price-increase`. Model output varies, so a failure is a prompt to read the memo.
