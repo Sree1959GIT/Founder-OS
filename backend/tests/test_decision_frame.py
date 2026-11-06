@@ -1037,3 +1037,15 @@ def test_only_unconditional_advice_against_the_option_on_the_table_is_off_brief(
     only = frame.model_copy(update={"default_option": "No raise: cut burn instead"})
     assert not role_problems("people_ops", "Cut burn by trimming the slowest channel.", DUBAI, only)
     assert in_role("people_ops", "Stop non-essential travel now.", DUBAI, frame) == "Stop non-essential travel now."
+    # Seen live on People & Ops v2: other forms of the word.
+    for wrote in ("Stop traveling for the pilot.", "Stop travelling for the pilot.", "Avoid traveling now."):
+        assert role_problems("people_ops", wrote, DUBAI, frame), wrote
+    assert not role_problems("devils_advocate", "Pause traveling if no customer signs by March.", DUBAI, frame)
+
+
+def test_you_are_you_never_reaches_the_founder() -> None:
+    # Seen live: "You are the founder." came out as "You are you."
+    assert in_one_voice("You are the founder. Own the first three deals.") == "Own the first three deals."
+    assert in_one_voice("Own the deals. You are you.") == "Own the deals."
+    assert in_one_voice("Owner: You are the founder.\nTrade-off: ask.") == "Owner: you.\nTrade-off: ask."
+    assert in_one_voice("You are your own closer.") == "You are your own closer."

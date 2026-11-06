@@ -48,12 +48,18 @@ def _to_adviser(match: re.Match[str]) -> str:
 
 # Seen live: "depends on one person: you, the founder" became "you, you".
 _YOU_TWICE = re.compile(r"\b(you),\s*you\b(?=\s*[.,;:!?]|\s*$)", re.I)
+# Seen live: "You are the founder." became "You are you."
+_OWNER_YOU_ARE_YOU = re.compile(r"(\bowner:\s*)you are you\b", re.I)
+_YOU_ARE_YOU = re.compile(r"\s*\byou are you\b[.!]?", re.I)
 
 
 def in_one_voice(text: str) -> str:
     """Spoken to the founder, not about them, with one way to write money and one word for outside advice."""
     spoken = _BARE_FOUNDERS.sub(lambda m: "Your" if m.group()[0] == "F" else "your", _THE_FOUNDER.sub(_to_you, text))
     spoken = _YOU_TWICE.sub(lambda m: m.group(1), spoken)
+    spoken = _OWNER_YOU_ARE_YOU.sub(lambda m: f"{m.group(1)}you", spoken)
+    if _YOU_ARE_YOU.search(spoken):
+        spoken = _YOU_ARE_YOU.sub("", spoken).lstrip()
     return _THE_DEPARTMENT.sub(_to_adviser, one_money_format(spoken))
 
 
@@ -311,7 +317,8 @@ def _stops_an_option(text: str, frame: DecisionFrame | None) -> bool:
     }
     if not words:
         return False
-    stops = re.compile(_STOP_VERB + rf"(?:{'|'.join(sorted(words))})\b", re.I)
+    # Seen live: "Stop traveling for the pilot" got past a match on the whole word "travel".
+    stops = re.compile(_STOP_VERB + rf"(?:{'|'.join(sorted(words))})(?:l?ing|l?ed|s)?\b", re.I)
     return any(stops.search(s) and not _ONLY_IF.search(s) for s in split_sentences(text))
 
 

@@ -337,7 +337,7 @@ async def test_graph_runs_runway_end_to_end(finance: Any) -> None:
         ]
     )
     orch = orchestrator(provider, finance, None)
-    run = orch.start("What's our runway?")
+    run = orch.start("Walk me through our runway.")
     result = await run.task  # type: ignore[misc]
     assert result.answer.startswith("Your runway is 10.65 months") and result.verified and result.intent == "finance"
     assert result.metrics[0].value == 10.65 and result.metrics[0].lineage["metric"] == "runway"
@@ -356,7 +356,7 @@ async def test_advisor_invented_number_is_flagged(finance: Any) -> None:
     provider = FakeProvider(
         [[ToolCall(name="get_metric", arguments={"name": "runway"})], RUNWAY_ANSWER, "You have 24 months of runway."]
     )
-    result = await orchestrator(provider, finance, None).start("What's our runway?").task  # type: ignore[misc]
+    result = await orchestrator(provider, finance, None).start("Walk me through our runway.").task  # type: ignore[misc]
     assert not result.verified and result.issues == ["advisor: removed: unsupported source (1)"]
     assert "24 months" not in result.answer and "10.65" in result.answer
 

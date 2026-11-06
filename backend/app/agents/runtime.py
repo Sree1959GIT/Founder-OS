@@ -120,6 +120,28 @@ _CHITCHAT = re.compile(
 
 KILL_CRITERIA_OVERLAP = 0.6
 
+# A single-metric question is answered by code, plus at most one short question from the model (PRD R1).
+MAX_LOOKUP_WORDS = 12
+MAX_QUESTION_WORDS = 22
+METRIC_QUESTION_TIMEOUT_S = 4.0
+_ASKS_FOR_A_NUMBER = re.compile(
+    r"^\s*(?:what(?:'|\u2019)?s|what is|what are|how much|how long|how(?:'|\u2019)s|show(?: me)?|tell me|give me|"
+    r"our|my|current)\b",
+    re.I,
+)
+_MORE_THAN_A_NUMBER = re.compile(
+    r"\b(?:why|compare[ds]?|versus|vs|trend\w*|over time|histor\w+|last|previous|prior|forecast\w*|project\w*|"
+    r"next|by|each|if|would|could|should|will|after|before|since|in|between|good|bad|ok|okay|healthy|enough|"
+    r"explain\w*|break\w*|channel\w*|segment\w*|customers?|because|and|or|plus|with|without)\b",
+    re.I,
+)
+_SPELLED_NUMBERS = frozenset(
+    {
+        *("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"),
+        *("hundred", "thousand", "million", "billion", "trillion", "half", "double", "twice", "percent"),
+    }
+)
+
 # Keyword -> metric routine, for the rule-based Financial Analyst (first match wins).
 METRIC_KEYWORDS: list[tuple[str, str]] = [
     ("runway", "runway"),
@@ -153,6 +175,7 @@ class AgentInstance(BaseModel):
     provider: str = ""
     model: str = ""
     is_cloud: bool = False
+    fast_metric: str | None = Field(default=None, description="A single-metric question: code writes the answer")
 
 
 class Plan(BaseModel):
@@ -179,6 +202,7 @@ class AgentResult(BaseModel):
     past_decisions: list[DecisionRecord] = Field(default_factory=list, description="On record for this topic")
     decision_impact: DecisionImpact | None = Field(default=None, description="From run_scenario, computed in code")
     memo: MemoRef | None = Field(default=None, description="The memo this agent wrote")
+    written_by_code: bool = Field(default=False, description="The fast path: no model wrote this answer")
     removed: list[str] = Field(
         default_factory=list, description="What the source check took out, reworded with no figure or source in it"
     )
@@ -239,6 +263,25 @@ def rule_metric(text: str) -> str | None:
     return None
 
 
+def single_metric(message: str) -> str | None:
+    """The one metric a plain question asks for, or None if it asks for anything more than that number.
+
+    "What's our runway?" is a lookup. "Why is burn up?", "runway in March" and "burn and churn" need the model.
+    """
+    if not _ASKS_FOR_A_NUMBER.match(message) or _MORE_THAN_A_NUMBER.search(message) or re.search(r"\d", message):
+        return None
+    if len(message.split()) > MAX_LOOKUP_WORDS:
+        return None
+    left = message.lower()
+    found: set[str] = set()
+    for keyword, metric in METRIC_KEYWORDS:  # longer forms come first, so "net burn" is not read as "burn" as well
+        pattern = rf"(?<![\w:]){re.escape(keyword)}(?![\w:])"
+        if re.search(pattern, left):
+            found.add(metric)
+            left = re.sub(pattern, " ", left)
+    return found.pop() if len(found) == 1 else None
+
+
 def _instance(agent_type: str, brief: str, router: LLMRouter, index: int = 1) -> AgentInstance:
     spec = REGISTRY[agent_type]
     provider = router.primary(spec.privacy, needs_tools=bool(spec.tools), agent_type=agent_type)
@@ -287,6 +330,7 @@ async def plan(message: str, router: LLMRouter, decisions: DecisionService) -> P
         return Plan(intent=intent, planner=how, intent_decision_id=decision_id)
     if intent == "finance":
         team = _team([("financial_analyst", message)], router)
+        team[0].fast_metric = single_metric(message)
         return Plan(intent=intent, team=team, planner=how, intent_decision_id=decision_id)
     if intent == "knowledge":
         team = _team([("librarian", message)], router)
@@ -423,6 +467,9 @@ class AgentRunner:
                 messages.append(Message.user(_memo_brief(frame)))
             await self._write_memo(spec, inst, user_message, messages, upstream, result)
             return self._finish(inst, result, started)
+        if await self._metric_written_by_code(spec, inst, user_message, result):
+            self._verify(spec, inst, user_message, result)
+            return self._finish(inst, result, started)
         await self._search_first(spec, inst, user_message, messages, result)
         await self._cost_model_first(spec, inst, messages, result)
         await self._scenario_first(spec, inst, user_message, messages, result)
@@ -471,6 +518,23 @@ class AgentRunner:
         self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
         return self._finish(inst, result, started)
+
+    async def _metric_written_by_code(
+        self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult
+    ) -> bool:
+        """A single-metric question: the routine's result is the answer. An edited brief goes to the model instead."""
+        if inst.fast_metric is None or inst.brief != user_message:
+            return False
+        call = ToolCall(name="get_metric", arguments={"name": inst.fast_metric})
+        outcome = await self._call_tool(spec, inst, call, result)
+        if outcome.error:
+            return False  # the model explains what is missing
+        result.provider, result.model = "rules", ""
+        result.text = metric_sentence(
+            outcome.content, inst.fast_metric, self.ctx_factory(inst.id).finance.metrics.currency
+        )
+        result.written_by_code = True
+        return True
 
     def _evidence(self, inst: AgentInstance, user_message: str, results: list[AgentResult]) -> Evidence:
         return gather(user_message, results, self.frame, vault_checker(self.ctx_factory(inst.id)))
@@ -1131,6 +1195,45 @@ def _fmt(value: Any, unit: str, metric: str = "") -> str:
     return f"{value} {unit}"
 
 
+def _month_label(iso: str) -> str:
+    """ "2027-09" as "September 2027". Anything else stays as it is."""
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", iso):
+        return iso
+    return f"{calendar.month_name[int(iso[5:])]} {iso[:4]}"
+
+
+def metric_sentence(content: dict[str, Any], metric: str, currency: str = "USD") -> str:
+    """The answer to a single-metric question, written by code from the routine's own result."""
+    label, value, unit, as_of = content["label"], content["value"], content["unit"], content["as_of"]
+    if value is None:
+        return (
+            f"{label} cannot be computed from the data as of {_month_label(as_of)}. {content.get('note') or ''}".strip()
+        )
+    written = format_money(float(value), unit) if re.fullmatch(r"[A-Z]{3}", unit) else _fmt(value, unit, metric)
+    sentence = f"{label} is {written} as of {_month_label(as_of)}"
+    detail = content.get("detail") or {}
+    if metric == "runway" and detail.get("closing_cash") is not None and detail.get("net_burn") is not None:
+        cash, burn = format_money(detail["closing_cash"], currency), format_money(detail["net_burn"], currency)
+        zero = (
+            f", so cash reaches zero in {_month_label(detail['zero_cash_month'])}"
+            if detail.get("zero_cash_month")
+            else ""
+        )
+        sentence += f": closing cash is {cash}, with a net burn of {burn} per month{zero}"
+    return f"{sentence}."
+
+
+def probing_question(text: str) -> str:
+    """One short question with no figure in it, or nothing. Code has already given the number."""
+    line = text.strip().splitlines()[0].strip() if text.strip() else ""
+    words = re.findall(r"[a-z']+", line.lower())
+    if not line.endswith("?") or len(split_sentences(line)) != 1 or len(line.split()) > MAX_QUESTION_WORDS:
+        return ""
+    if re.search(r"[\d$€£₹%]", line) or extract_figures(line) or set(words) & _SPELLED_NUMBERS:
+        return ""
+    return line
+
+
 def _plain(snippet: str) -> str:
     """A search snippet as one line of prose (no Markdown heading marks, no line breaks)."""
     return re.sub(r"\s+", " ", re.sub(r"(?m)^\s*#+\s*", "", snippet)).strip()
@@ -1319,6 +1422,32 @@ def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) ->
     return ""
 
 
+async def _advise_metric(
+    router: LLMRouter, user_message: str, result: AgentResult, issues: list[str], evidence: Evidence
+) -> AsyncIterator[StreamChunk]:
+    """The number first and at once, then at most one short question from the model, if it comes in time."""
+    spec = REGISTRY["advisor"]
+    yield StreamChunk(delta=result.text)
+    system = (PROMPTS_DIR / "advisor_metric_question.md").read_text(encoding="utf-8")
+    messages = [Message.system(system), Message.user(f"The founder asked: {user_message}")]
+    usage, used, model, question = Usage(), "rules", "", ""
+    try:
+        completion = await asyncio.wait_for(
+            router.complete(spec.privacy, messages, agent_type=spec.name), timeout=METRIC_QUESTION_TIMEOUT_S
+        )
+        usage, used, model = completion.usage, completion.provider, completion.model
+        question = probing_question(completion.text)
+    except (LLMError, TimeoutError) as exc:
+        logger.info("No question after a metric answer: {}", repr(exc))
+    if question:
+        gate = _SentenceGate(result.known_facts, user_message, None, issues, evidence=evidence)
+        question = gate._checked(question).strip()
+    if question:
+        yield StreamChunk(delta=f" {question}")
+    text = f"{result.text} {question}".strip()
+    yield StreamChunk(done=True, completion=Completion(text=text, provider=used, model=model, usage=usage))
+
+
 async def advise(
     router: LLMRouter,
     user_message: str,
@@ -1334,6 +1463,11 @@ async def advise(
     """
     spec = REGISTRY["advisor"]
     frame = plan_.frame
+    if len(results) == 1 and results[0].written_by_code and results[0].verified:
+        evidence = gather(user_message, results, frame, exists)
+        async for chunk in _advise_metric(router, user_message, results[0], [] if issues is None else issues, evidence):
+            yield chunk
+        return
     findings = findings_for_advisor(results, frame)
     context = (
         f"Founder's message: {user_message}\nIntent: {plan_.intent}"

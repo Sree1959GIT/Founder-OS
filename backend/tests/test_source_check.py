@@ -11,7 +11,14 @@ from app.agents.decision_frame import DecisionFrame, GoalCheck
 from app.agents.events import Citation, EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.guards import goal_contradiction
-from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, findings_for_advisor
+from app.agents.runtime import (
+    AgentInstance,
+    AgentResult,
+    AgentRunner,
+    findings_for_advisor,
+    probing_question,
+    single_metric,
+)
 from app.agents.sources import (
     REMOVED_NOTE,
     Evidence,
@@ -31,7 +38,7 @@ from app.agents.specialists import (
     with_real_outcomes,
 )
 from app.agents.tools import ToolContext
-from app.agents.verifier import Fact, extract_figures
+from app.agents.verifier import Fact, check_sentence, extract_figures, fact_for
 from app.decision.base import DecisionService, FakeDecisionProvider
 from app.evals import decision_eval
 from app.evals.vault_eval import make_sample_vault, sample_finance
@@ -404,7 +411,7 @@ async def test_nothing_the_advisor_wrote_could_be_backed_and_the_findings_still_
         EventBus(),
         lambda agent_id: ToolContext(finance, vault, agent_id),
     )
-    result = await orchestrator.start("What's our runway?").task  # type: ignore[misc]
+    result = await orchestrator.start("Walk me through our runway.").task  # type: ignore[misc]
     assert "99.5" not in result.answer and REMOVED_NOTE in result.answer and "10.65" in result.answer
 
 
@@ -458,3 +465,72 @@ def test_citation_objects_are_still_what_a_run_retrieved() -> None:
         retrieved=[Citation(path="notes/a.md", heading="h", chunk_id="c")],
     )
     assert gather("q", [result]).supports("Our note has a view [notes/a.md].")
+
+
+# ---- single-metric questions (founder note, M4): code writes the number; at most one short question from the model
+@pytest.mark.parametrize(
+    ("question", "metric"),
+    [
+        ("What's our runway?", "runway"),
+        ("what is our net burn", "net_burn"),
+        ("How much runway do we have?", "runway"),
+        ("Show me MRR", "mrr"),
+        ("What is our gross margin?", "gross_margin"),
+        ("What's our LTV:CAC?", "ltv_cac"),
+    ],
+)
+def test_a_plain_metric_question_is_a_lookup(question: str, metric: str) -> None:
+    assert single_metric(question) == metric
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Why is our runway so short?",
+        "What's our runway if we hire two people?",
+        "What's our burn and churn?",
+        "What was our runway in March 2026?",
+        "What is CAC by channel?",
+        "Is our runway enough?",
+        "What's the weather?",
+        "Compare MRR with ARR",
+    ],
+)
+def test_anything_more_than_a_number_goes_to_the_model(question: str) -> None:
+    assert single_metric(question) is None
+
+
+@pytest.mark.parametrize(
+    ("wrote", "expected"),
+    [
+        ("What does that burn rest on?", "What does that burn rest on?"),
+        ("Will revenue hold?", "Will revenue hold?"),
+        ("Is $150 billion right?", ""),
+        ("Does that rest on 3 months?", ""),
+        ("Does that rest on three months?", ""),
+        ("Your runway is short.", ""),
+        ("Is it short? Are you sure?", ""),
+        ("", ""),
+        ("Could this " + "very " * 30 + "long question run on?", ""),
+    ],
+)
+def test_the_models_one_question_holds_no_figure(wrote: str, expected: str) -> None:
+    assert probing_question(wrote) == expected
+
+
+def test_months_at_this_burn_is_a_true_claim_about_runway() -> None:
+    # Seen live, one run in five: a correct answer came back unverified, and code replaced the sentence.
+    facts = [fact_for("runway", 10.65, "Runway (actual burn)", "months")]
+    for sentence in (
+        "Your burn gives you 10.65 months.",
+        "At the current burn you have 10.65 months.",
+        "Your current runway is 10.65 months based on the trailing three months of burn.",
+    ):
+        assert check_sentence(sentence, facts) == [], sentence
+    # Still wrong: the same figure as an amount of money.
+    assert check_sentence("Your burn is $10.65.", facts)
+
+
+def test_a_figure_of_the_wrong_quantity_in_months_still_fails() -> None:
+    facts = [fact_for("cac_payback", 4.2, "CAC payback", "months")]
+    assert check_sentence("Your runway is 4.2 months.", facts)
