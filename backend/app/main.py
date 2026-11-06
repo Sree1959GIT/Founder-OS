@@ -18,7 +18,9 @@ from loguru import logger
 
 from app import __version__
 from app.agents.setup import build_conversation, build_orchestrator
-from app.api import chat, conversation, data, health, metrics, scenario, vault
+from app.api import chat, conversation, data, health, metrics, priorities, scenario, vault
+from app.api import settings as settings_api
+from app.api.settings import apply_saved
 from app.config import Settings, get_settings
 from app.deps import FinanceServices
 from app.engine.calibration import CalibrationError
@@ -85,6 +87,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.event_bus = orchestrator.bus
         app.state.orchestrator = orchestrator
         app.state.conversation = build_conversation(settings, orchestrator, services)
+        app.state.base_settings = settings
+        apply_saved(app, settings)
         logger.info(
             "Agents ready: local LLM {}:{} (thinking {}), deep provider {}, team approval {}",
             orchestrator.router.local.name,
@@ -131,6 +135,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(vault.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
     app.include_router(conversation.router, prefix="/api")
+    app.include_router(settings_api.router, prefix="/api")
+    app.include_router(priorities.router, prefix="/api")
     _add_error_handlers(app)
     return app
 

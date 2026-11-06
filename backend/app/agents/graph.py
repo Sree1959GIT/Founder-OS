@@ -124,6 +124,7 @@ class RunContext:
     stop_agents: set[str] = field(default_factory=set)
     new_briefs: dict[str, str] = field(default_factory=dict)
     context: Any = None  # the conversation lane's frozen run snapshot
+    streamed: bool = False  # someone is reading `deltas`: each piece of text goes to one reader
 
 
 class TeamEdit(BaseModel):
@@ -132,6 +133,7 @@ class TeamEdit(BaseModel):
     briefs: dict[str, str] = Field(default_factory=dict, description="Agent id -> new brief")
     remove: list[str] = Field(default_factory=list, description="Agent ids to leave out")
     add: list[dict[str, str]] = Field(default_factory=list, description='Each {"type": ..., "brief": ...}')
+    local_only: bool = Field(False, description="Run everyone on the local model: nothing leaves this PC")
 
 
 class RerunOutcome(BaseModel):
@@ -210,6 +212,7 @@ class AgentOrchestrator:
             team=team,
             needs_approval=needs,
             questions=the_plan.frame.questions if the_plan.frame is not None else [],
+            decision_frame=the_plan.frame.model_dump(mode="json") if the_plan.frame is not None else None,
         )
         approved = True
         if needs:
@@ -245,7 +248,12 @@ class AgentOrchestrator:
         ]
         added = [(a["type"], a.get("brief", "")) for a in edit.add if a.get("type") in REGISTRY]
         added = [(t, brief) for t, brief in added if REGISTRY[t].spawnable]
-        return the_plan.model_copy(update={"team": [*team, *_team(added, self.router)]})
+        everyone = [*team, *_team(added, self.router)]
+        if edit.local_only:
+            local = self.router.local
+            changes = {"local_only": True, "is_cloud": False, "provider": local.name, "model": local.model}
+            everyone = [i.model_copy(update=changes) for i in everyone]
+        return the_plan.model_copy(update={"team": everyone})
 
     @staticmethod
     def _stage_of(state: GraphState, done: set[str]) -> list[Send]:

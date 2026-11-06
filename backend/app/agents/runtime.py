@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import dataclasses
 import datetime as dt
 import json
 import re
@@ -176,6 +177,7 @@ class AgentInstance(BaseModel):
     model: str = ""
     is_cloud: bool = False
     fast_metric: str | None = Field(default=None, description="A single-metric question: code writes the answer")
+    local_only: bool = Field(default=False, description="The founder chose to keep this team on the local model")
 
 
 class Plan(BaseModel):
@@ -441,6 +443,8 @@ class AgentRunner:
         frame: DecisionFrame | None = None,
     ) -> AgentResult:
         spec = REGISTRY[inst.type]
+        if inst.local_only:
+            spec = dataclasses.replace(spec, privacy="local")
         started = time.perf_counter()
         upstream = upstream or []
         if frame is None and spec.name == "memo_writer":

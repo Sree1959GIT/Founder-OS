@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app import __version__
@@ -43,9 +43,13 @@ def overall_status(dependencies: list[DependencyStatus]) -> OverallStatus:
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health(settings: SettingsDep, probes: ProbesDep) -> HealthResponse:
+async def health(request: Request, settings: SettingsDep, probes: ProbesDep) -> HealthResponse:
     """Always answers 200 while the backend is up; problems are reported per dependency (PRD R3)."""
     dependencies = await run_probes(probes, timeout_s=settings.health_probe_timeout_s + 1.0)
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    for dependency in dependencies:  # Settings can change this while the app runs: the badge must show what is true
+        if dependency.name == "cloud" and orchestrator is not None:
+            dependency.info["cloud_allowed"] = orchestrator.router.cloud_allowed
     return HealthResponse(
         status=overall_status(dependencies),
         version=__version__,
