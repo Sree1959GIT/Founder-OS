@@ -71,8 +71,12 @@ class Settings(BaseSettings):
     max_cloud_agents: int = Field(default=6, ge=1, le=32)
     agent_max_steps: int = Field(default=4, ge=1, le=12)
     # Decision model (F7): llm (OLLAMA_CHAT_MODEL with JSON output) | fake. Below the confidence: escalate.
-    decision_provider: Literal["llm", "fake"] = "llm"
+    decision_provider: Literal["llm", "fake", "laya", "jev"] = "llm"
     decision_min_confidence: float = Field(default=0.75, ge=0, le=1)
+    laya_checkpoint: str = ""  # a fine-tuned folder; empty means stock Laya, which needs fine-tuning (PRD F7)
+    laya_device: str = ""  # cuda or cpu; empty lets Laya choose
+    jev_api_key: str = ""  # optional and paid; only non-sensitive routing state is sent
+    jev_model: str = "jev-latest"
 
     # Conversation lane (M3b): stays responsive while agents run. No model set: it answers from templates.
     fast_lane_model: str = ""

@@ -20,7 +20,7 @@ from app.llm.cloud import AnthropicAPIProvider, GeminiProvider, OpenAICompatible
 from app.llm.costs import CallRecord, CostLedger
 from app.llm.fake import FakeProvider
 from app.llm.ollama import OllamaProvider
-from app.llm.privacy import FilterReport, filter_messages, filter_text
+from app.llm.privacy import FilterReport, NameIndex, NamesUnavailable, StreamRestorer, filter_messages, filter_text
 
 Privacy = Literal["local", "cloud_allowed", "cloud"]
 
@@ -40,6 +40,7 @@ class LLMRouter:
         self.cloud_allowed = cloud_allowed
         self.routes = routes or {}  # agent type -> its own provider; None means this type stays local
         self.ledger = ledger
+        self.names: NameIndex | None = None  # set by the agent stack: what the privacy filter pseudonymises
 
     def _cloud_for(self, agent_type: str) -> LLMProvider | None:
         return self.routes.get(agent_type, self.cloud)
@@ -63,7 +64,10 @@ class LLMRouter:
     def _payload(self, provider: LLMProvider, messages: list[Message]) -> tuple[list[Message], FilterReport]:
         if not provider.is_cloud:
             return messages, FilterReport()
-        filtered, report = filter_messages(messages)
+        try:
+            filtered, report = filter_messages(messages, self.names)
+        except NamesUnavailable as exc:  # fails closed: the chain moves on to the local model
+            raise LLMUnavailable(f"the privacy filter could not read the names to hide: {exc}") from exc
         if report.total:
             logger.info("Privacy filter on the {} payload: {} items removed", provider.name, report.total)
         return filtered, report
@@ -105,6 +109,19 @@ class LLMRouter:
             )
         )
 
+    def _with_real_names(self, provider: LLMProvider, completion: Completion) -> Completion:
+        if not provider.is_cloud or self.names is None:
+            return completion
+        return completion.model_copy(
+            update={
+                "text": self.names.restore(completion.text),
+                "tool_calls": [
+                    c.model_copy(update={"arguments": self.names.restore_value(c.arguments)})
+                    for c in completion.tool_calls
+                ],
+            }
+        )
+
     async def complete(
         self,
         privacy: Privacy,
@@ -117,9 +134,10 @@ class LLMRouter:
         chain = self.chain(privacy, needs_tools=bool(tools), agent_type=agent_type)
         failed: str | None = None
         for i, provider in enumerate(chain):
-            payload, report = self._payload(provider, messages)
+            report = FilterReport()
             started = time.perf_counter()
             try:
+                payload, report = self._payload(provider, messages)
                 completion = await provider.complete(payload, tools=tools, json_schema=json_schema)
             except LLMError as exc:
                 self._record(provider, agent_type, started, report, failed_from=failed, error=type(exc).__name__)
@@ -129,7 +147,7 @@ class LLMRouter:
                 failed = provider.name
                 continue
             self._record(provider, agent_type, started, report, completion, failed)
-            return completion
+            return self._with_real_names(provider, completion)
         raise LLMError("no provider available")  # unreachable: the chain is never empty
 
     async def stream(
@@ -145,15 +163,26 @@ class LLMRouter:
         chain = self.chain(privacy, needs_tools=bool(tools), agent_type=agent_type)
         failed: str | None = None
         for i, provider in enumerate(chain):
-            payload, report = self._payload(provider, messages)
+            report = FilterReport()
             started_at = time.perf_counter()
             started = False
+            restorer = StreamRestorer(self.names if provider.is_cloud else None)
             try:
+                payload, report = self._payload(provider, messages)
                 async for chunk in await provider.complete(payload, tools=tools, json_schema=json_schema, stream=True):
                     started = True
-                    if chunk.done and chunk.completion is not None:
-                        self._record(provider, agent_type, started_at, report, chunk.completion, failed)
-                    yield chunk
+                    if chunk.done:
+                        delta = restorer.feed(chunk.delta) + restorer.flush()
+                        if chunk.completion is not None:
+                            self._record(provider, agent_type, started_at, report, chunk.completion, failed)
+                            chunk = chunk.model_copy(
+                                update={"completion": self._with_real_names(provider, chunk.completion)}
+                            )
+                        yield chunk.model_copy(update={"delta": delta})
+                    else:
+                        delta = restorer.feed(chunk.delta)
+                        if delta:
+                            yield chunk.model_copy(update={"delta": delta})
                 return
             except LLMError as exc:
                 self._record(provider, agent_type, started_at, report, failed_from=failed, error=type(exc).__name__)
@@ -171,7 +200,12 @@ class LLMRouter:
         if provider is None or not provider.supports_web_search:
             raise LLMUnavailable("web search needs a cloud provider that supports it")
         report = FilterReport()
-        cleaned = filter_text(query, report)
+        try:
+            if self.names is not None:
+                self.names.refresh()
+        except NamesUnavailable as exc:
+            raise LLMUnavailable(f"the privacy filter could not read the names to hide: {exc}") from exc
+        cleaned = filter_text(query, report, self.names)
         started = time.perf_counter()
         try:
             answer = await provider.web_search(cleaned)
@@ -179,6 +213,8 @@ class LLMRouter:
             self._record(provider, agent_type, started, report, error=type(exc).__name__)
             raise
         self._record(provider, agent_type, started, report, answer.completion)
+        if self.names is not None:
+            answer = answer.model_copy(update={"text": self.names.restore(answer.text)})
         return answer
 
 

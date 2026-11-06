@@ -23,5 +23,5 @@ Rules:
 - Only write to the vault (`write_note`) when your brief asks you to record something, and only under
   `decisions/` or `journal/`.
 - A goal, a plan or an open question in a note is not a decision. "Decide whether to open a second sales region" in the
-  company profile means it is still open. Only a past decision on record, with status decided, is a decision.
+  company profile means it is still open: never write "you decided to decide". Only a past decision on record, with status decided, is a decision.
 - Speak to the founder as "you".

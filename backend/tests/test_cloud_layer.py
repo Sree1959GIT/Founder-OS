@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -16,8 +17,10 @@ from app.llm.base import LLMError, LLMUnavailable, Message, ToolCall, ToolSpec, 
 from app.llm.cloud import AnthropicAPIProvider, GeminiProvider, OpenAICompatibleProvider
 from app.llm.costs import DEFAULT_PRICES, CallRecord, CostLedger
 from app.llm.fake import FakeProvider
-from app.llm.privacy import filter_messages, filter_text, filter_tool_result
+from app.llm.names import customer_names, vault_names
+from app.llm.privacy import FilterReport, NameIndex, StreamRestorer, filter_messages, filter_text, filter_tool_result
 from app.llm.router import LLMRouter, build_cloud_provider, build_router, build_routes
+from app.vault.manager import VaultManager
 
 TOOL = ToolSpec(name="t", description="d")
 KEY = "sk-SECRET-KEY-123"
@@ -476,3 +479,148 @@ def test_format_money() -> None:
     assert format_money(11423.62) == "$11,423.62"
     assert format_money(1000, "INR") == "₹1,000.00"
     assert format_money(1000, "AED") == "1,000.00 AED"
+
+
+# --- names inside free text (M3c) -------------------------------------------------------------------------------------
+def _names() -> NameIndex:
+    index = NameIndex(
+        [
+            lambda: [
+                ("customer", "Ironcrest Media"),
+                ("customer", "Copperforge Logistics"),
+                ("customer", "Global Foods"),
+                ("customer", "Global Parts"),
+            ],
+            lambda: [("person", "Priya Nair"), ("company", "Northwind Analytics"), ("company", "NWA")],
+        ]
+    )
+    index.refresh()
+    return index
+
+
+def test_names_inside_a_sentence_become_stable_pseudonyms() -> None:
+    names, report = _names(), FilterReport()
+    text = "Ironcrest Media churned; ironcrest media's owner told Priya. Ask Priya Nair about Copperforge."
+    cleaned = filter_text(text, report, names)
+    for name in ("Ironcrest", "ironcrest", "Priya", "Nair", "Copperforge"):
+        assert name not in cleaned, cleaned
+    assert cleaned.count("Customer_001") == 2
+    assert "Person_001" in cleaned and report.names_replaced >= 4
+    assert names.restore("Customer_001 is at risk, says Person_001.") == "Ironcrest Media is at risk, says Priya Nair."
+
+
+def test_ordinary_words_and_shared_short_forms_are_left_alone() -> None:
+    names = _names()
+    text = "Global demand is up, and our analytics grew. Copperplate is a font."
+    assert filter_text(text, None, names) == text
+
+
+def test_a_title_marks_a_person_who_is_in_no_source() -> None:
+    names = _names()
+    cleaned = filter_text("Dr Rao Menon advised against it.", None, names)
+    assert "Rao" not in cleaned
+    assert names.restore(cleaned) == "Dr Rao Menon advised against it."
+
+
+def test_names_are_scrubbed_in_tool_results_and_tool_call_arguments() -> None:
+    names = _names()
+    call = ToolCall(name="search_vault", arguments={"query": "Ironcrest Media renewal"})
+    messages = [
+        Message.assistant("", [call]),
+        Message.tool(call, json.dumps({"results": [{"snippet": "Northwind Analytics lost Ironcrest Media."}]})),
+    ]
+    filtered, report = filter_messages(messages, names)
+    assert "Ironcrest" not in str(filtered[0].tool_calls[0].arguments)
+    assert "Ironcrest" not in filtered[1].content and "Northwind" not in filtered[1].content
+    assert "Ironcrest" in messages[1].content  # the originals stay for the local fallback
+    assert report.names_replaced == 3
+
+
+async def test_the_router_sends_pseudonyms_and_gives_the_founder_real_names() -> None:
+    seen: list[list[Message]] = []
+
+    def reply(messages: list[Message], tools: Any, schema: Any) -> str:
+        seen.append(messages)
+        return "Customer_001 is the risk."
+
+    cloud = FakeProvider(name="cloudy", model="cloud-model", default=reply, is_cloud=True)
+    router = LLMRouter(FakeProvider(name="local", model="local-model"), cloud, cloud_allowed=True)
+    router.names = _names()
+    completion = await router.complete("cloud", [Message.user("Is Ironcrest Media a risk?")], agent_type="market_scout")
+    assert "Ironcrest" not in seen[0][0].content
+    assert completion.text == "Ironcrest Media is the risk."
+
+
+async def test_the_call_stays_local_when_the_names_cannot_be_read() -> None:
+    def broken() -> list[tuple[str, str]]:
+        raise OSError("database locked")
+
+    cloud = FakeProvider(name="cloudy", model="cloud-model", default=lambda *_: "never", is_cloud=True)
+    local = FakeProvider(name="local", model="local-model", default=lambda *_: "local answer")
+    router = LLMRouter(local, cloud, cloud_allowed=True)
+    router.names = NameIndex([broken])
+    completion = await router.complete("cloud", [Message.user("Hello")], agent_type="market_scout")
+    assert completion.text == "local answer"
+    assert completion.fallback_from == "cloudy"
+    assert not cloud.calls
+
+
+def test_a_pseudonym_split_across_stream_chunks_is_restored() -> None:
+    restorer = StreamRestorer(_names())
+    out = "".join(restorer.feed(d) for d in ("Ask Cust", "omer_0", "01 now.", " And Co")) + restorer.flush()
+    assert out == "Ask Ironcrest Media now. And Co"
+
+
+def test_names_come_from_the_customers_table_and_vault_fields(tmp_path: Path) -> None:
+    db = SimpleNamespace(tables=lambda: set(), connect=None)
+    assert list(customer_names(SimpleNamespace(db=db))) == []
+    vault = VaultManager(tmp_path)
+    vault.ensure_layout()
+    vault.write_note(
+        "notes/a.md", body="body", frontmatter={"title": "A", "people": ["Priya Nair"], "customer": "Ironcrest Media"}
+    )
+    vault.write_note("notes/b.md", body="body", frontmatter={"title": "Rao Menon", "tags": ["person"]})
+    found = set(vault_names(SimpleNamespace(vault=vault)))
+    assert {("person", "Priya Nair"), ("company", "Ironcrest Media"), ("person", "Rao Menon")} <= found
+
+
+def test_a_name_is_hidden_when_hyphenated_lower_case_or_a_file_slug() -> None:
+    names = _names()
+    for text in (
+        "An Ironcrest-led deal.",
+        "ironcrest churn is up.",
+        "IRONCREST renewed.",
+        "See [customers/ironcrest-media.md].",
+        "See customers/ironcrest_media.md.",
+        "Ironcrest\nMedia called.",
+    ):
+        cleaned = filter_text(text, FilterReport(), names)
+        assert "ironcrest" not in cleaned.lower(), cleaned
+        assert "Customer_001" in cleaned, cleaned
+
+
+def test_a_name_that_is_also_a_word_is_only_hidden_as_written() -> None:
+    index = NameIndex([lambda: [("person", "Will"), ("customer", "Summit")]])
+    index.refresh()
+    assert filter_text("I think it will reach the summit.", FilterReport(), index) == (
+        "I think it will reach the summit."
+    )
+    hidden = filter_text("Will met Summit.", FilterReport(), index)
+    assert "Will" not in hidden and "Summit" not in hidden
+
+
+def test_text_that_only_regex_thinks_is_the_name_is_hidden_and_never_raises() -> None:
+    index = NameIndex([lambda: [("customer", "Kim Ltd")]])
+    index.refresh()
+    cleaned = filter_text("K\u0131m Ltd signed.", FilterReport(), index)
+    assert "K\u0131m" not in cleaned
+    assert index.restore(cleaned) == "K\u0131m Ltd signed."
+
+
+def test_a_thousandth_customer_gets_its_name_back() -> None:
+    index = NameIndex([lambda: [("customer", f"Acme Number{i} Ltd") for i in range(1000)]])
+    index.refresh()
+    cleaned = filter_text("Acme Number999 Ltd left.", FilterReport(), index)
+    assert "Customer_1000" in cleaned and index.restore(cleaned) == "Acme Number999 Ltd left."
+    restorer = StreamRestorer(index)
+    assert restorer.feed("Customer_100") + restorer.feed("0 left.") + restorer.flush() == "Acme Number999 Ltd left."

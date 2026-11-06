@@ -30,17 +30,31 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
+def task_prefixes(model: str) -> tuple[str, str]:
+    """(document prefix, query prefix). These models were trained with them, and retrieve worse without them.
+
+    nomic-embed-text: its model card. EmbeddingGemma: "title: none | text: " and "task: search result | query: ", from
+    its model card, read 2026-11-05. mxbai-embed-large has a query instruction only.
+    """
+    name = model.lower()
+    if "nomic-embed" in name:
+        return "search_document: ", "search_query: "
+    if "embeddinggemma" in name:
+        return "title: none | text: ", "task: search result | query: "
+    if "mxbai-embed" in name:
+        return "", "Represent this sentence for searching relevant passages: "
+    return "", ""
+
+
 class OllamaEmbedder:
-    """`POST /api/embed` on the native Ollama app. nomic-embed-text gets its task prefixes."""
+    """`POST /api/embed` on Ollama, with the task prefixes each model expects."""
 
     def __init__(self, base_url: str, model: str, timeout_s: float = 60.0) -> None:
         self.name = f"ollama:{model}"
         self._url = f"{base_url.rstrip('/')}/api/embed"
         self._model = model
         self._timeout = timeout_s
-        nomic = "nomic-embed" in model
-        self._doc_prefix = "search_document: " if nomic else ""
-        self._query_prefix = "search_query: " if nomic else ""
+        self._doc_prefix, self._query_prefix = task_prefixes(model)
 
     def _embed(self, inputs: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []

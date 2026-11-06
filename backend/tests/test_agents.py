@@ -185,7 +185,8 @@ async def test_verifier_flags_after_the_retry(finance: Any) -> None:
     provider = FakeProvider(["Runway is 14.2 months.", "Still 14.2 months."])
     result = await make_runner(provider, finance, None).run(inst("financial_analyst"), "What's our runway?")
     assert result.verified is False and result.attempts == 2
-    assert result.issues == ["number without lineage: 14.2"]
+    assert result.issues == ["number without lineage: 14.2", "removed: unsupported source (1)"]
+    assert "14.2" not in result.text
 
 
 async def test_llm_down_falls_back_to_rules(finance: Any, vault: FakeVault) -> None:
@@ -215,7 +216,8 @@ async def test_numbers_in_a_planner_brief_are_not_lineage(finance: Any) -> None:
     provider = FakeProvider(["Each hire costs $14,500 a month.", "Each hire costs $14,500 a month."])
     brief = "Check if we can afford 3 hires at $14,500/month each"
     result = await make_runner(provider, finance, None).run(inst("financial_analyst", brief), "Can we hire?")
-    assert result.verified is False and result.issues == ["number without lineage: $14,500"]
+    assert result.verified is False and result.issues[0] == "number without lineage: $14,500"
+    assert "14,500" not in result.text
     # The founder's own numbers may be repeated.
     ok = FakeProvider(["You asked about $14,500 a month per hire; I need data to check it."])
     founder = await make_runner(ok, finance, None).run(inst("financial_analyst", "b"), "Can we pay $14,500 each?")
@@ -355,7 +357,8 @@ async def test_advisor_invented_number_is_flagged(finance: Any) -> None:
         [[ToolCall(name="get_metric", arguments={"name": "runway"})], RUNWAY_ANSWER, "You have 24 months of runway."]
     )
     result = await orchestrator(provider, finance, None).start("What's our runway?").task  # type: ignore[misc]
-    assert not result.verified and result.issues == ["advisor number without lineage: 24"]
+    assert not result.verified and result.issues == ["advisor: removed: unsupported source (1)"]
+    assert "24 months" not in result.answer and "10.65" in result.answer
 
 
 async def test_fan_out_respects_the_local_cap(finance: Any) -> None:

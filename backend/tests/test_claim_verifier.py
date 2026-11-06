@@ -267,7 +267,7 @@ def test_the_advisor_is_not_shown_the_replaced_figure() -> None:
     findings = findings_for_advisor([result])
     assert "308,437.67" not in findings
     assert "replaced by one written in code" in findings
-    assert "number without lineage: $5" in findings
+    assert "$5" not in findings
 
 
 def test_the_code_written_impact_passes_its_own_check() -> None:

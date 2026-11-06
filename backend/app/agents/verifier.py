@@ -2,9 +2,9 @@
 
 1. Every number in the text must match a number the model was shown by its tools (each tool result carries lineage),
    within the written rounding ("$1.2M" covers 1,150,000-1,250,000) or 1 % relative, whichever is wider. A
-   percentage may be written for a ratio (72.13 % for 0.7213). Years, YYYY-MM months, written dates ("15 Dec") and
-   small counting words ("3 months", "2 options") are not treated as financial figures. Numbers in the founder's
-   own message may be repeated; numbers in a Planner-written brief may not (that is LLM text).
+   percentage may be written for a ratio (72.13 % for 0.7213). Years, YYYY-MM months, written dates ("15 Dec"), spans
+   of days or weeks ("a 90-day pilot") and small counting words ("3 months", "2 options") are not financial figures.
+   Numbers in the founder's own message may be repeated; numbers in a Planner-written brief may not (that is LLM text).
 2. A figure must keep its meaning. Each tool number is a `Fact` with the label and unit of its field, and the claim
    around the figure must agree: the written unit (money, months, percent, count), the quantity the clause names
    (runway, burn, payroll, cost per hire...) and whether it is a monthly flow or a balance. Matching the value is not
@@ -25,8 +25,9 @@ from app.agents.events import Citation
 
 NUMBER_RE = re.compile(
     r"(?<![\w.])(?P<sign>[-\u2212])?(?P<cur>[$€£₹])?\s?(?P<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
-    r"\s?(?P<suffix>%|percent\b|[kKmMbB]\b|bn\b|million\b|thousand\b|billion\b)?"
+    r"\s?(?P<suffix>%|percent\b|[kKmMbB]\b|bn\b|tn\b|million\b|thousand\b|billion\b|trillion\b|crore\b|lakh\b)?"
 )
+_TIME_SPAN = re.compile(r"\s?-?(?:days?|weeks?|hours?|hrs?|minutes?|mins?)\b", re.I)
 MONTH_RE = re.compile(r"\b(19|20)\d{2}-(0[1-9]|1[0-2])(-\d{2})?\b")
 _MONTH_NAME = (
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?"
@@ -46,7 +47,19 @@ PATH_RE = re.compile(r"[\w./-]+\.(?:markdown|md|pdf|csv|xlsx|txt)\b")
 SMALL_INT_MAX = 12
 REL_TOL = 0.01
 
-_SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9}
+_SCALE = {
+    "k": 1e3,
+    "thousand": 1e3,
+    "lakh": 1e5,
+    "m": 1e6,
+    "million": 1e6,
+    "crore": 1e7,
+    "b": 1e9,
+    "bn": 1e9,
+    "billion": 1e9,
+    "tn": 1e12,
+    "trillion": 1e12,
+}
 
 
 FactKind = Literal["money", "months", "percent", "ratio", "count", "unknown"]
@@ -235,6 +248,8 @@ def extract_figures(text: str) -> list[Figure]:
         is_int = "." not in raw and "," not in raw
         if not suffix and not m.group("cur") and is_int and (value <= SMALL_INT_MAX or 1900 <= value <= 2100):
             continue
+        if not suffix and not m.group("cur") and _TIME_SPAN.match(cleaned, m.end()):
+            continue  # how long something takes is a plan, not a financial figure
         scale = _SCALE.get(suffix, 1.0)
         decimals = len(raw.split(".")[1]) if "." in raw else 0
         value *= scale

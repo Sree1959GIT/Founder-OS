@@ -36,7 +36,13 @@ def run_live(url: str, only: str | None) -> list[Any] | None:
                 print(f"Cannot get an answer from {url}: {type(exc).__name__}: {exc}. Is run.bat running?")
                 return None
             if isinstance(case, decision_eval.DecisionCase):
-                result: Any = decision_eval.check_decision(case, "live", response.json())
+                # Whether a cited path is a real note is asked of the same backend.
+                result: Any = decision_eval.check_decision(
+                    case,
+                    "live",
+                    response.json(),
+                    exists=lambda path: client.get(f"/api/vault/notes/{path}").status_code == 200,
+                )
             else:
                 result = check_reply(case, "live", response.json())
             print(result.line(), flush=True)

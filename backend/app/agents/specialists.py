@@ -23,8 +23,17 @@ from app.agents.decision_frame import (
     starter_outcomes_for,
 )
 from app.agents.events import Artifact
-from app.agents.guards import guarded
-from app.agents.verifier import Fact, split_sentences, verify_numbers
+from app.agents.guards import goal_contradiction, guarded, unbacked_decision_claim, without_contradictions
+from app.agents.sources import (
+    REMOVED_NOTE,
+    Evidence,
+    citation_inside_the_sentence,
+    cited_sources,
+    masked,
+    simple_evidence,
+    without_unsupported,
+)
+from app.agents.verifier import Fact, extract_figures, number_supported, split_sentences, verify_numbers
 from app.engine.calibration import PredictionIn
 from app.vault.manager import NoteExistsError
 
@@ -32,6 +41,10 @@ REVIEW_AFTER_DAYS = 30
 MAX_TEAM = 8
 REGULATORY_NOTE = "This flags points to verify with a qualified adviser; it is not legal or tax advice."
 SCOUT_LOCAL_NOTE = "This comes from your vault only: cloud is off, so no web research was done."
+SCOUT_TO_FIND = (
+    "market size and growth; main competitors and their prices; demand (named prospects, pipeline, inbound interest); "
+    "local costs (rent, salaries, licences)"
+)
 
 # Words that call for a type whatever the plan says. A small model can leave a specialist out; the founder asked.
 _CUES: list[tuple[str, re.Pattern[str]]] = [
@@ -44,7 +57,12 @@ _CUES: list[tuple[str, re.Pattern[str]]] = [
         re.compile(r"\b(regulat\w*|tax\w*|legal|complian\w*|licen[cs]\w*|open\w* (an?|our) .*(office|branch))\b", re.I),
     ),
     ("revenue_customer", re.compile(r"\b(pricing|price|prices|churn|pipeline|segments?|upsell|discounts?)\b", re.I)),
-    ("people_ops", re.compile(r"\b(capacity|key[- ]person|execution plan|team structure|org chart|reorg\w*)\b", re.I)),
+    (
+        "people_ops",
+        re.compile(
+            r"\b(capacity|key[- ]person|execution plan|team structure|org chart|reorg\w*|who would own)\b", re.I
+        ),
+    ),
     ("prioritiser", re.compile(r"\b(prioriti[sz]\w*|rank|which of|score these|2x2)\b", re.I)),
     (
         "perspective_lens",
@@ -94,6 +112,27 @@ RULE_TEXT: dict[str, str] = {
     ),
     "market_scout": "Written without the language model, and nothing relevant was found in the vault.",
 }
+
+
+def scout_without_web(text: str, retrieved: set[str]) -> str:
+    """Cloud off: what the vault says, with its source, and what still needs finding. Nothing from the model's memory.
+
+    Only sentences that cite a passage the search returned stay, so an example figure or a recalled market fact cannot
+    reach the team however it is worded. The list of what to find is code's, and holds no figures.
+    """
+    removed = f" {REMOVED_NOTE}" if REMOVED_NOTE in text else ""
+    joined = citation_inside_the_sentence(text.replace(REMOVED_NOTE, ""))
+    kept = [
+        piece.strip()
+        for line in joined.splitlines()
+        for piece in split_sentences(line)
+        if piece.strip() and cited_sources(piece, retrieved) & retrieved
+    ]
+    if kept:
+        lead = " ".join(kept) + f" Still to find: {SCOUT_TO_FIND}."
+    else:
+        lead = f"Your vault has no market data for this decision. To find: {SCOUT_TO_FIND}."
+    return f"{lead} {SCOUT_LOCAL_NOTE}{removed}"
 
 
 def team_for_message(message: str) -> list[str]:
@@ -447,18 +486,47 @@ def _chosen_option(draft: MemoDraft, names: list[str], default: str) -> tuple[st
     return (default if default in names else names[0]), False
 
 
-def _why_not(name: str, chosen: str, frame: DecisionFrame | None) -> str:
-    """A reason from the numbers, when the model gave none."""
+# What a good reason for setting an option aside talks about, when it costs no more than the one proposed.
+_STATES_A_REASON = re.compile(
+    r"\b(?:control\w*|speed|slow\w*|fast\w*|quick\w*|time|revers\w*|undo|lock\w*|commit\w*|learn\w*|depend\w*|"
+    r"quality|dilut\w*|trust|share|margin\w*|complian\w*|licen[cs]\w*|risk\w*|evidence|relationship\w*|covenant\w*|"
+    r"interest|demand)\b",
+    re.I,
+)
+
+
+def _costs_no_more(name: str, chosen: str, frame: DecisionFrame | None) -> bool:
     costs = {o.name: o for o in frame.options} if frame is not None else {}
     this, proposed = costs.get(name), costs.get(chosen)
-    if this is None or proposed is None or None in (this.runway_change_months, proposed.runway_change_months):
-        return "Not chosen for now."
-    if this.modelled and proposed.modelled and this.runway_change_months < proposed.runway_change_months:  # type: ignore[operator]
+    if this is None or proposed is None or not (this.modelled and proposed.modelled):
+        return False
+    if this.runway_change_months is None or proposed.runway_change_months is None:
+        return False
+    return this.runway_change_months >= proposed.runway_change_months
+
+
+def _why_not(name: str, chosen: str, frame: DecisionFrame | None) -> str:
+    """A reason from the numbers and the option's own trade-off, when the model gave none.
+
+    An option that costs no more than the one proposed always says why it was set aside: control, speed, what it
+    teaches. Seen live: "Not proposed, though it takes no more runway than Travel-led pilot", and nothing else.
+    """
+    costs = {o.name: o for o in frame.options} if frame is not None else {}
+    this, proposed = costs.get(name), costs.get(chosen)
+    trade_off = this.trade_off if this is not None else ""
+    if this is None or proposed is None or this.runway_change_months is None or proposed.runway_change_months is None:
+        return trade_off.capitalize() if trade_off else "Not chosen for now: its cost cannot be compared yet."
+    if _costs_no_more(name, chosen, frame):
+        return (
+            f"Takes no more runway than {chosen} ({this.runway_change_months:+.2f} against "
+            f"{proposed.runway_change_months:+.2f} months), but {trade_off or 'it teaches you less.'}"
+        )
+    if this.modelled and proposed.modelled:
         return (
             f"Takes more runway than {chosen}: {this.runway_change_months:+.2f} against "
             f"{proposed.runway_change_months:+.2f} months."
         )
-    return f"Not proposed, though it takes no more runway than {chosen}."
+    return trade_off.capitalize() if trade_off else "Not chosen for now: its runway effect is not modelled yet."
 
 
 def _option_reason(name: str, draft: MemoDraft, frame: DecisionFrame | None = None) -> str:
@@ -542,6 +610,13 @@ def _final_outcomes(
     return predictions, kills
 
 
+def _reject_line(option: MemoOption, chosen: str, frame: DecisionFrame | None) -> str:
+    """The model's reason stands, unless a cheaper option gets one that says nothing about why it lost."""
+    if option.note and (not _costs_no_more(option.name, chosen, frame) or _STATES_A_REASON.search(option.note)):
+        return option.note
+    return _why_not(option.name, chosen, frame)
+
+
 def with_required_fields(
     draft: MemoDraft, message: str, frame: DecisionFrame | None = None, today: dt.date | None = None
 ) -> MemoDraft:
@@ -566,7 +641,7 @@ def with_required_fields(
         why = "Chosen by rule as the easiest option to undo: the draft named no option from the list."
     decision = f"Proposed: {chosen}. {why}".strip() + " You have not decided yet: this is a recommendation."
     options = [MemoOption(name=n, note=_option_reason(n, draft, frame)) for n in names]
-    rejected = [f"{o.name}: {o.note or _why_not(o.name, chosen, frame)}" for o in options if o.name != chosen]
+    rejected = [f"{o.name}: {_reject_line(o, chosen, frame)}" for o in options if o.name != chosen]
     predictions, kills = _final_outcomes(draft, frame, chosen, today)
     return draft.model_copy(
         update={
@@ -582,39 +657,45 @@ def with_required_fields(
     )
 
 
-_LIST_MARK = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
-
-
-def _pull_unbacked(text: str, known: list[Fact], context: str, moved: list[str]) -> str:
-    """A figure with no source leaves the text and goes on the list for the founder to confirm.
+def _pull_unbacked(text: str, evidence: Evidence, moved: list[str]) -> str:
+    """What cannot be backed leaves the text. The list for the founder keeps what to confirm, but not the figure.
 
     Its whole sentence goes, or its whole line in a list: half a risk line would make no sense on its own.
     """
-    if not verify_numbers(text, known, context):
-        return text
-    lines: list[str] = []
-    for line in text.splitlines():
-        if not verify_numbers(line, known, context):
-            lines.append(line)
-        elif _LIST_MARK.match(line):
-            moved.append(_LIST_MARK.sub("", line).strip())
-        else:
-            kept: list[str] = []
-            for piece in split_sentences(line):
-                if piece.strip() and verify_numbers(piece, known, context):
-                    moved.append(piece.strip())
-                else:
-                    kept.append(piece)
-            lines.append("".join(kept).strip())
-    return "\n".join(line for line in lines if line.strip()).strip()
+    kept, removed = without_unsupported(text, evidence)
+    moved.extend(f"{masked(sentence)} {REMOVED_NOTE}" for sentence in removed)
+    return kept
 
 
-def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) -> MemoDraft:
-    """A memo is kept for years: a figure with no lineage is never stated as fact, and never left as a scar."""
+def with_real_outcomes(draft: MemoDraft, evidence: Evidence, dropped: list[float]) -> MemoDraft:
+    """A forecast or stop rule may set its own target, but not cite a source that is not there, or rest on a figure the
+    source check already took out of the team's findings."""
+
+    def real(outcome: _Measurable) -> bool:
+        text = outcome.text()
+        rests = any(number_supported(f, dropped) for f in extract_figures(text))
+        return not evidence.missing_sources(text) and not rests
+
+    return draft.model_copy(
+        update={
+            "predictions": [p for p in draft.predictions if real(p)],
+            "kill_criteria": [k for k in draft.kill_criteria if real(k)],
+        }
+    )
+
+
+def without_unbacked_figures(
+    draft: MemoDraft, known: list[Fact], message: str, evidence: Evidence | None = None
+) -> MemoDraft:
+    """A memo is kept for years: a figure with no source is never in it, as a fact, a question or a scar.
+
+    The only figures it may set for itself are the targets of its forecasts and stop rules, listed as targets.
+    """
     moved: list[str] = list(draft.open_numbers)
+    check = evidence if evidence is not None else simple_evidence(known, message)
 
     def clean(text: str) -> str:
-        return _pull_unbacked(text, known, message, moved)
+        return _pull_unbacked(text, check, moved)
 
     title = draft.title if not verify_numbers(draft.title, known, message) else memo_title(message)
     options = [o.model_copy(update={"note": clean(o.note)}) for o in draft.options]
@@ -647,20 +728,9 @@ def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) 
 
 _OUR_WORDS = {"we": "you", "We": "You", "us": "you", "our": "your", "Our": "Your", "ours": "yours", "Ours": "Yours"}
 _OUR_WORD = re.compile(r"\b(?:we|We|us|our|Our|ours|Ours)\b")  # lower case only for "us": "US" is a place
-_HELPS_THE_GOAL = re.compile(
-    r"\b(?:align\w*|support\w*|consistent|in line|within reach|helps?|meets?|achieves?|advances?)\b[^.!?]*\bgoals?\b|"
-    r"\bgoals?\b[^.!?]*\b(?:within reach|on track|achievable)\b",
-    re.I,
-)
-_NEGATED = re.compile(r"\b(?:not|never|no|cannot|without)\b|n['\u2019]t\b", re.I)
 _SAYS_CHECKED = re.compile(
     r"\b(?:is|are|has been|have been|was|were)\s+(?:\w+\s+)?(?:confirmed|verified|validated|assessed|evaluated)\b", re.I
 )
-
-
-def _without_false_comfort(text: str) -> str:
-    kept = "".join(p for p in split_sentences(text) if not _HELPS_THE_GOAL.search(p) or _NEGATED.search(p))
-    return re.sub(r"[ 	]{2,}", " ", kept).strip()
 
 
 def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[Any]) -> MemoDraft:
@@ -671,24 +741,24 @@ def in_your_words(draft: MemoDraft, frame: DecisionFrame | None, records: list[A
     """
 
     def say(text: str) -> str:
-        return guarded(_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], text), frame, records)
+        return guarded(_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], text), frame, records, chosen=draft.chosen)
 
-    # The goal check prices the full model. An option that gives runway back may truly help the goal.
-    option = next((o for o in frame.options if o.name == draft.chosen), None) if frame is not None else None
-    gives_back = option is not None and (option.runway_change_months or -1) >= 0
-    moves_away = frame is not None and not gives_back and any(g.status == "moves_away" for g in frame.goals)
+    def reasons(text: str, if_blank: str = "See the Goal check in this memo.") -> str:
+        """A section is never left blank because its only sentence was the contradiction."""
+        return say(without_contradictions(text, frame, draft.chosen)) or (if_blank if text.strip() else "")
 
-    def reasons(text: str) -> str:
-        return say(_without_false_comfort(text) if moves_away else text)
+    def rejected_line(line: str) -> str:
+        name = line.split(":", 1)[0].strip()
+        return reasons(line, f"{name}: not proposed. See the Goal check in this memo.")
 
     return draft.model_copy(
         update={
             "title": _OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], draft.title),
             "context": reasons(draft.context),
             "why_chosen": reasons(draft.why_chosen),
-            "decision": reasons(draft.decision),
-            "options": [o.model_copy(update={"note": say(o.note)}) for o in draft.options],
-            "rejected": [say(r) for r in draft.rejected],
+            "decision": reasons(draft.decision, f"Proposed: {draft.chosen}."),
+            "options": [o.model_copy(update={"note": reasons(o.note)}) for o in draft.options],
+            "rejected": [rejected_line(r) for r in draft.rejected],
             "assumptions": [say(a) for a in draft.assumptions if not _SAYS_CHECKED.search(a)],
         }
     )
@@ -788,14 +858,22 @@ def _goal_lines(frame: DecisionFrame | None, chosen: str = "") -> list[str]:
     return lines
 
 
-def render_body(draft: MemoDraft, upstream: list[Any], frame: DecisionFrame | None = None) -> str:
+def render_body(
+    draft: MemoDraft,
+    upstream: list[Any],
+    frame: DecisionFrame | None = None,
+    message: str = "",
+    evidence: Evidence | None = None,
+) -> str:
     moved: list[str] = list(draft.open_numbers)
     findings = []
     for r in upstream:
         if r.status != "done" or not r.text:
             continue
+        moved.extend(f"{r.name}: {line} {REMOVED_NOTE}" for line in r.removed)
         before = len(moved)
-        text = _pull_unbacked(r.text, r.known_facts, r.brief, moved)
+        # An agent's text was checked when it finished. This holds for a result that came from anywhere else too.
+        text = _pull_unbacked(r.text, evidence or simple_evidence(r.known_facts, message), moved)
         moved[before:] = [f"{r.name}: {line}" for line in moved[before:]]
         if text:
             findings.append(f"**{r.name}{'' if r.verified else ' (not verified)'}:** {_one_line(text)}")
@@ -810,13 +888,23 @@ def render_body(draft: MemoDraft, upstream: list[Any], frame: DecisionFrame | No
             f"## Options\n{_bullets(_option_lines(draft, frame))}",
             f"## Rejected alternatives\n{_bullets(draft.rejected)}",
             f"## Assumptions\n{_bullets(_assumption_lines(draft, frame))}",
-            f"## Open numbers to confirm\n{_bullets(list(dict.fromkeys(moved)), 'None.')}",
+            f"## Open numbers to confirm\n{_bullets(_open_lines(moved, draft, frame), 'None.')}",
             f"## Metrics\n{_bullets(_metric_lines(upstream, frame), 'No metrics were computed for this decision.')}",
             f"## Predictions\n{_bullets(predictions)}",
             f"## Kill criteria\n{_bullets([k.line() for k in draft.kill_criteria])}",
             f"## Team findings\n{_bullets(findings)}",
         ]
     )
+
+
+def _open_lines(moved: list[str], draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
+    """This section speaks to the founder too. What was taken out for its figure can still claim what is not true."""
+    lines = [_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], line) for line in dict.fromkeys(moved)]
+    return [
+        line
+        for line in lines
+        if goal_contradiction(line, frame, draft.chosen) is None and not unbacked_decision_claim(line, [])
+    ]
 
 
 def _one_line(text: str) -> str:
@@ -832,6 +920,8 @@ def write_memo(
     agent_id: str,
     frame: DecisionFrame | None = None,
     today: dt.date | None = None,
+    message: str = "",
+    evidence: Evidence | None = None,
 ) -> tuple[MemoRef, Artifact]:
     """Writes `decisions/YYYY-MM-DD-<slug>.md` as `proposed` (the founder decides) and stores the predictions."""
     if ctx.vault is None:
@@ -856,7 +946,7 @@ def write_memo(
         "verified": is_verified,
         "tags": ["decision"],
     }
-    body = render_body(draft, upstream, frame)
+    body = render_body(draft, upstream, frame, message, evidence)
     base = f"decisions/{today.isoformat()}-{memo_slug(draft.title)}"
     written = ""
     for attempt in range(1, 100):

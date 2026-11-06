@@ -14,15 +14,31 @@ from app.conversation.classifier import TurnClassifier
 from app.conversation.contexts import GlobalContext
 from app.conversation.manager import ConversationManager
 from app.decision.base import DecisionLog, DecisionProvider, DecisionService, FakeDecisionProvider, LLMDecisionProvider
+from app.decision.jev import JevProvider
+from app.decision.laya import LayaProvider
+from app.llm.names import name_sources
+from app.llm.privacy import NameIndex
 from app.llm.router import LLMRouter, build_fast_provider, build_router
 
 
 def build_decisions(settings: Settings, router: LLMRouter) -> DecisionService:
-    provider: DecisionProvider = (
-        FakeDecisionProvider() if settings.decision_provider == "fake" else LLMDecisionProvider(router)
-    )
+    """`DECISION_PROVIDER` picks the model. Laya and Jev fall back to the LLM on low confidence or failure (PRD F7)."""
     log = DecisionLog(settings.workspace_data_dir() / "decision_log.jsonl")
-    return DecisionService(provider, log, min_confidence=settings.decision_min_confidence)
+    llm = LLMDecisionProvider(router)
+    provider: DecisionProvider = llm
+    fallback: DecisionProvider | None = None
+    if settings.decision_provider == "fake":
+        provider = FakeDecisionProvider()
+    elif settings.decision_provider == "laya":
+        provider, fallback = LayaProvider(settings.laya_checkpoint, settings.laya_device), llm
+    elif settings.decision_provider == "jev":
+        if not settings.cloud_allowed:  # Jev is a cloud service: "cloud off" means nothing leaves the PC
+            logger.warning("DECISION_PROVIDER=jev but CLOUD_ALLOWED is false: using the LLM for decisions")
+        elif settings.jev_api_key:
+            provider, fallback = JevProvider(settings.jev_api_key, model=settings.jev_model, names=router.names), llm
+        else:
+            logger.warning("DECISION_PROVIDER=jev but JEV_API_KEY is empty: using the LLM for decisions")
+    return DecisionService(provider, log, fallback=fallback, min_confidence=settings.decision_min_confidence)
 
 
 def build_conversation(settings: Settings, orchestrator: AgentOrchestrator, finance: Any) -> ConversationManager:
@@ -60,6 +76,7 @@ def build_orchestrator(
     decisions: DecisionService | None = None,
 ) -> AgentOrchestrator:
     router = router or build_router(settings)
+    router.names = NameIndex(name_sources(finance, vault))  # before the decision service: Jev is filtered too
     return AgentOrchestrator(
         router,
         decisions or build_decisions(settings, router),

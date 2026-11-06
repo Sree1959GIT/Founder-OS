@@ -7,15 +7,20 @@ agent wrote it:
   Query rows and any other table of numbers are replaced by a row count.
 - **Text** (prompts, the founder's message, findings, vault passages) loses lines that look like data rows, and email
   addresses. A sentence containing a number stays: a summarised figure is what cloud agents are meant to see.
+- **Names** of customers, people and companies, inside any free text, become stable pseudonyms ("Customer_017"), from a
+  `NameIndex` over the customers table and the vault. The router puts the real names back in the reply, on the PC. If
+  the names cannot be read, the call stays local: privacy fails closed.
 
-The filter is deliberately greedy about shapes, not meanings. Telling apart sensitive prose by what it says is a job
-for the decision model (F7), which arrives in M3c.
+The filter is deliberately greedy about shapes, not meanings. A person's name that is in neither source is only caught
+after a title ("Dr Rao"). Telling apart sensitive prose by what it says is a job for a decision model (F7).
 """
 
 from __future__ import annotations
 
 import json
 import re
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,10 +44,177 @@ _MAX_WORDS_IN_A_ROW = 8
 class FilterReport:
     rows_removed: int = 0
     emails_removed: int = 0
+    names_replaced: int = 0
 
     @property
     def total(self) -> int:
-        return self.rows_removed + self.emails_removed
+        return self.rows_removed + self.emails_removed + self.names_replaced
+
+
+class NamesUnavailable(Exception):
+    """The names could not be read, so a cloud payload cannot be cleaned: the call must stay local."""
+
+
+NameSource = Callable[[], Iterable[tuple[str, str]]]  # yields (kind, name); kind is customer | person | company
+_PSEUDONYM_WORD = {"customer": "Customer", "person": "Person", "company": "Company"}
+_PSEUDONYM = re.compile(r"\b(?:Customer|Person|Company)_\d{3,}\b")
+_NAME_SEPARATOR = re.compile(r"[\s_-]+")
+_PARTIAL_PSEUDONYM = re.compile(
+    r"(?:C|Cu|Cus|Cust|Custo|Custom|Custome|Customer|P|Pe|Per|Pers|Perso|Person|Co|Com|Comp|Compa|Compan|Company)(?:_\d*)?$|(?:Customer|Person|Company)_\d*$"
+)
+_TITLED_PERSON = re.compile(r"\b(?:Mr|Mrs|Ms|Mx|Dr|Prof)\.?\s+[A-Z][a-z]+(?:[ -][A-Z][a-z]+)?")
+# A short form stands for its full name only when it could not be an ordinary word in a business note.
+_COMMON_WORDS = frozenset(
+    {
+        *("global", "first", "growth", "starter", "enterprise", "general", "national", "united", "american", "central"),
+        *("north", "south", "east", "west", "new", "the", "blue", "green", "red", "black", "white", "open", "data"),
+        *("digital", "cloud", "logic", "media", "systems", "group", "partners", "capital", "software", "labs", "tech"),
+        *("analytics", "solutions", "services", "consulting", "logistics", "health", "energy", "finance", "foods"),
+        *("market", "sales", "customer", "company", "person", "summit", "bright", "prime", "smart", "apex", "will"),
+        *("mark", "may", "june", "april", "august", "grace", "hope", "faith", "rose", "dawn", "bill", "frank"),
+    }
+)
+
+
+class NameIndex:
+    """The names that must not leave the PC, read from `sources` and cached briefly.
+
+    A pseudonym stays the same for the life of the process, so a model can reason across messages and the reply can be
+    mapped back. A name also matches when hyphenated or written as a file slug ("ironcrest-media"). Names match in any
+    case, except those that could be ordinary words ("Will", "Summit") and people's short forms: those match as written.
+    A short form ("Ironcrest" for "Ironcrest Media") counts only when it is unique and not an ordinary word.
+    """
+
+    def __init__(self, sources: list[NameSource], ttl_s: float = 60.0) -> None:
+        self.sources = sources
+        self.ttl_s = ttl_s
+        self._loaded_at: float | None = None
+        self._pseudonyms: dict[str, str] = {}  # casefolded name -> pseudonym
+        self._real: dict[str, str] = {}  # pseudonym -> the name as written in the source
+        self._counts: dict[str, int] = {}
+        self._full: re.Pattern[str] | None = None
+        self._full_as_written: re.Pattern[str] | None = None
+        self._short: re.Pattern[str] | None = None
+        self._short_as_written: re.Pattern[str] | None = None
+        self._short_to_pseudonym: dict[str, str] = {}
+
+    def _pseudonym_for(self, kind: str, name: str) -> str:
+        key = _key(name)
+        if key not in self._pseudonyms:
+            word = _PSEUDONYM_WORD.get(kind, "Company")
+            self._counts[word] = self._counts.get(word, 0) + 1
+            pseudonym = f"{word}_{self._counts[word]:03d}"
+            self._pseudonyms[key] = pseudonym
+            self._real[pseudonym] = name
+        return self._pseudonyms[key]
+
+    def _short_forms(self, kind: str, name: str) -> list[str]:
+        words = name.split()
+        if len(words) < 2:
+            return []
+        wanted = words if kind == "person" else words[:1]
+        return [w for w in wanted if len(w) >= (3 if kind == "person" else 5) and w.lower() not in _COMMON_WORDS]
+
+    def refresh(self) -> None:
+        """Raises `NamesUnavailable` if a source fails: an unclean payload must not go out."""
+        now = time.monotonic()
+        if self._loaded_at is not None and now - self._loaded_at < self.ttl_s:
+            return
+        names: list[tuple[str, str]] = []
+        try:
+            for source in self.sources:
+                names.extend((kind, str(name).strip()) for kind, name in source() if str(name or "").strip())
+        except Exception as exc:
+            raise NamesUnavailable(f"{type(exc).__name__}: {exc}") from exc
+        seen_short: dict[str, str | None] = {}
+        people_short: set[str] = set()
+        full = sorted({name for _, name in names}, key=len, reverse=True)
+        keys = {_key(n) for n in full}
+        as_written: set[str] = set()
+        for kind, name in names:
+            pseudonym = self._pseudonym_for(kind, name)
+            if len(_NAME_SEPARATOR.split(name)) == 1 and (kind == "person" or name.lower() in _COMMON_WORDS):
+                as_written.add(name)
+            for short in self._short_forms(kind, name):
+                if _key(short) not in keys:
+                    seen_short[short] = pseudonym if seen_short.get(short, pseudonym) == pseudonym else None
+                    if kind == "person":
+                        people_short.add(short)
+        shorts = sorted((s for s, p in seen_short.items() if p is not None), key=len, reverse=True)
+        self._short_to_pseudonym = {_key(s): seen_short[s] for s in shorts}  # type: ignore[misc]
+        self._full = _alternation([n for n in full if n not in as_written], re.I)
+        self._full_as_written = _alternation([n for n in full if n in as_written], 0)
+        self._short = _alternation([s for s in shorts if s not in people_short], re.I)
+        self._short_as_written = _alternation([s for s in shorts if s in people_short], 0)
+        self._loaded_at = now
+
+    def scrub(self, text: str, report: FilterReport) -> str:
+        def count(replacement: str) -> str:
+            report.names_replaced += 1
+            return replacement
+
+        def replace(table: dict[str, str]) -> Callable[[re.Match[str]], str]:
+            # `re.I` can match text whose casefold differs from the key (Turkish dotless i). Still a name: hide it.
+            def one(match: re.Match[str]) -> str:
+                return count(table.get(_key(match.group())) or self._pseudonym_for("company", match.group()))
+
+            return one
+
+        for pattern, table in (
+            (self._full, self._pseudonyms),
+            (self._full_as_written, self._pseudonyms),
+            (self._short, self._short_to_pseudonym),
+            (self._short_as_written, self._short_to_pseudonym),
+        ):
+            if pattern is not None:
+                text = pattern.sub(replace(table), text)
+        return _TITLED_PERSON.sub(lambda m: count(self._pseudonym_for("person", m.group())), text)
+
+    def restore(self, text: str) -> str:
+        """The reply, with the real names back. It only ever runs on the PC."""
+        return _PSEUDONYM.sub(lambda m: self._real.get(m.group(), m.group()), text)
+
+    def restore_value(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return self.restore(value)
+        if isinstance(value, dict):
+            return {k: self.restore_value(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self.restore_value(v) for v in value]
+        return value
+
+
+def _key(name: str) -> str:
+    return " ".join(w for w in _NAME_SEPARATOR.split(name.casefold()) if w)
+
+
+def _alternation(names: list[str], flags: int) -> re.Pattern[str] | None:
+    """Any of the names, with spaces, hyphens and underscores alike: a hyphen or underscore also ends a name."""
+    if not names:
+        return None
+    forms = (r"[\s_-]+".join(re.escape(w) for w in _NAME_SEPARATOR.split(n) if w) for n in names)
+    return re.compile(r"(?<![^\W_])(?:" + "|".join(forms) + r")(?![^\W_])", flags)
+
+
+class StreamRestorer:
+    """Real names back in a stream, holding back a tail that could still become a pseudonym."""
+
+    def __init__(self, names: NameIndex | None) -> None:
+        self.names = names
+        self._held = ""
+
+    def feed(self, delta: str) -> str:
+        if self.names is None:
+            return delta
+        text = self._held + delta
+        partial = _PARTIAL_PSEUDONYM.search(text)
+        cut = partial.start() if partial else len(text)
+        self._held = text[cut:]
+        return self.names.restore(text[:cut])
+
+    def flush(self) -> str:
+        text, self._held = self._held, ""
+        return self.names.restore(text) if self.names is not None else text
 
 
 def _looks_like_a_row(line: str) -> bool:
@@ -61,7 +233,7 @@ def _looks_like_a_row(line: str) -> bool:
     return any(_NUMERIC_CELL.match(cell) for cell in cells)
 
 
-def filter_text(text: str, report: FilterReport | None = None) -> str:
+def filter_text(text: str, report: FilterReport | None = None, names: NameIndex | None = None) -> str:
     report = report if report is not None else FilterReport()
     kept: list[str] = []
     pending = 0
@@ -82,7 +254,7 @@ def filter_text(text: str, report: FilterReport | None = None) -> str:
     flush()
     cleaned, emails = _EMAIL.subn(EMAIL_REMOVED, "\n".join(kept))
     report.emails_removed += emails
-    return cleaned
+    return names.scrub(cleaned, report) if names is not None else cleaned
 
 
 def _is_table(value: list[Any]) -> bool:
@@ -99,7 +271,7 @@ def _cells(row: Any) -> list[Any]:
     return list(row.values()) if isinstance(row, dict) else list(row)
 
 
-def _scrub(value: Any, report: FilterReport, key: str = "") -> Any:
+def _scrub(value: Any, report: FilterReport, key: str = "", names: NameIndex | None = None) -> Any:
     if isinstance(value, dict):
         out: dict[str, Any] = {}
         for name, item in value.items():
@@ -110,37 +282,45 @@ def _scrub(value: Any, report: FilterReport, key: str = "") -> Any:
                     report.rows_removed += len(item)
                     out[f"{name}_removed"] = len(item)
             else:
-                out[name] = _scrub(item, report, name)
+                out[name] = _scrub(item, report, name, names)
         return out
     if isinstance(value, list):
         if key not in _SUMMARY_LISTS and _is_table(value):
             report.rows_removed += len(value)
             return ROWS_REMOVED.format(n=len(value))
-        return [_scrub(item, report, key) for item in value]
+        return [_scrub(item, report, key, names) for item in value]
     if isinstance(value, str):
-        return filter_text(value, report)
+        return filter_text(value, report, names)
     return value
 
 
-def filter_tool_result(content: str, report: FilterReport | None = None) -> str:
+def filter_tool_result(content: str, report: FilterReport | None = None, names: NameIndex | None = None) -> str:
     report = report if report is not None else FilterReport()
     try:
         data = json.loads(content)
     except ValueError:  # cut at MAX_TOOL_CHARS, or not JSON: its fields cannot be judged, so it does not leave the PC
         report.rows_removed += 1
         return json.dumps({"withheld": RESULT_WITHHELD})
-    return json.dumps(_scrub(data, report), ensure_ascii=False, default=str)
+    return json.dumps(_scrub(data, report, "", names), ensure_ascii=False, default=str)
 
 
-def filter_messages(messages: list[Message]) -> tuple[list[Message], FilterReport]:
+def filter_messages(messages: list[Message], names: NameIndex | None = None) -> tuple[list[Message], FilterReport]:
     """What a cloud provider may see of `messages`. The originals stay as they are for the local fallback."""
+    if names is not None:
+        names.refresh()
     report = FilterReport()
-    filtered = [
-        m.model_copy(
-            update={
-                "content": filter_tool_result(m.content, report) if m.role == "tool" else filter_text(m.content, report)
-            }
-        )
-        for m in messages
-    ]
+    filtered = []
+    for m in messages:
+        update: dict[str, Any] = {
+            "content": (
+                filter_tool_result(m.content, report, names)
+                if m.role == "tool"
+                else filter_text(m.content, report, names)
+            )
+        }
+        if names is not None and m.tool_calls:  # an earlier search may have put a customer's name in its arguments
+            update["tool_calls"] = [
+                c.model_copy(update={"arguments": _scrub(c.arguments, report, "", names)}) for c in m.tool_calls
+            ]
+        filtered.append(m.model_copy(update=update))
     return filtered, report

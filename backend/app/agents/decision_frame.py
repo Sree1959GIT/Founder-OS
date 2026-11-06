@@ -427,6 +427,7 @@ class OptionCost(BaseModel):
     runway_change_months: float | None = None
     modelled: bool = Field(True, description="False: the scenario routine cannot express this option")
     is_full: bool = Field(False, description="The option the cost model describes")
+    trade_off: str = Field("", description="Why it may lose even when it costs less: control, speed, what it teaches")
     basis: str = ASSUMPTION_LABEL
 
     def line(self, currency: str) -> str:
@@ -526,6 +527,12 @@ class DecisionFrame(BaseModel):
                 f"Cost model, computed in code: {self.cost_model.sentence()} Labelled assumptions are placeholders the "
                 "founder must confirm: always call them assumptions. This is not one hire: never give a one-hire cost "
                 "as the cost of this decision."
+            )
+        if self.options:
+            names = ", ".join(o.name for o in self.options)
+            lines.append(
+                f"The options being compared: {names}. The easiest to undo is {self.default_option}. Speak to these "
+                "options, not only the largest one, and never advise against what an option depends on."
             )
         if self.goals:
             lines.append(
@@ -687,6 +694,43 @@ def _option(
         monthly=case.monthly,
         runway_change_months=case.runway_change_months if case.scenario_runway_months is not None else None,
     )
+
+
+_TRADE_OFFS = {
+    "Travel-led pilot": "you learn more slowly from trips than from a local presence, and win customers later.",
+    "One remote rep": "one person is a key-person risk, and hiring takes time before you learn anything.",
+    "Partner or distributor": "a partner keeps the customer relationship and a share, so you have less control of "
+    "price and learn less about demand.",
+    "Free-zone desk": "it adds a licence and a local hire, which take more commitment and are harder to undo.",
+    "Full office": "it is the slowest to set up and the hardest to undo.",
+    "No price change": "it teaches you nothing about what customers would pay.",
+    "New customers only": "two price lists are more work, and revenue moves slowly because only new customers pay it.",
+    "Design-partner pilot": "a few customers may not show demand from the wider market.",
+    "Add-on to the current product": "it tests the current customers only, and takes one person away from the roadmap.",
+    "Partner or white-label": "you depend on someone else's product and keep less margin and control.",
+    "Full product line": "it needs a team before you have evidence of demand.",
+    "Not now": "you learn nothing about demand, and the question comes back later.",
+    "No change": "it teaches you nothing about whether more spending would work.",
+    "Half the amount, as a test": "a smaller test takes longer to give a clear answer.",
+    "The full amount": "it commits the most before you have evidence that it works.",
+    "No raise: cut burn instead": "real cuts slow the plan and take time to show in the cash.",
+    "Bridge from existing investors": "it depends on their appetite, and buys time rather than a new plan.",
+    "Venture debt": "interest and covenants reduce your control if the plan slips.",
+    "Priced round": "it takes the most time and dilution.",
+    "A contractor for a fixed term": "a contractor builds less lasting knowledge in the team.",
+    "Do not hire now": "the work waits, and you learn nothing about whether the role pays back.",
+    "Hire one first, then review": "one person gives a slower and less certain answer.",
+}
+
+
+def _trade_off(name: str) -> str:
+    if name in _TRADE_OFFS:
+        return _TRADE_OFFS[name]
+    if name.startswith("Change prices by"):
+        return "it risks more churn while you learn how customers react."
+    if name.startswith("Hire "):
+        return "it commits the most before you have evidence that it works."
+    return ""
 
 
 def _options(
@@ -1131,6 +1175,8 @@ def _facts(frame: DecisionFrame) -> list[Fact]:
         money(option.one_off, f"{option.name}: up-front cost ({ASSUMPTION_LABEL})")
         money(option.monthly, f"{option.name}: monthly cost ({ASSUMPTION_LABEL})")
         months(option.runway_change_months, f"{option.name}: change in projected runway")
+    for goal in frame.goals:
+        facts.extend(Fact(f.value) for f in extract_figures(goal.goal))  # the founder's own, from the company profile
     for figure in frame.baseline:
         if figure.unit == "months":
             months(figure.value, figure.label)
@@ -1190,6 +1236,7 @@ def build_frame(
     except Exception as exc:  # no financial data yet, or a bad input: an unmodelled frame, not a failed run
         logger.info("No cost model for this decision: {}: {}", type(exc).__name__, exc)
         frame.cost_model = None
+    frame.options = [o.model_copy(update={"trade_off": _trade_off(o.name)}) for o in frame.options]
     frame.goals = [_check_goal(goal, frame, finance) for goal in _company_goals(ctx)]
     frame.predictions, frame.kill_criteria = _starter_outcomes(frame, today)
     frame.facts = _facts(frame)
