@@ -59,7 +59,8 @@ export function AnswerText({ text }: { text: string }) {
 export function AnswerCard({ run }: { run: RunView }) {
   const result = run.result;
   const finished = run.status !== "running";
-  const local = result ? !result.advisor_provider || result.advisor_provider === "ollama" : true;
+  const provider = result?.advisor_provider ?? "";
+  const where = provider === "rules" ? "written by code" : provider === "ollama" ? "local" : provider;
   const removed = result ? result.agents.reduce((n, a) => n + a.removed.length, 0) : 0;
   const unfinishedWithoutAnswer = finished && !run.answer;
   return (
@@ -72,7 +73,7 @@ export function AnswerCard({ run }: { run: RunView }) {
         <span>
           Advisor
           {result ? <span className="num"> · {seconds(result.elapsed_ms)}</span> : null}
-          {result?.advisor_provider ? ` · ${local ? "local" : result.advisor_provider}` : ""}
+          {where ? ` · ${where}` : ""}
         </span>
         <span className="flex-1" />
         {finished ? <VerifiedBadge verified={result ? result.verified : null} checks={result?.issues.length ?? 0} /> : null}

@@ -466,9 +466,22 @@ async function upload<T>(path: string, file: File, extra?: Record<string, string
   return request<T>(path, { method: "POST", body: form });
 }
 export const uploadVaultFile = (file: File) => upload<{ path: string; error?: string | null }>("/api/vault/upload", file);
-export const uploadDataFile = (file: File) => upload<{ tables: unknown[] }>("/api/data/upload", file);
+export const uploadDataFile = (file: File, table?: string) =>
+  upload<{ tables: unknown[] }>("/api/data/upload", file, table ? { table } : undefined);
 
-export const fetchTables = () => request<{ loaded: LoadedTable[] }>("/api/data/tables");
+export interface CanonicalTable {
+  table: string;
+  description: string;
+  columns: { name: string; type: string; required: boolean }[];
+}
+export interface SheetMapping {
+  table: string;
+  columns: Record<string, string>;
+}
+export const fetchTables = () => request<{ loaded: LoadedTable[]; canonical: CanonicalTable[] }>("/api/data/tables");
+export const fetchMappings = () => request<Record<string, SheetMapping>>("/api/data/mappings");
+export const putMapping = (key: string, mapping: SheetMapping) =>
+  send<Record<string, SheetMapping>>("/api/data/mappings", "PUT", { key, ...mapping });
 export const loadSample = () => send<{ tables: unknown[] }>("/api/data/load-sample", "POST");
 
 export const fetchSettings = () => request<SettingsView>("/api/settings");

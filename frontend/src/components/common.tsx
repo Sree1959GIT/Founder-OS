@@ -181,16 +181,15 @@ function LineageRow({ label, children }: { label: string; children: ReactNode })
 export function CitationChips({ citations }: { citations: Citation[] }) {
   const seen = new Set<string>();
   const unique = citations.filter((c) => {
-    const key = `${c.path}#${c.heading}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    if (seen.has(c.path)) return false;
+    seen.add(c.path);
     return true;
   });
   if (!unique.length) return null;
   return (
     <ul aria-label="Sources" className="flex flex-wrap gap-1.5">
       {unique.map((c) => (
-        <li key={`${c.path}#${c.heading}`} className="max-w-full">
+        <li key={c.path} className="max-w-full">
           <a
             href={`#/vault?path=${encodeURIComponent(c.path)}`}
             className="num inline-flex max-w-full truncate rounded border border-border-strong bg-background px-1.5 py-0.5 text-[11px] text-info"

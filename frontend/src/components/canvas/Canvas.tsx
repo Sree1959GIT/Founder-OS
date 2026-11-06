@@ -43,7 +43,7 @@ function KpiRow({ refreshKey }: { refreshKey: string }) {
         return (
           <article key={m.metric} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border bg-card p-3.5" data-testid={`kpi-${m.metric}`}>
             <p className="text-xs text-muted-foreground">{KPI_TITLES[m.metric] ?? m.label}</p>
-            <p className="num text-[24px] font-semibold leading-tight">{metricValue(m.value, m.unit, m.metric)}</p>
+            <p className="num truncate text-[22px] font-semibold leading-tight">{metricValue(m.value, m.unit, m.metric)}</p>
             <p className="min-h-4 text-xs text-muted-foreground">
               {zero ? <>Zero cash {monthLabel(zero.slice(0, 7))}</> : <>As of {monthLabel(m.as_of)}</>}
             </p>
@@ -136,8 +136,9 @@ function Findings({ run }: { run: RunView }) {
 }
 
 export function Canvas() {
-  const { currentRun: run } = useWorkspace();
-  const isDecision = Boolean(run && (run.frame || run.decisionType));
+  const { currentRun, decisionRun } = useWorkspace();
+  const run = decisionRun ?? currentRun;
+  const isDecision = Boolean(decisionRun);
   const reviewDate = run?.result?.memo?.review_date;
   return (
     <main className="flex min-w-0 flex-[999_1_560px] flex-col gap-4 px-6 py-5">

@@ -170,3 +170,28 @@ def test_run_all_locally_keeps_cloud_agents_off_the_cloud(settings: Settings) ->
         assert cloud.calls == []
         assert all(not i.is_cloud and i.local_only for i in result.team)
         assert local.calls
+
+
+# --- column mappings --------------------------------------------------------------------------------------------------
+def test_a_saved_mapping_lets_a_messy_file_load(client: TestClient) -> None:
+    messy = "Kol A,Kol B,Kol C,Kol D|2026-10,Rent,opex,1000|".replace("|", chr(10)).encode()
+
+    def upload() -> Any:
+        files = {"file": ("messy.csv", messy, "text/csv")}
+        return client.post("/api/data/upload", files=files, data={"table": "pnl"})
+
+    assert upload().status_code >= 400
+    columns = {"Kol A": "month", "Kol B": "account", "Kol C": "category", "Kol D": "amount"}
+    saved = client.put("/api/data/mappings", json={"key": "messy.csv", "table": "pnl", "columns": columns})
+    assert saved.status_code == 200
+    assert saved.json()["messy.csv"]["columns"] == columns
+    assert upload().status_code == 200
+
+
+def test_a_mapping_must_name_real_columns_once_each(client: TestClient) -> None:
+    def put(table: str, columns: dict[str, str]) -> int:
+        return client.put("/api/data/mappings", json={"key": "x.csv", "table": table, "columns": columns}).status_code
+
+    assert put("nonsense", {"a": "month"}) == 422
+    assert put("pnl", {"a": "nonsense"}) == 422
+    assert put("pnl", {"a": "month", "b": "month"}) == 422

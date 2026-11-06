@@ -158,7 +158,7 @@ export function AdvisorPanel() {
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Ask, or add something while the team works"
+          placeholder="Ask the advisor"
           autoComplete="off"
           className="h-11 min-w-0 flex-1 rounded-lg border border-border-strong bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground"
         />

@@ -11,7 +11,15 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.deps import FinanceDep, SettingsDep
-from app.engine.ingest import SUPPORTED_SUFFIXES, MappingStore, TableReport, ingest_directory, ingest_file, ingest_log
+from app.engine.ingest import (
+    SUPPORTED_SUFFIXES,
+    MappingStore,
+    SheetMapping,
+    TableReport,
+    ingest_directory,
+    ingest_file,
+    ingest_log,
+)
 from app.engine.schema import TABLES
 from app.engine.sql_guard import DEFAULT_MAX_ROWS, GuardedQueryResult, run_guarded_query
 
@@ -65,6 +73,30 @@ def tables(finance: FinanceDep) -> TablesResponse:
 @router.get("/mappings")
 def mappings(finance: FinanceDep) -> dict[str, Any]:
     return {key: m.model_dump() for key, m in MappingStore(finance.db.data_dir).load().items()}
+
+
+class MappingUpdate(BaseModel):
+    key: str = Field(min_length=1, max_length=300, description="File name, as `<file>` or `<file>#<sheet>`")
+    table: str
+    columns: dict[str, str] = Field(description="Source header -> canonical column")
+
+
+@router.put("/mappings")
+def save_mapping(body: MappingUpdate, finance: FinanceDep) -> dict[str, Any]:
+    """Save how a file's columns map. It applies the next time that file is uploaded, and wins over auto-detection."""
+    spec = TABLES.get(body.table)
+    if spec is None:
+        raise HTTPException(status_code=422, detail=f"Unknown table: {body.table}")
+    known = {column.name for column in spec.columns}
+    unknown = sorted(set(body.columns.values()) - known)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"{body.table} has no column: {', '.join(unknown)}")
+    targets = list(body.columns.values())
+    if len(targets) != len(set(targets)):
+        raise HTTPException(status_code=422, detail="Two source columns point at the same column")
+    store = MappingStore(finance.db.data_dir)
+    store.save(body.key, SheetMapping(table=body.table, columns=body.columns))
+    return {key: m.model_dump() for key, m in store.load().items()}
 
 
 @router.post("/load-sample", response_model=IngestResponse)

@@ -101,7 +101,7 @@ function CashChart({ result }: { result: ScenarioResult }) {
   return (
     <div className="h-[280px] w-full" role="img" aria-label="Cash by month, base against scenario">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={result.points} margin={{ top: 12, right: 12, left: 4, bottom: 0 }}>
+        <LineChart data={result.points} margin={{ top: 12, right: 24, left: 4, bottom: 0 }}>
           <CartesianGrid stroke="#262B35" vertical={false} />
           <XAxis dataKey="month" tickFormatter={monthLabel} minTickGap={32} {...axisProps} />
           <YAxis tickFormatter={(v: number) => moneyShort(v, result.currency)} width={64} {...axisProps} />
@@ -148,7 +148,7 @@ function FanChart({ result, currency }: { result: MonteCarloResult; currency: st
   return (
     <div className="h-[220px] w-full" role="img" aria-label="Monte Carlo range of cash by month">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={result.points} margin={{ top: 12, right: 12, left: 4, bottom: 0 }}>
+        <ComposedChart data={result.points} margin={{ top: 12, right: 24, left: 4, bottom: 0 }}>
           <CartesianGrid stroke="#262B35" vertical={false} />
           <XAxis dataKey="month" tickFormatter={monthLabel} minTickGap={32} {...axisProps} />
           <YAxis tickFormatter={(v: number) => moneyShort(v, currency)} width={64} {...axisProps} />
@@ -234,8 +234,8 @@ export function ScenarioSimulator({ frame }: { frame: DecisionFrame | null }) {
             {scenario ? <CashChart result={scenario} /> : !error ? <div className="h-[280px]" /> : null}
             {scenario ? (
               <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                <Tile label="Base runway" value={runway(scenario.base_runway_months)} />
-                <Tile label="Scenario runway" value={runway(scenario.scenario_runway_months)} />
+                <Tile label="Base, with growth" value={runway(scenario.base_runway_months)} />
+                <Tile label="Scenario, with growth" value={runway(scenario.scenario_runway_months)} />
                 <Tile label="Base zero cash" value={monthLabel(toMonth(scenario.base_zero_cash_month)) || "beyond the model"} />
                 <Tile label="Scenario zero cash" value={monthLabel(toMonth(scenario.scenario_zero_cash_month)) || "beyond the model"} />
               </div>

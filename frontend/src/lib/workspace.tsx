@@ -402,6 +402,8 @@ interface WorkspaceApi {
   amendment: (id: string, accept: boolean) => Promise<void>;
   queued: (id: string, accept: boolean) => Promise<void>;
   currentRun: RunView | null;
+  /** The latest decision stays open on the canvas when a small question follows it. */
+  decisionRun: RunView | null;
 }
 
 const Context = createContext<WorkspaceApi | null>(null);
@@ -553,6 +555,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       amendment,
       queued,
       currentRun: state.currentRunId ? (state.runs[state.currentRunId] ?? null) : null,
+      decisionRun:
+        Object.values(state.runs)
+          .filter((run) => run.frame || run.decisionType)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
     }),
     [state, send, follow, toggleQuiet, amendment, queued],
   );
