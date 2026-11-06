@@ -125,6 +125,9 @@ _NEGATED_BEFORE = re.compile(
     re.I,
 )
 _ONLY_IF = re.compile(r"\b(?:if|unless|only when|would need|needs? to|to (?:align|meet|achieve|support|reach))\b", re.I)
+# Seen live: "aligns with the goal of extending runway while keeping the option to scale later if needed". An aside
+# like that puts no condition on the claim.
+_IDLE_IF = re.compile(r"\bif (?:needed|necessary|required|so|any|possible|desired|appropriate|applicable)\b", re.I)
 _COMPARES = re.compile(r"\b(?:than|compared|against|relative to|more|less|better|least|most)\b", re.I)
 
 
@@ -161,7 +164,7 @@ def goal_contradiction(sentence: str, frame: DecisionFrame | None, chosen: str =
         other = any(g.goal != goal.goal and names_goal(g.goal, sentence) for g in frame.goals)
         named = names_goal(goal.goal, sentence)
         names_it = named or (re.search(r"\bgoals?\b", text, re.I) is not None and not other)
-        conditional = _ONLY_IF.search(text) is not None
+        conditional = _ONLY_IF.search(_IDLE_IF.sub(" ", text)) is not None
         if status == "moves_towards":
             if names_it and not conditional and _claims_with(_HURTS, text):
                 return goal.goal

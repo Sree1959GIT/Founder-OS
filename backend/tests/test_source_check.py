@@ -10,6 +10,7 @@ import pytest
 from app.agents.decision_frame import DecisionFrame, GoalCheck
 from app.agents.events import Citation, EventBus
 from app.agents.graph import AgentOrchestrator
+from app.agents.guards import goal_contradiction
 from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, findings_for_advisor
 from app.agents.sources import (
     REMOVED_NOTE,
@@ -202,6 +203,14 @@ def test_the_list_to_confirm_claims_nothing_the_goal_check_denies() -> None:
         ["It aligns with the goal to extend runway past 12 months.", "Our rent is a figure to confirm"], draft, frame
     )
     assert lines == ["Your rent is a figure to confirm"]
+
+
+def test_an_aside_with_if_needed_does_not_hide_a_contradiction() -> None:
+    frame = build_frame_with_a_goal_moved_away()
+    claim = "It also aligns with the goal of extending runway while keeping the option to scale later if needed."
+    assert goal_contradiction(claim, frame) == "Extend runway past 12 months"
+    # A real condition is still not a claim.
+    assert goal_contradiction("It aligns with the goal only if revenue doubles.", frame) is None
 
 
 def test_a_flag_for_the_advisor_names_no_figure_and_no_source() -> None:

@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M4: Canvas UI**, after the founder reviews M3c (PR open, branch `claude/m3c-decision-models`, checklist C1–C10) and decides proposals P1–P7 in PRD §12. M0, M1, M2, M3a and M3b are ACCEPTED and merged.
+- **Next milestone:** **M4: Canvas UI**, after the founder re-tests M3c (PR #8 open, branch `claude/m3c-decision-models`, re-test RF1–RF6) and merges. P1–P7 are decided (PRD §12). M0, M1, M2, M3a and M3b are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-05 (M3c wrap-up)
+- **Last updated:** 2026-11-06 (M3c fix after the founder's C4 review)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -17,7 +17,7 @@
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
-| M3c | Decision models (Laya / Jev) | DONE (PR open, Light gate: founder review) | Laya and Jev built against their documented APIs and tested with fakes, not measured |
+| M3c | Decision models (Laya / Jev) | DONE (PR #8 open, Light gate: founder re-test) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | NOT STARTED | |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
@@ -57,9 +57,20 @@
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
-| M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | AWAITING FOUNDER |
+| M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | AWAITING FOUNDER (re-test) |
 
 ## Current session
+- 2026-11-06 (local Windows bug-fix session for the M3c gate, time-box 1 hour), branch `claude/m3c-decision-models`, PR #8. It ran a little over the hour, because the live runs found two more faults worth fixing.
+- Plan:
+  - [x] Record the founder feedback first
+  - [x] Citations must resolve, and a figure must be in the chunks of the file it is cited to; otherwise it is removed with a note
+  - [x] Unsupported text never reaches a later stage, the answer or the memo, not even inside a question
+  - [x] Market Scout with cloud off: says what is missing, lists what to find, no example figures
+  - [x] Tests; Dubai C4 checks in the offline and live evals
+  - [x] Approvals in PRD §12; P5 applied; C8 and C9 deferred
+  - [x] Resolve the feedback; RF steps; PR #8 updated; CI green
+
+Previous session (2026-11-05, M3c):
 - Started (UTC): 2026-11-05 14:12 (local Windows session, time-box 2 hours), branch `claude/m3c-decision-models`, target **M3c** (gate tier: **Light**)
 - Plan, in the founder's priority order (an "M3c (partial)" PR is fine if time runs out):
   - [x] Tidy the stale "Next milestone" and M3b table lines
@@ -126,11 +137,34 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Source check (fix after the founder's M3c review, 2026-11-06)
+**What you can do now**
+- A figure with a made-up source can no longer reach you. Live, on the final code, the Market Scout wrote "$166 billion" and "$160 billion" again; code removed them before any later agent saw them.
+- With cloud off and no market data in the vault, the Market Scout says so and lists what to find, with no figures.
+
+**How it works**
+- `app/agents/sources.py`: `without_unsupported` takes a sentence out (or a whole line in a list) if it names a source that is not a real vault file or a page a search returned, or holds a figure with no backing. A figure is backed by lineage from a routine, code's own lines, the founder's message or goals, or a retrieved passage. If a sentence cites a source, an unlabelled figure must be in **that file's** retrieved chunks. It adds `(removed: unsupported source)`.
+- `AgentRunner._remove_unsupported` runs after the one repair turn, so later stages get checked text only. `findings_for_advisor` no longer quotes a figure or a path in its `[UNVERIFIED]` flag: that flag is how the $150 billion reached the Advisor's question.
+- `_SentenceGate` applies the same check to each sentence of the Advisor's reply, questions included. If nothing it wrote survives, the team's checked findings answer instead.
+- The memo: prose goes through the same check. **`Open numbers to confirm` now lists what to confirm with no figure in it** ("Dubai's GDP is a figure to confirm (removed: unsupported source)"). This replaces your M3b rule, which moved the figure itself there, because you asked that the memo never contain one.
+- `scout_without_web`: with cloud off, only sentences citing a retrieved passage stay, plus a list of what to find written by code.
+- People & Ops v2 is live (P5).
+- Also: spans of days and weeks ("a 90-day pilot") no longer count as financial figures, `trillion`, `crore` and `lakh` now do, and "if needed" no longer hides a goal contradiction (the new live eval caught that one).
+
+**Known limits**
+- **A forecast's or stop rule's own target stays in the memo,** listed as a target (for example "Qualified Dubai pipeline >= $36,000.00"). A stop rule needs a number, and code or the model chooses it, so it has no source. This is the one exception to "no unsupported figure". A target that cites a missing source, or rests on a figure already removed, is dropped.
+- A target from an earlier proposed memo counts as on record, so the Advisor can repeat or ask about it. It is labelled proposed, and it is a placeholder, not market data.
+- `issues` on the API response, and the `agent.step` event, still name the removed figure and path. They are the audit trail. M4 should not show them as prose.
+- A figure written in words ("a hundred and fifty billion"), or a count of 12 or under ("5 competitors"), is not seen as a figure. A claim with no figure and no source is not caught, except for the cloud-off Market Scout. A figure that happens to match a routine's number passes.
+- Removing whole sentences can leave a section thin, and a real sentence with an unbacked figure goes too. A law or standard number ("ISO 27001") counts as a figure.
+- Live, the model still invents a market figure on most Dubai runs. Each costs a repair turn before code removes it.
+- Live runs on the final code: 4 Dubai runs (2 through the eval rubric: 1 failed on the "if needed" bug, then fixed and passed) and 2 price-rise runs after the eval pattern fix. A small sample, and the full live labelled set was not run.
+
 ### Decision models, privacy names and evals (M3c)
 **What you can do now**
 - A memo or answer can no longer contradict its own goal check. A line saying the proposal helps a goal that the check says it moves away from is removed by code. A cheaper option that is not proposed always says why (control, speed, what you learn).
 - With cloud on, customer, person and company names are replaced by stable stand-ins (`Customer_001`, `Person_001`, `Company_001`) before anything leaves the PC, and restored in the reply. If the name list cannot be built, the call stays local.
-- Run four bake-offs and a labelled eval from one command each (Windows checklist below). No default changed: every result is a proposal in PRD §12 for you to approve.
+- Run four bake-offs and a labelled eval from one command each (Windows checklist below). You decided these on 2026-11-06 (PRD §12): the only change is People & Ops v2 (P5).
 
 **How it works**
 - `app/agents/guards.py`: `goal_contradiction` and `without_contradictions` compare a sentence with the frame's goal statuses. `specialists.py` applies them to the Decision and to answers, and `_why_not` gives a rejected cheaper option its `OptionCost.trade_off`. `role_problems` catches the off-brief lines you reported (travel, physical office, "you, you", vault for market data).
@@ -140,17 +174,17 @@ Previous session (M3a):
 - Prompt versions live in `app/agents/prompts/versions/<agent>/vN.md`, with scores in `MANIFEST.json`. The app only reads `prompts/<agent>.md`; nothing rewrites a prompt at runtime.
 
 **Known limits**
-- **Laya and Jev have not been measured.** Installing `torch` and `laya` here was refused by this session's permission check, and there is no Jev key. Both are built against the documented APIs (read 2026-11-05) and tested with fakes only, so a real install may show API differences. Your checklist steps run them.
+- **Laya and Jev have not been measured.** Installing `torch` and `laya` here was refused by this session's permission check, and there is no Jev key. Both are built against the documented APIs (read 2026-11-05) and tested with fakes only, so a real install may show API differences. You deferred C8 and C9 until after M5.
 - **No real cloud call was made in this session either.** The cloud rows of the provider bake-off are yours to run.
 - A person's name that is in no source is only caught after a title ("Dr", "Mr"). The goal check and role checks are word patterns: they can miss a rephrased claim.
 - All measurements are one run on a small sample vault, so a difference of a few points is noise.
-- **Wording from the live Dubai run on the final code (C4), not fixed:** People & Ops opened with "You are you." and spoke of opening the office, though a pilot was proposed (it runs the live v1 prompt: see P5). Its "You would stop focusing on the Travel-led pilot" and Regulatory's "Ensure the decision aligns with the goal" are still weak. No figure or goal status was wrong.
+- **Wording from the live Dubai run (C4):** People & Ops opened with "You are you." on the v1 prompt. v2 is now live and four Dubai runs did not show it, but the team varies and People & Ops was not on every run, so M4 re-checks it. Regulatory's "Ensure the decision aligns with the goal" is still weak.
 - A proposed memo already on record reads "decided 2026-11-05; status proposed" in the answer's record line, because the record uses the memo's date as `decided`. It came from earlier memos in the test vault, and the status beside it is right. Fix in the next session.
 - The live labelled set ran only partly (Dubai and the price rise through `eval_agents --live`, both PASS). I stopped the rest to stay in the time-box; the offline set is 58/58.
 - There is no cash metric, so "how much cash do we have" gets the rules' metrics summary instead of one figure.
 - Jev's spend is not counted against `CLOUD_MONTHLY_CAP_USD`, and its calls are not in `llm_calls.jsonl`; the decision log records them. At its price the amounts are tiny, but the cap does not cover them.
 - A customer whose short name is an ordinary word ("Summit Foods") is only hidden in full. A person's short form is hidden only as written, so "priya" in lower case gets through.
-- This session pulled `embeddinggemma` (about 0.6 GB) into your `ollama` container for the bake-off. Remove it with `docker exec ollama ollama rm embeddinggemma` if you do not want it. Bake-off models can evict n8n's models from the GPU; those reload on their next use.
+- The M3c session pulled `embeddinggemma` (about 0.6 GB) into your `ollama` container for the bake-off. With P6 approved you can remove it: `docker exec ollama ollama rm embeddinggemma`. That is left to you. Bake-off models can evict n8n's models from the GPU; those reload on their next use.
 
 **Bake-off results (one run, your PC, sample data, 2026-11-05). Proposals P1–P7 are in PRD §12.**
 
@@ -180,7 +214,7 @@ Conversation lane (5 replies): `qwen3:8b` 5 good, 5 in time, p50 2.92 s. `mistra
 Prompt tuning on `qwen3:8b`:
 | Agent | v1 (live) | v2 | v3 | Best |
 |---|---|---|---|---|
-| People & Ops | 0/5 | **5/5** | 2/5 | v2 (not applied: P5) |
+| People & Ops | 0/5 | **5/5** | 2/5 (4/5 on the 2026-11-06 re-run) | v2 (live since 2026-11-06: P5) |
 | Devil's Advocate | 5/5 | 1/5 | 5/5 | v1 |
 | Regulatory & Tax | 4/4 | 3/4 | 4/4 | v1 |
 | Librarian | 3/3 | 3/3 | | v1 |
@@ -498,13 +532,39 @@ Known issues / notes:
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
 ## Next steps (for the M4 session)
-0. **Gate check:** M3c is a **Light** gate. The founder runs C1–C10 as far as wanted, decides P1–P7 in PRD §12 and merges the PR. Act on any "Founder feedback" first.
-1. Apply what the founder approves: `DECISION_PROVIDER`, `FAST_LANE_MODEL`, the People & Ops prompt. Each is one setting or one command.
+0. **Gate check:** M3c is a **Light** gate. The founder runs RF1–RF6 and merges PR #8. Act on any "Founder feedback" first.
+1. **M4's first task:** People & Ops opening with "You are you.", if v2 did not fix it. It was seen on v1, and not in four Dubai runs on v2, though People & Ops is not on every team: check several runs. In one v2 run it also wrote "Stop traveling for the pilot": `guards._stops_an_option` matches "travel" as a whole word, so it misses "traveling".
 2. M4 (PRD §8): the canvas UI, including the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
-3. Smaller ideas: count Jev in the cost ledger; a cash metric; a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
+3. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
+4. Smaller ideas: count Jev in the cost ledger; a cash metric; a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M3c (Light gate). Run C1–C4 (about 10 min), then whichever bake-offs you want to decide on.** C2, C4, the real-path rows of C5 and the C8 dry-run (from the main `.venv`) ran in Windows PowerShell 5.1 here, against a test backend on port 8011 with scratch data. The full bake-offs behind C5, C6, C7 and C10 ran from Git Bash, so their PowerShell filters ran here only on smaller output. C8's training and C9 never ran. From `D:\Founder-OS`. Each check prints a summary line to compare with **Expected**. Bake-offs use a private copy of the sample data and change no default. Bake-offs with several models push `qwen3:8b` out of the GPU, and it reloads when next used (about 3 minutes).
+**M3c re-test after the C4 fix (Light gate, about 10 minutes). Run this one first: RF1 to RF6.** RF2 to RF5 ran in Windows PowerShell 5.1 here, RF5 against a test backend on port 8011 with scratch data, so your vault was not touched by that run. From `D:\Founder-OS`. Each prints one summary line to compare with **Expected**. Then merge, or write the issues under "Founder feedback".
+
+- **RF1. Get the code.** `git fetch origin; git checkout claude/m3c-decision-models; git pull origin claude/m3c-decision-models; $env:PYTHONIOENCODING = 'utf-8'`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
+- **RF2. Offline: no Ollama needed.**
+  `.\.venv\Scripts\python.exe scripts\eval_labelled.py | Select-Object -Last 1; .\.venv\Scripts\python.exe scripts\eval_agents.py | Select-Object -Last 1; .\.venv\Scripts\python.exe scripts\eval_vault.py | Select-Object -Last 1; Set-Location backend; ..\.venv\Scripts\python.exe -m pytest -q 2>$null | Select-Object -Last 1; Set-Location ..`
+  Expected: `OFFLINE LABELLED EVAL: 58/58 passed`, `OFFLINE AGENT EVAL: 24/24 passed`, `OFFLINE EVAL: 18/18 passed`, `917 passed` (with a time).
+- **RF3. The fabricated-citation and figure-in-a-question cases (fakes).**
+  `Set-Location backend; ..\.venv\Scripts\python.exe -m pytest tests\test_source_check.py -q 2>$null | Select-Object -Last 1; Set-Location ..`
+  Expected: `34 passed` (with a time).
+- **RF4. Your approvals.**
+  `"RF4 prompt v2 $(Select-String -Path backend\app\agents\prompts\people_ops.md -Pattern 'Answer in exactly this order' -Quiet) | approvals in PRD $(@(Select-String -Path docs\PRD.md -Pattern '\| Approved').Count)"`
+  Expected: `RF4 prompt v2 True | approvals in PRD 7`.
+- **RF5. The Dubai run: every cited path, and no fabricated figure (about 3 minutes; deletes its own memo).**
+  `$b = 'http://127.0.0.1:8000'; function Ask($q) { Invoke-RestMethod -Method Post -Uri "$b/api/chat" -ContentType 'application/json' -Body (@{ message = $q; stream = $false } | ConvertTo-Json) -TimeoutSec 1200 }`
+  `$r = Ask 'Should we open a Dubai office? Write a decision memo.'; $m = (Invoke-RestMethod "$b/api/vault/notes/$($r.memo.path)").content`
+  `$texts = @($r.answer, $m) + @($r.agents | ForEach-Object { $_.text }); $paths = [regex]::Matches(($texts -join "`n"), '[\w./-]+\.(?:md|pdf|csv|xlsx|txt)\b') | ForEach-Object { $_.Value } | Sort-Object -Unique`
+  `foreach ($p in $paths) { if ($p -notmatch '/' -and $p -match '\.csv$') { "RF5 cited $p data file" } else { $ok = $false; try { Invoke-RestMethod "$b/api/vault/notes/$p" | Out-Null; $ok = $true } catch { }; "RF5 cited $p exists $ok" } }`
+  `$scout = @($r.agents | Where-Object { $_.type -eq 'market_scout' })[0].text; $big = '[$]\s?\d|\d\s?(%|percent|billion|million|bn|trillion)'; $asks = @($r.answer -split '(?<=[.!?])\s+' | Where-Object { $_ -match '\?\s*$' -and $_ -match $big }); $away = @($r.decision_frame.goals | Where-Object { $_.status -eq 'moves_away' }).Count; $sf = [regex]::Matches($scout, $big).Count; $bn = [regex]::Matches(($texts -join "`n"), '(?i)\d\s?(billion|bn|trillion)').Count; $caught = @($r.issues | Where-Object { $_ -match 'removed: unsupported source' }).Count`
+  `"RF5 type $($r.decision_frame.type) | moving away $away | status $($r.memo.status) | scout lists what to find $($scout -match 'o find:') | scout figures $sf | billions anywhere $bn | questions with a figure $($asks.Count) | removals noted $caught"`
+  `$asks | ForEach-Object { "RF5 question: $_" }; Invoke-RestMethod -Method Delete "$b/api/vault/notes/$($r.memo.path)" | Out-Null; "RF5 memo deleted $($r.memo.path)"`
+  Expected: one `RF5 cited` line per path, each saying `exists True` or `data file` and never `exists False`. Then `RF5 type new_office | moving away 1 | status proposed | scout lists what to find True | scout figures 0 | billions anywhere 0 | questions with a figure 0 | removals noted N`, where N varies (1 here when the model invented a figure, 0 if it did not). `questions with a figure` may be 1 if the vault already holds a proposed Dubai memo: read the `RF5 question` line, and its figure must be one of that memo's targets, as stated in the answer's "on record" text. It was 1 in two of the four runs here for that reason ($36,000.00), and is a placeholder target, not market data. `$r.issues` still names the figure that was removed: that is the audit trail, not text you are given as an answer.
+- **RF6. Optional: the rubric through the real model (about 3 minutes each; each leaves a memo in `decisions/` to delete).**
+  `.\.venv\Scripts\python.exe scripts\eval_agents.py --live --only dubai-office | Select-Object -Last 2; .\.venv\Scripts\python.exe scripts\eval_agents.py --live --only price-increase | Select-Object -Last 2`
+  Expected: `decision:dubai-office live PASS` and `LIVE AGENT EVAL: 1/1 passed`, then the same for `price-increase`. Model output varies, so a failure is a prompt to read the memo.
+
+**M3c, first review (done or superseded: P1–P7 are decided, C8 and C9 are deferred until after M5, and C2's counts are now those in RF2). Run C1–C4 (about 10 min), then whichever bake-offs you want to decide on.** C2, C4, the real-path rows of C5 and the C8 dry-run (from the main `.venv`) ran in Windows PowerShell 5.1 here, against a test backend on port 8011 with scratch data. The full bake-offs behind C5, C6, C7 and C10 ran from Git Bash, so their PowerShell filters ran here only on smaller output. C8's training and C9 never ran. From `D:\Founder-OS`. Each check prints a summary line to compare with **Expected**. Bake-offs use a private copy of the sample data and change no default. Bake-offs with several models push `qwen3:8b` out of the GPU, and it reloads when next used (about 3 minutes).
 
 - **C1. Get the code.** `git fetch origin; git checkout claude/m3c-decision-models; git pull origin claude/m3c-decision-models; $env:PYTHONIOENCODING = 'utf-8'`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
 - **C2. Offline: no Ollama needed.**
@@ -752,7 +812,8 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M3c] Fabricated figure with a fabricated citation reached the answer
+### [M3c] Fabricated figure with a fabricated citation reached the answer: RESOLVED (founder re-test RF1–RF6 pending)
+**Fixed 2026-11-06;** see "Source check" under Current state.
 - **Did:** checklist C4 (Dubai memo, cloud off).
 - **Got:** Market Scout wrote "Dubai's GDP is approximately $150 billion [notes/economic-overview.md]"; that note does not exist in the vault. The Devil's Advocate built a risk on it, and the Advisor's answer asked "Are you certain the $150 billion market size figure is verified...". `answer verified False` and `memo verified False`, but the text still reached the founder.
 - C2, C3 and the rest of C4 pass (goal consistency, reasons for rejected options; the "decided" lines were correct negatives).
@@ -887,6 +948,12 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M3c fix session (2026-11-06)
+- Root cause: the Verifier flagged the figure but only `verified: false` changed. The text went on, and the `[UNVERIFIED: number without lineage: $150 billion]` flag itself carried the figure to the Advisor. A figure was checked against every passage in the run, never against the file it was cited to.
+- The first live run on the fix showed the fix itself removed your real 1.5 % churn goal, and left the Scout's recollections in Open numbers. Both fixed.
+- A live price-rise failure was the eval's own pattern: "aligns with the goal" was true there. The eval now reads the goal statuses.
+- A live Dubai failure was real: "aligns with the goal ... if needed" read as a condition, so the guard let it through. Fixed, with a test.
+
 ### M3c session (2026-11-05)
 - Goal check, cheaper options and off-brief wording first. Live, the goal's own words "without new financing" read as a negation, which is why "aligns with the goal" got through.
 - The labelled set found real bugs in routing and wording, all fixed: intent gaps (notes on the company profile, "did we decide", "hello there"), ratios shown as 0.7213, a goal named without saying it moves away, and "who would own" missing People & Ops.
@@ -941,6 +1008,13 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M3c fix session, 2026-11-06)
+- `Open numbers to confirm` keeps what to confirm but never the figure (your new rule replaces the M3b one).
+- A forecast's or stop rule's own target stays, labelled as a target: a stop rule cannot work without a number. **Tell me if you want this stricter.**
+- `issues` keeps the removed figure, as the audit trail for you.
+- Spans of days and weeks are not financial figures, so "a 90-day pilot" is not removed.
+- A figure with lineage from a routine stands even if the sentence cites a file that does not contain it, since the number is still true. A source that does not exist always removes the sentence.
 
 ## Decisions made (M3c session, 2026-11-05)
 - Prompt versions are kept, scored and not applied: changing a live prompt is a default, so it waits for your approval (P5).
