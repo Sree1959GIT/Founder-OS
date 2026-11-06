@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { teamOf, type RunView } from "@/lib/workspace";
 
 export interface AgentCatalog {
-  agents: { type: string; title: string; spawnable: boolean; job?: string }[];
+  agents: { type: string; title: string; spawnable: boolean; is_cloud?: boolean; job?: string }[];
   max_local_agents: number;
   max_cloud_agents: number;
 }

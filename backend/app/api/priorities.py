@@ -25,10 +25,14 @@ DEFAULT_CRITERIA = [
 ]
 
 
+# The engine's names, in the words of the design's four corners.
+QUADRANT_WORDS = {"Quick win": "Do now", "Big bet": "Plan carefully", "Fill-in": "Quick wins", "Deprioritise": "Drop"}
+
+
 def _body(request: ScoringRequest) -> str:
     result = weighted_scoring(request)
     rows = "\n".join(
-        f"| {o.rank} | {o.name} | {o.total:.2f} | {o.quadrant or ''} |"
+        f"| {o.rank} | {o.name} | {o.total:.2f} | {QUADRANT_WORDS.get(o.quadrant or '', '')} |"
         for o in sorted(result.options, key=lambda x: x.rank)
     )
     return (
@@ -39,6 +43,9 @@ def _body(request: ScoringRequest) -> str:
 
 def _view(criteria: list[Criterion], options: list[ScoredOption]) -> dict[str, Any]:
     scoring = weighted_scoring(ScoringRequest(criteria=criteria, options=options)) if options else None
+    if scoring is not None:
+        for option in scoring.options:
+            option.quadrant = QUADRANT_WORDS.get(option.quadrant or "", option.quadrant)
     return {
         "criteria": [c.model_dump() for c in criteria],
         "options": [o.model_dump() for o in options],

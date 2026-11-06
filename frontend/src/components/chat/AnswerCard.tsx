@@ -7,6 +7,7 @@ import { metricValue, money, seconds, signedMonths } from "@/lib/format";
 import type { RunView } from "@/lib/workspace";
 
 function optionCost(option: OptionCost, currency: string): string {
+  if (!option.modelled) return "cost not modelled";
   const parts = [];
   if (option.one_off) parts.push(`${money(option.one_off, currency, 0)} one-off`);
   if (option.monthly) parts.push(`${money(option.monthly, currency, 0)} a month`);

@@ -49,6 +49,7 @@ export function VaultPanel({ path: wanted }: { path?: string }) {
   }, [wanted]);
   useEffect(() => {
     if (!path) return;
+    setEditing(false); // a draft belongs to the note it was opened on: Save must never write it over another
     fetchNote(path)
       .then((n) => {
         setNote(n);

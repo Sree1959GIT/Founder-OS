@@ -94,8 +94,10 @@ def save_mapping(body: MappingUpdate, finance: FinanceDep) -> dict[str, Any]:
     targets = list(body.columns.values())
     if len(targets) != len(set(targets)):
         raise HTTPException(status_code=422, detail="Two source columns point at the same column")
+    name, _, sheet = body.key.partition("#")
+    key = f"{safe_file_name(name)}#{sheet}" if sheet else safe_file_name(name)  # the name ingest will look it up by
     store = MappingStore(finance.db.data_dir)
-    store.save(body.key, SheetMapping(table=body.table, columns=body.columns))
+    store.save(key, SheetMapping(table=body.table, columns=body.columns))
     return {key: m.model_dump() for key, m in store.load().items()}
 
 

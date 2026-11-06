@@ -110,6 +110,8 @@ export const initialState: WorkspaceState = {
 };
 
 const MAX_HELD = 2000;
+const RECOVER_WAIT_MS = 3000;
+const RECOVER_ATTEMPTS = 400; // 20 minutes: longer than any run
 
 const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered"]);
 
@@ -461,13 +463,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
         dispatch({ type: "run-ended", runId, status: "cancelled" });
       } catch {
-        // The stream broke (a reload, a second window): the result is still on the backend.
-        try {
-          const found = await fetchRun(runId);
-          if (found.result) dispatch({ type: "result", runId, result: found.result });
-        } catch {
-          dispatch({ type: "run-ended", runId, status: "failed" });
+        // The stream broke (a dropped connection, a sleeping PC): the run goes on, and its result stays on the backend.
+        for (let attempt = 0; attempt < RECOVER_ATTEMPTS; attempt += 1) {
+          try {
+            const found = await fetchRun(runId);
+            if (found.result) {
+              dispatch({ type: "result", runId, result: found.result });
+              return;
+            }
+            if (found.status !== "running") break;
+          } catch {
+            // the backend may be back in a moment
+          }
+          await new Promise((resolve) => setTimeout(resolve, RECOVER_WAIT_MS));
         }
+        dispatch({ type: "run-ended", runId, status: "failed" });
       }
     })();
   }, []);
@@ -481,7 +491,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "error", error: null });
       try {
         const outcome = await postTurn(clean, stateRef.current.sessionId);
+        const isNewSession = stateRef.current.sessionId === null;
         dispatch({ type: "session", id: outcome.session_id });
+        if (isNewSession && stateRef.current.quiet) {
+          await setQuiet(outcome.session_id, true).catch(() => dispatch({ type: "quiet", quiet: false }));
+        }
         const startedRun =
           outcome.run_id !== null &&
           outcome.run_id !== stateRef.current.currentRunId &&

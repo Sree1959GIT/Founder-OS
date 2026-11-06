@@ -181,9 +181,10 @@ export function DataPanel() {
   };
 
   const saveExisting = (key: string, mapping: SheetMapping) => {
-    void run(() => putMapping(key, mapping)).then(() =>
-      setNote(`Saved. It applies the next time ${key.split("#")[0] ?? key} is uploaded.`),
-    );
+    void run(async () => {
+      await putMapping(key, mapping);
+      setNote(`Saved. It applies the next time ${key.split("#")[0] ?? key} is uploaded.`);
+    });
   };
 
   return (

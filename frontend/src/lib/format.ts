@@ -132,10 +132,10 @@ export function csvHeaders(text: string): string[] {
   for (const ch of line) {
     if (ch === '"') quoted = !quoted;
     else if (ch === "," && !quoted) {
-      cells.push(cell.trim());
+      cells.push(cell);
       cell = "";
     } else cell += ch;
   }
-  cells.push(cell.trim());
-  return cells.filter(Boolean);
+  cells.push(cell);
+  return cells.filter((c) => c.trim()); // spaces stay: a saved mapping is matched on the exact header
 }

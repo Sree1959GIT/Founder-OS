@@ -54,7 +54,9 @@ export function MemoView({ path: wanted }: { path?: string }) {
   }, []);
 
   useEffect(() => {
-    if (path) load(path);
+    if (!path) return;
+    setEditing(false); // a draft belongs to the memo it was opened on: Save must never write it over another
+    load(path);
   }, [path, load]);
 
   const save = async () => {

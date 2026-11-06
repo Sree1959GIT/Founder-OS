@@ -16,6 +16,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.agents.registry import REGISTRY
+from app.agents.setup import build_decisions
 from app.config import DeepProvider, Settings
 from app.llm.router import build_cloud_provider, build_routes
 
@@ -76,6 +77,8 @@ def _apply(app: Any, settings: Settings, choices: dict[str, Any]) -> Settings:
     if llm.ledger is not None:
         llm.ledger.monthly_cap_usd = effective.cloud_monthly_cap_usd
     orchestrator.approval_policy = effective.team_approval
+    if effective.decision_provider == "jev":  # a cloud service: "cloud off" must mean nothing leaves the PC
+        orchestrator.decisions = build_decisions(effective, llm)
     if orchestrator.max_local != effective.max_local_agents:
         orchestrator.max_local, orchestrator.local_slots = (
             effective.max_local_agents,

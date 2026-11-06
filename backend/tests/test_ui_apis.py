@@ -195,3 +195,35 @@ def test_a_mapping_must_name_real_columns_once_each(client: TestClient) -> None:
     assert put("nonsense", {"a": "month"}) == 422
     assert put("pnl", {"a": "nonsense"}) == 422
     assert put("pnl", {"a": "month", "b": "month"}) == 422
+
+
+def test_a_mapping_is_found_under_the_name_ingest_uses(client: TestClient) -> None:
+    messy = "Kol A, Kol B,Kol C,Kol D|2026-10,Rent,opex,1000|".replace("|", chr(10)).encode()
+    columns = {"Kol A": "month", " Kol B": "account", "Kol C": "category", "Kol D": "amount"}
+    name = "pnl (1).csv"
+    assert client.put("/api/data/mappings", json={"key": name, "table": "pnl", "columns": columns}).status_code == 200
+    files = {"file": (name, messy, "text/csv")}
+    assert client.post("/api/data/upload", files=files, data={"table": "pnl"}).status_code == 200
+
+
+# --- what the review found -----------------------------------------------------------------------------------------
+def test_cloud_off_in_settings_also_stops_the_cloud_decision_model(settings: Settings) -> None:
+    base = settings.model_copy(
+        update={"decision_provider": "jev", "jev_api_key": SecretStr("k"), "cloud_allowed": True}
+    )
+    with TestClient(create_app(base)) as client:
+        orchestrator = client.app.state.orchestrator  # type: ignore[attr-defined]
+        assert orchestrator.decisions.provider.name == "jev"
+        assert client.put("/api/settings", json={"cloud_allowed": False}).status_code == 200
+        assert orchestrator.decisions.provider.name != "jev"
+
+
+def test_the_matrix_uses_the_same_four_words_on_the_board_and_in_the_note(client: TestClient) -> None:
+    criteria = client.get("/api/priorities").json()["criteria"]
+    high = {c["name"]: 5 for c in criteria}
+    options = [{"name": "Top right", "scores": high, "cost": None}]
+    view = client.put("/api/priorities", json={"criteria": criteria, "options": options}).json()
+    assert view["scoring"]["options"][0]["quadrant"] == "Do now"
+    note = client.get("/api/vault/notes/notes/priorities.md").json()
+    assert "Do now" in note["content"]
+    assert "Quick win" not in note["content"]

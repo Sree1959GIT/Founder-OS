@@ -479,3 +479,28 @@ async def test_event_bus_replays_and_filters() -> None:
     await asyncio.wait_for(task, 1)
     assert got == ["1:run.started", "4:run.finished"]
     assert [e.seq for e in bus.history(since=2)] == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["What's our MRR for January?", "What's our burn this quarter?", "How much runway do we need?"],
+)
+def test_a_question_about_another_period_or_a_target_is_not_a_lookup(question: str) -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric(question) is None
+
+
+@pytest.mark.parametrize(
+    ("question", "metric"),
+    [
+        ("What is our runway?", "runway"),
+        ("What's our net burn?", "net_burn"),
+        ("Tell me our MRR", "mrr"),
+        ("How long is our runway?", "runway"),
+    ],
+)
+def test_a_plain_lookup_still_takes_the_fast_path(question: str, metric: str) -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric(question) == metric

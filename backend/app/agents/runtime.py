@@ -265,6 +265,55 @@ def rule_metric(text: str) -> str | None:
     return None
 
 
+_LOOKUP_WORDS = frozenset(
+    [
+        "a",
+        "am",
+        "are",
+        "at",
+        "can",
+        "cost",
+        "costs",
+        "current",
+        "currently",
+        "do",
+        "does",
+        "give",
+        "have",
+        "how",
+        "i",
+        "is",
+        "latest",
+        "logo",
+        "long",
+        "many",
+        "me",
+        "month",
+        "monthly",
+        "months",
+        "much",
+        "my",
+        "now",
+        "of",
+        "our",
+        "per",
+        "please",
+        "rate",
+        "right",
+        "s",
+        "show",
+        "tell",
+        "the",
+        "today",
+        "us",
+        "we",
+        "what",
+        "whats",
+        "you",
+    ]
+)
+
+
 def single_metric(message: str) -> str | None:
     """The one metric a plain question asks for, or None if it asks for anything more than that number.
 
@@ -281,6 +330,9 @@ def single_metric(message: str) -> str | None:
         if re.search(pattern, left):
             found.add(metric)
             left = re.sub(pattern, " ", left)
+    # Every other word must be one a plain lookup uses: "MRR for January" and "runway we need" are other questions.
+    if set(re.findall(r"[a-z]+", left)) - _LOOKUP_WORDS:
+        return None
     return found.pop() if len(found) == 1 else None
 
 

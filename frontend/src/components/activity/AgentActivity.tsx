@@ -30,7 +30,8 @@ function Proposal({ run, catalog }: { run: RunView; catalog: AgentCatalog | null
   const [busy, setBusy] = useState(false);
 
   const team = run.proposedTeam.filter((a) => !removed.includes(a.id));
-  const anyCloud = team.some((a) => a.is_cloud);
+  const anyCloud =
+    team.some((a) => a.is_cloud) || added.some((a) => catalog?.agents.find((c) => c.type === a.type)?.is_cloud);
   const onTeam = new Set(team.map((a) => a.type));
   const available = (catalog?.agents ?? []).filter((a) => a.spawnable && !onTeam.has(a.type));
 

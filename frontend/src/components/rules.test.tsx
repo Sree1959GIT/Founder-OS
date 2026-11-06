@@ -143,7 +143,7 @@ describe("helpers", () => {
     expect(metricValue(null, "USD")).toBe("n/a");
   });
   it("reads a CSV header line", () => {
-    expect(csvHeaders('Kol A,"Kol, B", Kol C\r\n1,2,3')).toEqual(["Kol A", "Kol, B", "Kol C"]);
+    expect(csvHeaders('Kol A,"Kol, B", Kol C\r\n1,2,3')).toEqual(["Kol A", "Kol, B", " Kol C"]);
   });
   it("strips frontmatter and wikilinks", () => {
     expect(stripFrontmatter("---\ntitle: x\n---\n# Body")).toBe("# Body");
