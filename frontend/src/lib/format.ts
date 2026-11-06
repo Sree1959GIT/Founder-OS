@@ -51,7 +51,7 @@ export function seconds(ms: number | null | undefined): string {
 }
 
 const FIGURE =
-  /[$€£₹]\s?\d[\d,.]*(?:\s?(?:k|m|bn?|tn|thousand|million|billion|trillion|crore|lakh))?|\d[\d,.]*\s?(?:%|percent|k\b|m\b|bn?\b|tn\b|thousand|million|billion|trillion|crore|lakh)/gi;
+  /[$€£₹]\s?\d[\d,.]*(?:\s?(?:thousand|million|billion|trillion|crore|lakh|bn|tn|k|m|b)\b)?|\d[\d,.]*\s?(?:%|percent\b|(?:thousand|million|billion|trillion|crore|lakh|bn|tn|k|m|b)\b)/gi;
 const PATH = /[\w./-]+\.(?:markdown|md|pdf|csv|xlsx|txt)\b/gi;
 
 /**
