@@ -65,6 +65,12 @@ export function safeStep(step: string): string {
   return step.replace(FIGURE, "a figure").replace(PATH, "a source");
 }
 
+export function stepWords(step: string, status: string): string {
+  if (step) return safeStep(step);
+  if (status === "queued") return "waiting to start";
+  return status === "done" || status === "failed" || status === "cancelled" ? "finished" : "working";
+}
+
 export const STATUS_WORDS: Record<string, string> = {
   queued: "Queued",
   thinking: "Thinking",
@@ -116,3 +122,20 @@ export const stripFrontmatter = (content: string): string =>
 /** `[[Note|alias]]` as plain words for the memo sheet. */
 export const withoutWikilinks = (text: string): string =>
   text.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
+
+/** The first line of a CSV, split on commas outside quotes. Excel files are mapped after they have loaded once. */
+export function csvHeaders(text: string): string[] {
+  const line = text.replace(/^\s+/, "").split(/\r?\n/, 1)[0] ?? "";
+  const cells: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (const ch of line) {
+    if (ch === '"') quoted = !quoted;
+    else if (ch === "," && !quoted) {
+      cells.push(cell.trim());
+      cell = "";
+    } else cell += ch;
+  }
+  cells.push(cell.trim());
+  return cells.filter(Boolean);
+}

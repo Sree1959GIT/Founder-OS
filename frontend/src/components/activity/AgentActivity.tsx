@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ErrorNote, EmptyNote, Pill, VerifiedBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { approveRun, cancelAgent, cancelRun, rerunAgent, type AgentInstance, type TeamEdit } from "@/lib/api";
-import { agentCode, agentKind, safeStep, seconds, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
+import { agentCode, agentKind, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
 import { slotsInUse, useCatalog, type AgentCatalog } from "@/hooks/useCatalog";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -233,7 +233,7 @@ function AgentCard({ run, agent }: { run: RunView; agent: AgentView }) {
         {agent.brief}
       </p>
       <p className="num min-h-[34px] rounded-lg bg-background px-2 py-1.5 text-[11.5px] leading-snug text-foreground">
-        {agent.step ? safeStep(agent.step) : "waiting to start"}
+        {stepWords(agent.step, agent.status)}
       </p>
       <div
         role="progressbar"

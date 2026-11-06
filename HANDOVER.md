@@ -5,7 +5,7 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M4: Canvas UI** (in progress, branch `claude/m4-canvas-ui`). P1–P7 are decided (PRD §12). M0, M1, M2, M3a, M3b and M3c are ACCEPTED and merged.
+- **Next milestone:** **M4: Canvas UI** (built, awaiting the founder's Major gate, branch `claude/m4-canvas-ui`). Then M5. P1–P7 are decided (PRD §12). M0, M1, M2, M3a, M3b and M3c are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-06 (M4 session)
 
@@ -18,7 +18,7 @@
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
-| M4 | Canvas UI (first demoable build) | NOT STARTED | |
+| M4 | Canvas UI (first demoable build) | DONE, awaiting Major gate | All of PRD §8 for M4. Voice controls stay disabled until M5 |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
@@ -63,13 +63,13 @@
 - Started (UTC): 2026-11-06 11:53 (local Windows session, time-box 2 hours), branch `claude/m4-canvas-ui`, target **M4** (gate tier: **Major**). An "M4 (partial)" PR is fine if time runs out.
 - Plan, in the founder's priority order:
   - [x] Gate log and stale lines tidied
-  - [ ] (1) People & Ops wording; "traveling" guard
-  - [ ] (added, 40 min) Why a metric question is slow or unverified; fix over-strict checks; fast path; live loop 10/10 under 8 s
-  - [ ] (2) Conversation panel and lane; Agent Activity panel
-  - [ ] (3) Canvas cards: Runway with lineage popover, decision frame, memo with MD/PDF export
-  - [ ] (4) Scenario Simulator and Monte Carlo fan; Prioritisation Matrix; data and vault panels; Settings
-  - [ ] (5) Playwright smoke test against the backend with fakes, in CI
-  - [ ] Windows checklist, self-review, PR, CI green
+  - [x] (1) People & Ops wording; "traveling" guard
+  - [x] (added, 40 min) Why a metric question is slow or unverified; fix over-strict checks; fast path; live loop 10/10 under 8 s
+  - [x] (2) Conversation panel and lane; Agent Activity panel
+  - [x] (3) Canvas cards: Runway with lineage popover, decision frame, memo with MD/PDF export
+  - [x] (4) Scenario Simulator and Monte Carlo fan; Prioritisation Matrix; data and vault panels; Settings
+  - [x] (5) Playwright smoke test against the backend with fakes, in CI
+  - [x] Windows checklist, self-review, PR, CI green
 
 Previous session (2026-11-06, M3c gate fix):
 - 2026-11-06 (local Windows bug-fix session for the M3c gate, time-box 1 hour), branch `claude/m3c-decision-models`, PR #8. It ran a little over the hour, because the live runs found two more faults worth fixing.
@@ -149,6 +149,38 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Canvas UI (M4)
+**What you can do now**
+- Open `http://127.0.0.1:3000` and run the whole product in the browser: ask, watch the team, approve or edit it, read the answer with its sources, try scenarios, read and export the memo.
+- **Workspace:** the Advisor and conversation lane on the left, the numbers in the middle, a live agent list on the right. Every KPI has a dashed chip that opens its formula, rows and file.
+- **Activity:** the proposed team to approve, edit, add to, remove from or run locally; live cards with Cancel and Re-run per agent; a timeline.
+- **Decisions:** the Prioritisation Matrix and the memo sheet, with Edit, Export .md and Export PDF.
+- **Data, Vault, Settings:** load files and fix column mappings; read, search, edit and add notes; set cloud, provider per agent, cost cap, approval and slots.
+- A single-metric question is written by code in about 2 s and verified (measured below).
+
+**How it keeps the safety rules on screen**
+- "Verified" appears only where the backend returned `true`. Otherwise it says "Not verified" with a count, and while an answer is still being written it says nothing.
+- `issues` and `agent.step` are the audit trail and can name a removed figure. The UI shows `issues` only as a count, and every step goes through `safeStep` first, which strips tool arguments, what the Verifier found, figures and file paths. Removed figures are therefore on the API but never on the screen. The smoke test checks this with a model that invents "$150 billion" and a made-up citation.
+- Source chips come only from the `citations` field, never from text in an answer.
+- A decision answer leads with the proposed option, then the full model, labelled "assumption, confirm". The model's own text below may still open differently: the card, not the text, sets the order.
+- The UI formats numbers and never calculates them. The one position it works out is the "Under 3 months of cash" band: the three months before the zero-cash month on the chart, counted in months, not money.
+
+**Measured here on 2026-11-06 (PowerShell, scratch backend on port 8011, your vault untouched)**
+- `scripts/metric_loop.py`: `METRIC LOOP: verified 10/10 | median 1.7 s | slowest 2.4 s | target under 8 s`. Before the fix: 7.5 to 8.4 s and verified 4/5. Cause: three LLM calls with about 4,775 input tokens, and the Verifier rejected a correct burn answer that mentioned months as a wrong meaning.
+- In the browser with the real model: "What is our runway?" 2.1 s and 4.9 s, Verified, both runs. A Dubai decision after approval: 59 s and 63 s, **Not verified** both runs (see below). No removed figure on any screen, and no page errors.
+- The Ollama move to a named volume is done (your request): warm responses are about 0.5 s.
+
+**Not done, and limits**
+- **The Dubai answer currently comes out Not verified.** All three live runs today did (13 issues in each of the two I read). The scratch vault already held a Dubai memo, and the Librarian and the Advisor quote its starter targets ($27,000.00, $36,000.00, 10.44 months) and its 50% forecasts. These have no lineage in this run, so the Verifier flags them; the Librarian also got one "wrong meaning". The figures are the memo's own labelled starters, not inventions, and the badge is telling the truth. I did not change it, since the brief was no backend behaviour change. A next step is to let a figure quoted from a decision on record carry that record as its source.
+- A memo is written only when the Memo Writer is on the team, or you ask for one. The Planner did not add it on the Dubai runs here, so W6 asks you to add it.
+- Voice is M5: the microphone button is present but disabled.
+- A page reload starts an empty conversation in the browser. The backend still has the runs and the memo is in the vault, but the UI does not reload past turns (run state is in memory, last 100 runs).
+- Column mapping for a file that fails to load works from a CSV's header line. An Excel file that fails shows the error; once loaded its mapping can be edited.
+- Dragging a bubble in the matrix sets every criterion on that axis to one score. To vary them separately, edit `notes/priorities.md` in Obsidian.
+- The base and scenario lines use one colour pair from the mock-ups. The palette validator passes colour-blind separation and contrast, and fails only its lightness band for dark surfaces; the line style (solid against dashed) and the legend also separate them. I kept your mock-up colours.
+- With nothing running, small talk such as "how is it going?" starts a run, and the Advisor answers with a chatty reply that can carry a Verified badge, since it has no figures to fail. It is backend behaviour, so I left it.
+- The conversation lane's question offers and amendments are unit-tested on the state and covered by the backend tests, but the Playwright smoke test does not drive them: with a scripted model a run finishes too quickly to interrupt. W9 covers them by hand.
+
 ### Source check (fix after the founder's M3c review, 2026-11-06)
 **What you can do now**
 - A figure with a made-up source can no longer reach you. Live, during this fix, the Market Scout wrote "$160 billion" and "$166 billion" unprompted; code removed them before any later agent saw them.
@@ -543,14 +575,44 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M4 session)
-0. **Gate check:** M3c is a **Light** gate. The founder runs RF1–RF6 and merges PR #8. Act on any "Founder feedback" first.
-1. **M4's first task:** People & Ops opening with "You are you.", if v2 did not fix it. It was seen on v1, and not in the three Dubai runs on v2 whose text I read, though People & Ops is not on every team: check several runs. In one v2 run it also wrote "Stop traveling for the pilot": `guards._stops_an_option` matches "travel" as a whole word, so it misses "traveling".
-2. M4 (PRD §8): the canvas UI, including the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
-3. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
-4. Smaller ideas: count Jev in the cost ledger; a cash metric; a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
+## Next steps (for the M5 session)
+0. **Gate check:** M4 is a **Major** gate. The founder runs W0 to W15 below and merges the PR. Act on any "Founder feedback" first.
+1. M5 (PRD §8): the voice pipeline. The microphone and voice controls in the Advisor panel are the hook. It must test GPU sharing.
+2. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
+3. Dubai verification: let a figure quoted from a decision on record carry that record as its source (Current state, M4 limits).
+4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
+**M4 Canvas UI (Major gate, about 40 minutes). Run this one first: W0 to W15.** I ran the same flow in a browser here against a test backend with the real model. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **W0. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; Set-Location frontend; npm install; Set-Location ..; .\run.bat`
+  **Expect:** the browser opens `http://127.0.0.1:3000`. Wait until the backend window says the Ollama model is loaded.
+- **W1. First look.** **See:** a top bar with Workspace, Activity, Decisions, Data, Vault and a gear; "Local only"; health dots. The Advisor on the left with three starter chips. Four KPI cards: Runway `10.65 mo`, Net burn `$172,280.47`, MRR `$255,344.27`, Gross margin `72.13%`. Below them the cash chart and Monte Carlo. Colours and layout should match `docs/design/` mock-ups.
+- **W2. Lineage.** Click the dashed blue chip on the Runway card. **See:** a popover with Formula, Period, Rows, File, Inputs, and a SQL fold. Press Esc: it closes.
+- **W3. Simulator.** Drag **New hires** to 5. **See:** within a second the dashed amber line separates from the solid blue one, "Scenario, with growth" falls, the amber "Under 3 months of cash" band and "Zero cash" line move left, and the Monte Carlo fan changes a moment later. An "assumption, confirm" tag sits under each chart. Click **Reset levers**. Open **Show as a table**.
+- **W4. A metric question.** Click the chip **What is our runway?** **See:** in a few seconds an answer with a green **Verified**, "written by code", the figure 10.65 months, and a chip you can click for its lineage.
+- **W5. The metric loop.** In PowerShell:
+  `.\.venv\Scripts\python.exe scripts\metric_loop.py --base http://127.0.0.1:8000 --question "What is our runway?" --count 10 | Select-Object -Last 1`
+  **Expect:** `METRIC LOOP: verified 10/10 | median ... | slowest ... | target under 8 s`, every time under 8 s once warm.
+- **W6. Dubai: the team.** Gear > **Ask before a team runs** > **Always**. Back on Workspace, ask **Should we open a Dubai office?** **See:** under your question a card leading with **Proposed: Travel-led pilot** and its monthly cost, then **Full model: Full office**, tagged "assumption, confirm". In the middle, the title "Dubai office" (or your words), a pill "One-way door · full analysis", and the **Decision frame**: options, a low/base/high cost table, Goal check. Click **Review the team**. **See:** the amber approval panel with a card per agent. Change one brief, remove one agent, choose **Memo Writer** in the list and press **Add agent** (W11 needs its memo). If an agent on the team is Cloud, you also see **Run all locally instead**. Click **Approve and run**.
+- **W7. Dubai: the run.** **See:** cards appear, each with Local or Cloud, its brief (your edit on that one), a step line, a thin progress bar, and a status in words. Slots show `n/2`. Flip **Timeline** and back. Press **Cancel** on one running agent: it says Cancelled, the run goes on. When the run ends, press **Re-run** on an agent, change its brief, **Run again**: a new run starts. (While the team is still working, re-running an agent that has finished is refused with a message: that is the backend rule.)
+- **W8. Dubai: the answer.** Back on Workspace (it takes about a minute or two). **See:** the same lead card, then the text, then source chips, one per file. Click a chip: that note opens in the Vault. Under the frame, a card per agent with its findings; Devil's Advocate shows High and Med risk badges if it wrote risks. The badge says **Verified** or **Not verified · n**. **Expect Not verified here, for now, if a Dubai memo is already in your vault: see Current state > Not done, and limits.**
+- **W9. Talking during a run.** Ask the Dubai question again, and while it runs type each of these and send:
+  (a) `how far along are you?`: a short status line appears in the lane.
+  (b) `also make it a two person team`: an amber card, "That changes the request. Restart with your change?", with **Restart with my change** and **Keep going**. Press **Keep going**.
+  (c) `what about our churn?`: a card "Queued for when this run finishes". When the run ends it changes to **Ask it now** and **Drop it**. Press **Ask it now**: it runs.
+  (d) Press **Quiet off** so it says **Quiet on**: narration stops on the next run; questions it needs answered still come.
+- **W10. No removed figure, no fake source.** On each of Workspace, Activity and Decisions, press Ctrl+F and search `billion`. **Expect:** no match (the Market Scout tends to invent one). Search `removed: ` : if it appears, it shows only "(removed: unsupported source)" or similar, with no figure in it. Click every source chip: each opens a real note. If one says the note cannot be read, tell me.
+  To compare with the audit trail: `$r = Invoke-RestMethod http://127.0.0.1:8000/api/runs/<run id>; $r.result.issues` can name a removed figure; that is on purpose, and that figure must not be on any screen. The run id is in the Network tab of the browser (F12), on the `stream` request.
+- **W11. Memo.** Click **Decisions**. **See:** on the right a paper sheet with the Dubai memo, with a status chip, "Review ..." and, for the memo of this run, key-number tiles. Click **Export .md**: a file downloads and opens as the same text. Click **Export PDF**: the print dialog shows only the sheet, on white; save it. Click **Edit**, change a word, **Save to the vault**: the sheet shows it, and Obsidian shows it too.
+- **W12. Matrix.** On the left of Decisions, add `Hire a second SDR` and `Partner channel`. **See:** numbered bubbles and a ranking. Drag a bubble to the top right: its label in the ranking changes to "Do now" and the numbers change. Focus a bubble with Tab and press arrow keys: it moves. Change a weight: the ranking recomputes. `notes/priorities.md` is now in your vault.
+- **W13. Data.** Click **Data**. **See:** the tables with file, rows and time. Create a messy file and upload it with **Upload CSV or Excel**:
+  `"Kol A,Kol B,Kol C,Kol D`n2026-10,Rent,opex,1000" | Set-Content -Encoding UTF8 $env:TEMP\messy.csv`
+  **See:** "did not load", and a form. Choose the table `pnl`, set the columns to month, account, category, amount, then **Save the mapping and load the file**. **See:** "messy.csv is loaded." **Afterwards press Load sample data**, so your numbers return to the demo set.
+- **W14. Vault.** Click **Vault**. Search `runway`, open a result, press **Edit**, change a word, **Save**. Use **Add a file to the vault**. **See:** the note appears in its folder, with "Linked from" where it has backlinks.
+- **W15. Settings.** Click the gear. **See:** the green privacy note; providers with "key set" or "no key", and never a key; a provider list per agent, with "Local only" on those that must stay local; the cost cap and spend. Turn **Allow cloud agents** on, close and restart `run.bat`, reopen: your choice is kept. Set it back. Optional smoke test: `Set-Location frontend; npx playwright install chromium; npx playwright test; Set-Location ..` **Expect:** `1 passed`.
+
 **M3c re-test after the C4 fix (Light gate, about 10 minutes). Run this one first: RF1 to RF6.** RF2 to RF5 ran in Windows PowerShell 5.1 here, RF5 against a test backend on port 8011 with scratch data, so your vault was not touched by that run. From `D:\Founder-OS`. Each prints one summary line to compare with **Expected**. Then merge, or write the issues under "Founder feedback".
 
 - **RF1. Get the code.** `git fetch origin; git checkout claude/m3c-decision-models; git pull origin claude/m3c-decision-models; $env:PYTHONIOENCODING = 'utf-8'`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
@@ -938,7 +1000,7 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
-1. **Ollama model storage (performance, optional).** Your `ollama` container mounts its models from `C:/Dev_Tools/LLM Models/ollama` (a Windows bind mount). Every Ollama request spends ~3.7 s before inference (`/api/tags` alone ~1.2 s), and a cold load of qwen3:8b takes ~3.5 min. A Docker named volume (or a folder inside WSL) usually cuts both to seconds, which would make answers 2–3x faster (runway: ~15–20 s now, likely ~5 s). It is your n8n stack, so I changed nothing. FounderOS works either way: it preloads the model at startup and loads it before a call when needed. Your call whether to move it.
+1. ~~Ollama model storage~~: **resolved 2026-11-06**: moved to a Docker named volume at your request; the Windows folder was kept. Old text: **Ollama model storage (performance, optional).** Your `ollama` container mounts its models from `C:/Dev_Tools/LLM Models/ollama` (a Windows bind mount). Every Ollama request spends ~3.7 s before inference (`/api/tags` alone ~1.2 s), and a cold load of qwen3:8b takes ~3.5 min. A Docker named volume (or a folder inside WSL) usually cuts both to seconds, which would make answers 2–3x faster (runway: ~15–20 s now, likely ~5 s). It is your n8n stack, so I changed nothing. FounderOS works either way: it preloads the model at startup and loads it before a call when needed. Your call whether to move it.
 
 Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
@@ -960,6 +1022,13 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M4 session (2026-11-06)
+- Item (1): "You are you." and "traveling" guards, with tests. The metric question: cause found, Verifier fixed ("months at this burn" is a claim about runway), code-written fast path. Live 10/10 verified, median 1.7 s.
+- Backend for the UI: `/api/settings`, `/api/priorities`, `GET /api/runs/{id}/stream`, `PUT /api/data/mappings`, the frame on `team.proposed`, `local_only` on approve, run detail with message and frame.
+- Frontend: all views, Recharts, Markdown, hash routes, one state store fed by `/api/events`.
+- Playwright smoke test with a scripted model that invents a figure and a citation, in CI.
+- Found by driving it live: events arriving before the POST returned were lost (now held); a small question cleared the open decision off the canvas (the latest decision now stays); the same file showed one chip per heading (now one per file); `safeStep` left "illion" behind after masking "$160 b" (fixed, with a test).
+
 ### M3c fix session (2026-11-06)
 - Root cause: the Verifier flagged the figure but only `verified: false` changed. The text went on, and the `[UNVERIFIED: number without lineage: $150 billion]` flag itself carried the figure to the Advisor. A figure was checked against every passage in the run, never against the file it was cited to.
 - The first live run on the fix showed the fix itself removed your real 1.5 % churn goal, and left the Scout's recollections in Open numbers. Both fixed.
@@ -1020,6 +1089,14 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M4 session, 2026-11-06)
+- **Fast path for one metric:** a question of up to 22 words naming one metric gets a sentence written by code, plus at most one short LLM question under a 4 s timeout. It skips the Planner and the team. **Why:** your target; code cannot get the number wrong. **Tell me** if you would rather never have the optional question.
+- UI choices are saved in `<data>/<workspace>/ui_settings.json` and win over `.env` until changed. Keys stay in `.env`, and the API only says whether one is set.
+- The matrix's initiatives and weights live in the vault (`notes/priorities.md`), so Obsidian can read and edit them. Ranking stays code (`weighted_scoring`).
+- A run's Advisor text has one reader (`GET /api/runs/{id}/stream`, 409 for a second). A second window, or a reload, gets the finished result from `GET /api/runs/{id}`.
+- No client-side arithmetic on money. The fan chart uses the backend's P10 and P90 directly.
+- Hash routes (`#/activity` and so on) instead of a router library: six views do not need one.
 
 ## Decisions made (M3c fix session, 2026-11-06)
 - `Open numbers to confirm` keeps what to confirm but never the figure (your new rule replaces the M3b one).

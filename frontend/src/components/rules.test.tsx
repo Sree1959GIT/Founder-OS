@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AnswerCard, DecisionLead } from "@/components/chat/AnswerCard";
 import { CitationChips, LineageChip, VerifiedBadge } from "@/components/common";
 import { parseFrame, type ChatResult, type DecisionFrame, type Lineage } from "@/lib/api";
-import { metricValue, safeStep, stripFrontmatter, withoutWikilinks } from "@/lib/format";
+import { csvHeaders, metricValue, safeStep, stripFrontmatter, withoutWikilinks } from "@/lib/format";
 import type { RunView } from "@/lib/workspace";
 import { parseHash } from "@/hooks/useRoute";
 
@@ -141,6 +141,9 @@ describe("helpers", () => {
     expect(metricValue(0.71, "ratio", "gross_margin")).toBe("71.00%");
     expect(metricValue(3.2, "ratio", "ltv_cac")).toBe("3.20x");
     expect(metricValue(null, "USD")).toBe("n/a");
+  });
+  it("reads a CSV header line", () => {
+    expect(csvHeaders('Kol A,"Kol, B", Kol C\r\n1,2,3')).toEqual(["Kol A", "Kol, B", "Kol C"]);
   });
   it("strips frontmatter and wikilinks", () => {
     expect(stripFrontmatter("---\ntitle: x\n---\n# Body")).toBe("# Body");

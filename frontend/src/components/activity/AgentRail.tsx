@@ -1,6 +1,6 @@
 import { Pill } from "@/components/common";
 import { slotsInUse, useCatalog } from "@/hooks/useCatalog";
-import { safeStep, seconds, STATUS_WORDS } from "@/lib/format";
+import { safeStep, seconds, STATUS_WORDS, stepWords } from "@/lib/format";
 import { teamOf, useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +52,7 @@ export function AgentRail() {
               <Pill tone={agent.is_cloud ? "amber" : "ok"}>{agent.is_cloud ? "Cloud" : "Local"}</Pill>
             </div>
             <p className="mt-1 truncate text-xs text-muted-foreground" title={agent.step ? safeStep(agent.step) : undefined}>
-              {agent.step ? safeStep(agent.step) : "waiting to start"}
+              {stepWords(agent.step, agent.status)}
             </p>
             <p className="num mt-0.5 text-[11px] text-muted-foreground">
               {STATUS_WORDS[agent.status] ?? agent.status}

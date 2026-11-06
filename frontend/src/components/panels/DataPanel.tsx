@@ -13,25 +13,9 @@ import {
   type LoadedTable,
   type SheetMapping,
 } from "@/lib/api";
+import { csvHeaders } from "@/lib/format";
 
 const selectClass = "h-10 min-w-0 rounded-lg border border-border-strong bg-background px-2 text-sm";
-
-/** The first line of a CSV, split on commas outside quotes. Excel files are mapped after they have loaded once. */
-export function csvHeaders(text: string): string[] {
-  const line = text.replace(/^﻿/, "").split(/\r?\n/, 1)[0] ?? "";
-  const cells: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (const ch of line) {
-    if (ch === '"') quoted = !quoted;
-    else if (ch === "," && !quoted) {
-      cells.push(cell.trim());
-      cell = "";
-    } else cell += ch;
-  }
-  cells.push(cell.trim());
-  return cells.filter(Boolean);
-}
 
 function MappingEditor({
   fileKey,

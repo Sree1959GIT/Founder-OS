@@ -70,7 +70,7 @@ function RiskList({ artifact }: { artifact: Artifact }) {
   return (
     <ul className="mb-3 flex flex-col gap-2" aria-label="Risks">
       {risks.map((r, i) => {
-        const high = (r.likelihood ?? "").toLowerCase() === "high" || (r.impact ?? "").toLowerCase() === "high";
+        const high = (r.impact ?? "").toLowerCase() === "high";
         return (
           <li key={i} className="rounded-lg border border-border bg-background p-2.5">
             <div className="mb-1 flex items-start gap-2">
@@ -85,6 +85,7 @@ function RiskList({ artifact }: { artifact: Artifact }) {
               </span>
               <span className="text-[13px]">{r.risk}</span>
             </div>
+            {r.likelihood ? <p className="text-xs text-muted-foreground">Likelihood: {r.likelihood.toLowerCase()}</p> : null}
             {r.mitigation ? <p className="text-xs text-muted-foreground">Mitigation: {r.mitigation}</p> : null}
           </li>
         );
@@ -95,6 +96,7 @@ function RiskList({ artifact }: { artifact: Artifact }) {
 
 function FindingCard({ agent }: { agent: AgentResult }) {
   const risks = agent.artifacts.filter((a) => a.kind === "risk_register");
+  const hasRisks = risks.some((a) => Array.isArray(a.data.risks) && a.data.risks.length > 0);
   return (
     <Section
       title={agent.name}
@@ -108,7 +110,7 @@ function FindingCard({ agent }: { agent: AgentResult }) {
       {risks.map((a) => (
         <RiskList key={a.id} artifact={a} />
       ))}
-      {agent.text ? <AnswerText text={agent.text} /> : null}
+      {agent.text && !hasRisks ? <AnswerText text={agent.text} /> : null}
       {agent.citations.length ? (
         <div className="mt-2">
           <CitationChips citations={agent.citations} />
