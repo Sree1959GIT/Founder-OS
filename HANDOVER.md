@@ -752,6 +752,11 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M3c] Fabricated figure with a fabricated citation reached the answer
+- **Did:** checklist C4 (Dubai memo, cloud off).
+- **Got:** Market Scout wrote "Dubai's GDP is approximately $150 billion [notes/economic-overview.md]"; that note does not exist in the vault. The Devil's Advocate built a risk on it, and the Advisor's answer asked "Are you certain the $150 billion market size figure is verified...". `answer verified False` and `memo verified False`, but the text still reached the founder.
+- C2, C3 and the rest of C4 pass (goal consistency, reasons for rejected options; the "decided" lines were correct negatives).
+
 ### [M3b → M3c, first task] Decision prose still contradicts the structured frame (not blocking): RESOLVED in M3c (re-test C4)
 - Dubai memo (RD3): the Decision text says the travel-led pilot "aligns with the goal of extending runway past 12 months", but the Goal check (correctly) says it moves away from that goal (runway 10.65, pilot -0.21). Add a code check: Decision/answer text must never contradict goal statuses in the decision frame.
 - Rejected alternatives: "Partner or distributor: Not proposed, though it takes no more runway than Travel-led pilot" gives no reason. A cheaper option that is not proposed must carry a reason (control, speed, reversibility).

@@ -33,6 +33,7 @@ from app.agents.decision_frame import DecisionFrame, build_frame
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.registry import REGISTRY
 from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, _team, advise, plan, team_impact
+from app.agents.sources import vault_checker
 from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
 from app.agents.verifier import verify_numbers
@@ -326,7 +327,8 @@ class AgentOrchestrator:
         parts: list[str] = []
         meta: dict[str, Any] = {"provider": "", "model": "", "usage": Usage()}
         claim_issues: list[str] = []
-        async for chunk in advise(self.router, state["message"], state["plan"], results, claim_issues):
+        exists = vault_checker(self.ctx_factory(""))
+        async for chunk in advise(self.router, state["message"], state["plan"], results, claim_issues, exists):
             if chunk.delta:
                 parts.append(chunk.delta)
                 await run.deltas.put(chunk.delta)

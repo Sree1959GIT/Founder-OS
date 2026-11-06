@@ -758,12 +758,12 @@ async def test_a_memo_is_never_verified_while_it_rests_on_assumptions(finance: A
 async def test_an_unconfirmed_figure_in_one_memo_is_not_a_source_for_the_next(finance: Any, vault: Any) -> None:
     run = orchestrator(FakeProvider(default=_sloppy), finance, vault)
     first = await run.start(DUBAI).task  # type: ignore[misc]
-    assert first.memo is not None and any("73,219" in line for line in first.memo.open_numbers)
+    assert first.memo is not None and any("figure to confirm" in line for line in first.memo.open_numbers)
+    assert not any("73,219" in line for line in first.memo.open_numbers)
     second = await run.start(DUBAI).task  # type: ignore[misc]
     assert second.memo is not None
     text = (vault.vault.root / second.memo.path).read_text(encoding="utf-8")
-    assert "73,219" not in text.split("## Open numbers to confirm")[0]
-    assert any("73,219" in line for line in second.memo.open_numbers)
+    assert "73,219" not in text and "figure to confirm" in text.split("## Open numbers to confirm")[1]
 
 
 def test_the_memos_metrics_are_for_a_founder(tmp_path: Path, finance: Any, vault: Any) -> None:

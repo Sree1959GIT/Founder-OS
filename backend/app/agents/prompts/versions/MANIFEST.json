@@ -45,26 +45,26 @@
   },
   "people_ops": {
     "best": "v2",
-    "date": "2026-11-05",
+    "date": "2026-11-06",
     "model": "qwen3:8b",
     "results": {
       "v1": {
         "cases": 5,
-        "mean_latency_s": 19.6,
+        "mean_latency_s": 17.2,
         "passed": 0,
-        "repairs": 3
+        "repairs": 2
       },
       "v2": {
         "cases": 5,
-        "mean_latency_s": 10.4,
+        "mean_latency_s": 11.8,
         "passed": 5,
-        "repairs": 2
+        "repairs": 3
       },
       "v3": {
         "cases": 5,
-        "mean_latency_s": 20.7,
-        "passed": 2,
-        "repairs": 2
+        "mean_latency_s": 14.7,
+        "passed": 4,
+        "repairs": 1
       }
     }
   },

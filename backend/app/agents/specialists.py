@@ -24,7 +24,16 @@ from app.agents.decision_frame import (
 )
 from app.agents.events import Artifact
 from app.agents.guards import guarded, without_contradictions
-from app.agents.verifier import Fact, split_sentences, verify_numbers
+from app.agents.sources import (
+    REMOVED_NOTE,
+    Evidence,
+    citation_inside_the_sentence,
+    cited_sources,
+    masked,
+    simple_evidence,
+    without_unsupported,
+)
+from app.agents.verifier import Fact, extract_figures, number_supported, split_sentences, verify_numbers
 from app.engine.calibration import PredictionIn
 from app.vault.manager import NoteExistsError
 
@@ -32,6 +41,10 @@ REVIEW_AFTER_DAYS = 30
 MAX_TEAM = 8
 REGULATORY_NOTE = "This flags points to verify with a qualified adviser; it is not legal or tax advice."
 SCOUT_LOCAL_NOTE = "This comes from your vault only: cloud is off, so no web research was done."
+SCOUT_TO_FIND = (
+    "market size and growth; main competitors and their prices; demand (named prospects, pipeline, inbound interest); "
+    "local costs (rent, salaries, licences)"
+)
 
 # Words that call for a type whatever the plan says. A small model can leave a specialist out; the founder asked.
 _CUES: list[tuple[str, re.Pattern[str]]] = [
@@ -99,6 +112,27 @@ RULE_TEXT: dict[str, str] = {
     ),
     "market_scout": "Written without the language model, and nothing relevant was found in the vault.",
 }
+
+
+def scout_without_web(text: str, retrieved: set[str]) -> str:
+    """Cloud off: what the vault says, with its source, and what still needs finding. Nothing from the model's memory.
+
+    Only sentences that cite a passage the search returned stay, so an example figure or a recalled market fact cannot
+    reach the team however it is worded. The list of what to find is code's, and holds no figures.
+    """
+    removed = f" {REMOVED_NOTE}" if REMOVED_NOTE in text else ""
+    joined = citation_inside_the_sentence(text.replace(REMOVED_NOTE, ""))
+    kept = [
+        piece.strip()
+        for line in joined.splitlines()
+        for piece in split_sentences(line)
+        if piece.strip() and cited_sources(piece, retrieved) & retrieved
+    ]
+    if kept:
+        lead = " ".join(kept) + f" Still to find: {SCOUT_TO_FIND}."
+    else:
+        lead = f"Your vault has no market data for this decision. To find: {SCOUT_TO_FIND}."
+    return f"{lead} {SCOUT_LOCAL_NOTE}{removed}"
 
 
 def team_for_message(message: str) -> list[str]:
@@ -623,39 +657,45 @@ def with_required_fields(
     )
 
 
-_LIST_MARK = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
-
-
-def _pull_unbacked(text: str, known: list[Fact], context: str, moved: list[str]) -> str:
-    """A figure with no source leaves the text and goes on the list for the founder to confirm.
+def _pull_unbacked(text: str, evidence: Evidence, moved: list[str]) -> str:
+    """What cannot be backed leaves the text. The list for the founder keeps what to confirm, but not the figure.
 
     Its whole sentence goes, or its whole line in a list: half a risk line would make no sense on its own.
     """
-    if not verify_numbers(text, known, context):
-        return text
-    lines: list[str] = []
-    for line in text.splitlines():
-        if not verify_numbers(line, known, context):
-            lines.append(line)
-        elif _LIST_MARK.match(line):
-            moved.append(_LIST_MARK.sub("", line).strip())
-        else:
-            kept: list[str] = []
-            for piece in split_sentences(line):
-                if piece.strip() and verify_numbers(piece, known, context):
-                    moved.append(piece.strip())
-                else:
-                    kept.append(piece)
-            lines.append("".join(kept).strip())
-    return "\n".join(line for line in lines if line.strip()).strip()
+    kept, removed = without_unsupported(text, evidence)
+    moved.extend(f"{masked(sentence)} {REMOVED_NOTE}" for sentence in removed)
+    return kept
 
 
-def without_unbacked_figures(draft: MemoDraft, known: list[Fact], message: str) -> MemoDraft:
-    """A memo is kept for years: a figure with no lineage is never stated as fact, and never left as a scar."""
+def with_real_outcomes(draft: MemoDraft, evidence: Evidence, dropped: list[float]) -> MemoDraft:
+    """A forecast or stop rule may set its own target, but not cite a source that is not there, or rest on a figure the
+    source check already took out of the team's findings."""
+
+    def real(outcome: _Measurable) -> bool:
+        text = outcome.text()
+        rests = any(number_supported(f, dropped) for f in extract_figures(text))
+        return not evidence.missing_sources(text) and not rests
+
+    return draft.model_copy(
+        update={
+            "predictions": [p for p in draft.predictions if real(p)],
+            "kill_criteria": [k for k in draft.kill_criteria if real(k)],
+        }
+    )
+
+
+def without_unbacked_figures(
+    draft: MemoDraft, known: list[Fact], message: str, evidence: Evidence | None = None
+) -> MemoDraft:
+    """A memo is kept for years: a figure with no source is never in it, as a fact, a question or a scar.
+
+    The only figures it may set for itself are the targets of its forecasts and stop rules, listed as targets.
+    """
     moved: list[str] = list(draft.open_numbers)
+    check = evidence if evidence is not None else simple_evidence(known, message)
 
     def clean(text: str) -> str:
-        return _pull_unbacked(text, known, message, moved)
+        return _pull_unbacked(text, check, moved)
 
     title = draft.title if not verify_numbers(draft.title, known, message) else memo_title(message)
     options = [o.model_copy(update={"note": clean(o.note)}) for o in draft.options]
@@ -818,14 +858,22 @@ def _goal_lines(frame: DecisionFrame | None, chosen: str = "") -> list[str]:
     return lines
 
 
-def render_body(draft: MemoDraft, upstream: list[Any], frame: DecisionFrame | None = None) -> str:
+def render_body(
+    draft: MemoDraft,
+    upstream: list[Any],
+    frame: DecisionFrame | None = None,
+    message: str = "",
+    evidence: Evidence | None = None,
+) -> str:
     moved: list[str] = list(draft.open_numbers)
     findings = []
     for r in upstream:
         if r.status != "done" or not r.text:
             continue
+        moved.extend(f"{r.name}: {line} {REMOVED_NOTE}" for line in r.removed)
         before = len(moved)
-        text = _pull_unbacked(r.text, r.known_facts, r.brief, moved)
+        # An agent's text was checked when it finished. This holds for a result that came from anywhere else too.
+        text = _pull_unbacked(r.text, evidence or simple_evidence(r.known_facts, message), moved)
         moved[before:] = [f"{r.name}: {line}" for line in moved[before:]]
         if text:
             findings.append(f"**{r.name}{'' if r.verified else ' (not verified)'}:** {_one_line(text)}")
@@ -862,6 +910,8 @@ def write_memo(
     agent_id: str,
     frame: DecisionFrame | None = None,
     today: dt.date | None = None,
+    message: str = "",
+    evidence: Evidence | None = None,
 ) -> tuple[MemoRef, Artifact]:
     """Writes `decisions/YYYY-MM-DD-<slug>.md` as `proposed` (the founder decides) and stores the predictions."""
     if ctx.vault is None:
@@ -886,7 +936,7 @@ def write_memo(
         "verified": is_verified,
         "tags": ["decision"],
     }
-    body = render_body(draft, upstream, frame)
+    body = render_body(draft, upstream, frame, message, evidence)
     base = f"decisions/{today.isoformat()}-{memo_slug(draft.title)}"
     written = ""
     for attempt in range(1, 100):

@@ -24,11 +24,20 @@ from app.agents.decision_frame import DecisionFrame, build_frame, names_goal
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
+from app.agents.sources import (
+    REMOVED_NOTE,
+    Evidence,
+    cited_sources,
+    figures_removed,
+    gather,
+    masked,
+    vault_checker,
+    without_unsupported,
+)
 from app.agents.specialists import (
     MAX_TEAM,
     REGULATORY_NOTE,
     RULE_TEXT,
-    SCOUT_LOCAL_NOTE,
     MemoDraft,
     MemoPrediction,
     MemoRef,
@@ -40,7 +49,9 @@ from app.agents.specialists import (
     needs_analyst,
     risk_register,
     rule_draft,
+    scout_without_web,
     team_for_message,
+    with_real_outcomes,
     with_required_fields,
     without_unbacked_figures,
     write_memo,
@@ -168,6 +179,11 @@ class AgentResult(BaseModel):
     past_decisions: list[DecisionRecord] = Field(default_factory=list, description="On record for this topic")
     decision_impact: DecisionImpact | None = Field(default=None, description="From run_scenario, computed in code")
     memo: MemoRef | None = Field(default=None, description="The memo this agent wrote")
+    removed: list[str] = Field(
+        default_factory=list, description="What the source check took out, reworded with no figure or source in it"
+    )
+    removed_figures: list[float] = Field(default_factory=list, exclude=True)
+    passages: dict[str, list[str]] = Field(default_factory=dict, exclude=True, description="Source -> text retrieved")
     facts: list[Fact] = Field(default_factory=list, exclude=True)
     inherited: list[Fact] = Field(default_factory=list, exclude=True, description="From earlier stages of the team")
     inherited_impact: DecisionImpact | None = Field(default=None, exclude=True)
@@ -447,11 +463,31 @@ class AgentRunner:
         result.text = guarded(
             in_role(spec.name, result.text, user_message, frame), frame, _records_for(result, upstream)
         )
-        if not result.text.strip() and spec.name in RULE_TEXT:
-            result.text = RULE_TEXT[spec.name]  # seen live: a small model can return nothing, twice
+        self._remove_unsupported(inst, user_message, upstream, result)
+        if not result.text.replace(REMOVED_NOTE, "").strip() and spec.name in RULE_TEXT:
+            # Seen live: a small model can return nothing, twice. Or nothing it said could be backed.
+            removed = f" {REMOVED_NOTE}" if REMOVED_NOTE in result.text else ""
+            result.text = RULE_TEXT[spec.name] + removed
         self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
         return self._finish(inst, result, started)
+
+    def _evidence(self, inst: AgentInstance, user_message: str, results: list[AgentResult]) -> Evidence:
+        return gather(user_message, results, self.frame, vault_checker(self.ctx_factory(inst.id)))
+
+    def _remove_unsupported(
+        self, inst: AgentInstance, user_message: str, upstream: list[AgentResult], result: AgentResult
+    ) -> None:
+        """Sent back once and still unsupported: it goes, so no later stage can build on it and no reader sees it."""
+        kept, removed = without_unsupported(result.text, self._evidence(inst, user_message, [result, *upstream]))
+        if not removed:
+            return
+        result.text = f"{kept} {REMOVED_NOTE}".strip()
+        result.removed = [masked(sentence) for sentence in removed]
+        result.removed_figures = figures_removed(removed)
+        result.verified = False
+        result.issues = [*result.issues, f"removed: unsupported source ({len(removed)})"]
+        self._emit("agent.step", inst.id, step=f"removed: unsupported source ({len(removed)})")
 
     def _finish(self, inst: AgentInstance, result: AgentResult, started: float) -> AgentResult:
         result.elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
@@ -475,14 +511,14 @@ class AgentRunner:
         if spec.name == "financial_analyst" and frame is not None and frame.non_hire:
             result.text = _analyst_on_a_cost_model(result.text, frame)
         if spec.name == "devils_advocate" and result.text:
-            artifact = risk_register(inst.id, result.text)
+            artifact = risk_register(inst.id, result.text.replace(REMOVED_NOTE, "").strip())
             result.artifacts.append(artifact)
             self._emit("agent.artifact", inst.id, artifact=artifact.model_dump(mode="json"))
         if spec.name == "regulatory_tax" and "not legal" not in result.text.lower():
             result.text = f"{result.text} {REGULATORY_NOTE}".strip()
         web_used = any(c["tool"] == "web_search" and not c.get("error") for c in result.tool_calls)
         if spec.name == "market_scout" and not web_used and not self._can_search_web(spec):
-            result.text = f"{result.text} {SCOUT_LOCAL_NOTE}".strip()
+            result.text = scout_without_web(result.text, {c.path for c in result.retrieved})
         pages = [c for c in result.retrieved if c.chunk_id == "web" and c.path not in result.text]
         if pages and spec.name in ("market_scout", "regulatory_tax"):
             result.text = f"{result.text} Sources: {', '.join(c.path for c in pages[:5])}."
@@ -534,7 +570,9 @@ class AgentRunner:
         result: AgentResult,
     ) -> None:
         """The model drafts as JSON, the Verifier checks the prose (one repair turn), and code writes the file."""
-        draft = await self._draft_memo(spec, messages, user_message, result)
+        evidence = self._evidence(inst, user_message, [result, *upstream])
+        dropped = [v for r in upstream for v in r.removed_figures]
+        draft = await self._draft_memo(spec, messages, user_message, result, evidence=evidence, dropped=dropped)
         report = self._check_memo(draft, user_message, result)
         if not report.ok and result.provider != "rules":
             result.attempts = 2
@@ -546,11 +584,17 @@ class AgentRunner:
                     "with their meaning. Return the whole memo again."
                 )
             )
-            draft = await self._draft_memo(spec, messages, user_message, result, fallback=draft)
+            draft = await self._draft_memo(
+                spec, messages, user_message, result, fallback=draft, evidence=evidence, dropped=dropped
+            )
             report = self._check_memo(draft, user_message, result)
         result.verified, result.issues = report.ok, report.issues
         draft = in_your_words(draft, self.frame, _records_for(result, upstream))
-        draft = without_unbacked_figures(draft, _memo_facts(draft, result), user_message)
+        evidence.quoted.extend(_forecast_fact(p).value for p in draft.predictions)
+        draft = without_unbacked_figures(draft, _memo_facts(draft, result), user_message, evidence)
+        if any(REMOVED_NOTE in line for line in draft.open_numbers):
+            result.verified = False
+            result.issues = [*result.issues, "removed: unsupported source"]
         self._emit("agent.status", inst.id, status="searching_vault")
         try:
             memo, artifact = await asyncio.to_thread(
@@ -558,9 +602,11 @@ class AgentRunner:
                 self.ctx_factory(inst.id),
                 draft,
                 upstream,
-                verified=report.ok,
+                verified=report.ok and bool(result.verified),
                 agent_id=inst.id,
                 frame=self.frame,
+                message=user_message,
+                evidence=evidence,
             )
         except (ValueError, OSError, VaultError) as exc:
             logger.warning("The memo could not be written: {}", exc)
@@ -582,13 +628,18 @@ class AgentRunner:
         user_message: str,
         result: AgentResult,
         fallback: MemoDraft | None = None,
+        evidence: Evidence | None = None,
+        dropped: list[float] | None = None,
     ) -> MemoDraft:
         try:
             completion = await self.router.complete(
                 spec.privacy, messages, json_schema=memo_schema(self.frame), agent_type=spec.name
             )
             self._account(result, completion)
-            return with_required_fields(MemoDraft.model_validate(completion.json()), user_message, self.frame)
+            draft = MemoDraft.model_validate(completion.json())
+            if evidence is not None:
+                draft = with_real_outcomes(draft, evidence, dropped or [])
+            return with_required_fields(draft, user_message, self.frame)
         except (LLMError, ValueError, TypeError) as exc:
             logger.warning(
                 "Memo draft from the model failed, using {}: {}", "the last one" if fallback else "rules", exc
@@ -733,6 +784,8 @@ class AgentRunner:
         for citation in outcome.citations:
             if citation not in result.retrieved:
                 result.retrieved.append(citation)
+        for source, texts in outcome.passages.items():
+            result.passages.setdefault(source, []).extend(texts)
         self._emit("agent.tool_call", inst.id, tool=call.name, arguments=call.arguments, error=outcome.error)
         for artifact in outcome.artifacts:
             result.artifacts.append(artifact)
@@ -1091,9 +1144,10 @@ def findings_for_advisor(results: list[AgentResult], frame: DecisionFrame | None
     blocks: list[str] = [*frame.findings_block()] if frame is not None else []
     impact = team_impact(results)
     for r in results:
-        # A wrong-meaning sentence is already replaced, so naming its figure again would only bring it back.
-        kept = [i for i in r.issues if not i.startswith("wrong meaning")]
-        replaced = ["a sentence was replaced by one written in code"] if len(kept) < len(r.issues) else []
+        # What failed is already out of the text, so naming its figure or source here would only bring it back.
+        kept = [i for i in r.issues if _names_nothing(i)]
+        wrong = any(i.startswith("wrong meaning") for i in r.issues)
+        replaced = ["a sentence was replaced by one written in code"] if wrong else []
         flag = "" if r.verified else f" [UNVERIFIED: {'; '.join(kept + replaced)}]"
         if r.status != "done":
             blocks.append(f"- {r.name}: failed ({r.error}).")
@@ -1112,6 +1166,12 @@ def findings_for_advisor(results: list[AgentResult], frame: DecisionFrame | None
         blocks.append("Past decisions on this topic, already on record (lead with these):")
         blocks.extend(f"- {record.summary()}" for record in records)
     return "\n".join(blocks) if blocks else "(no findings)"
+
+
+def _names_nothing(issue: str) -> bool:
+    if issue.startswith("removed: unsupported source"):
+        return True
+    return not extract_figures(issue) and not cited_sources(issue) and not issue.startswith("wrong meaning")
 
 
 def _short(text: str, limit: int = 900) -> str:
@@ -1147,14 +1207,33 @@ class _SentenceGate:
         frame: DecisionFrame | None = None,
         records: list[DecisionRecord] | None = None,
         chosen: str = "",
+        evidence: Evidence | None = None,
     ) -> None:
         self.facts, self.message, self.impact, self.issues = facts, message, impact, issues
         self.frame, self.records, self.chosen = frame, records or [], chosen
+        self.evidence = evidence
         self.pending = ""
         self.written: set[str] = set()
+        self.noted = False
+
+    def _without_unsupported(self, text: str) -> str:
+        """A figure with no source never reaches the founder, not even inside a question."""
+        if self.evidence is None:
+            return text
+        kept, removed = without_unsupported(text, self.evidence)
+        if not removed:
+            return text
+        self.issues.append(f"advisor: removed: unsupported source ({len(removed)})")
+        trailing = text[len(text.rstrip()) :]
+        note = "" if self.noted else f" {REMOVED_NOTE}"
+        self.noted = True
+        return f"{kept}{note}".strip() + (trailing or " ")
 
     def _checked(self, text: str) -> str:
         text = guarded(text, self.frame, self.records, self.written, self.chosen)
+        text = self._without_unsupported(text)
+        if not text.strip():
+            return ""
         fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
         self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
         if not failed:
@@ -1245,6 +1324,7 @@ async def advise(
     plan_: Plan,
     results: list[AgentResult],
     issues: list[str] | None = None,
+    exists: Callable[[str], bool] | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """The Advisor streams its reply, sentence by sentence, each one checked before it goes out.
 
@@ -1275,7 +1355,10 @@ async def advise(
     facts = [*(fact for r in results for fact in r.facts), *(frame.facts if frame else [])]
     records = _team_decisions(results)
     claims = issues if issues is not None else []
-    gate = _SentenceGate(facts, user_message, team_impact(results), claims, frame, records, _chosen_in(results))
+    evidence = gather(user_message, results, frame, exists, quoted_text=findings)
+    gate = _SentenceGate(
+        facts, user_message, team_impact(results), claims, frame, records, _chosen_in(results), evidence
+    )
     try:
         async for chunk in router.stream(spec.privacy, messages, agent_type=spec.name):
             ready = gate.feed(chunk.delta) if chunk.delta else ""
@@ -1287,6 +1370,12 @@ async def advise(
                 if ready:
                     sent.append(ready)
                     yield StreamChunk(delta=ready)
+                # Everything the model wrote was removed: the team's checked findings are still an answer.
+                if gate.noted and not "".join(sent).replace(REMOVED_NOTE, "").strip():
+                    findings_text = " ".join(r.text for r in results if r.status == "done" and r.text)
+                    if findings_text:
+                        sent.append(f" {findings_text}")
+                        yield StreamChunk(delta=f" {findings_text}")
                 note = advisor_decision_note("".join(sent), results)
                 note += advisor_impact_note("".join(sent) + note, plan_, results)
                 note += advisor_frame_note("".join(sent) + note, frame)

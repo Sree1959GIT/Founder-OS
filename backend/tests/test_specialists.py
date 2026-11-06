@@ -425,7 +425,9 @@ async def test_a_memo_with_no_model_is_honest_about_what_is_missing(finance: Any
     assert all("starter" in k and k.startswith("Stop if") for k in result.memo.kill_criteria)
 
 
-async def test_a_memo_with_an_invented_figure_goes_back_and_then_lists_it(finance: Any, vault: Any) -> None:
+async def test_a_memo_with_an_invented_figure_goes_back_and_then_lists_what_to_confirm(
+    finance: Any, vault: Any
+) -> None:
     bad = {**GOOD_MEMO, "context": "An office costs $48,123 a month."}
     result = await runner(FakeProvider([json.dumps(bad), json.dumps(bad)]), finance, vault).run(
         instance("memo_writer"), DUBAI
@@ -433,7 +435,8 @@ async def test_a_memo_with_an_invented_figure_goes_back_and_then_lists_it(financ
     assert result.attempts == 2 and not result.verified and result.memo is not None and not result.memo.verified
     text = (vault.vault.root / result.memo.path).read_text(encoding="utf-8")
     body = text.split("## Open numbers to confirm")
-    assert "48,123" not in body[0] and "48,123" in body[1].split("## Metrics")[0] and "verified: false" in text
+    assert "48,123" not in text and "verified: false" in text
+    assert "An office costs a figure to confirm a month (removed: unsupported source)" in body[1]
     assert "[figure removed" not in text
 
 
@@ -461,12 +464,14 @@ def test_memo_names_and_figures() -> None:
     )
     assert draft.predictions[0].probability == pytest.approx(0.7)
     kept = without_unbacked_figures(draft, [Fact(1000.0)], "")
-    assert kept.context == "" and kept.open_numbers == ["Costs $9,999 of $1,000."]
+    assert kept.context == ""
+    assert kept.open_numbers == ["Costs a figure to confirm of a figure to confirm (removed: unsupported source)"]
 
 
 def test_a_figure_with_no_source_moves_its_sentence_and_leaves_the_rest() -> None:
     kept = without_unbacked_figures(MemoDraft(context="Revenue was $1,150. Rent is 1,500 more."), [Fact(1150.0)], "")
-    assert kept.context == "Revenue was $1,150." and kept.open_numbers == ["Rent is 1,500 more."]
+    assert kept.context == "Revenue was $1,150."
+    assert kept.open_numbers == ["Rent is a figure to confirm more (removed: unsupported source)"]
     whole = without_unbacked_figures(MemoDraft(context="$48,123 then $48."), [Fact(48123.0), Fact(48.0)], "")
     assert whole.context == "$48,123 then $48." and whole.open_numbers == []
 

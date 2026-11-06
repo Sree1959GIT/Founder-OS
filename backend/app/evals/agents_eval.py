@@ -124,10 +124,8 @@ def _careless_problems(result: ChatResult, vault_root: Path) -> list[str]:
     ]
     if result.memo is not None:
         text = (vault_root / result.memo.path).read_text(encoding="utf-8")
-        # It may only stand on the list for the founder to confirm, and never as a fact or a scar.
-        head, _, rest = text.partition("## Open numbers to confirm")
-        _, _, tail = rest.partition("## Metrics")
-        if INVENTED.lstrip("$") in head + tail:
+        # Nowhere: not as a fact, not in a question, not on the list of what to confirm.
+        if INVENTED.lstrip("$") in text:
             problems.append("the memo kept an invented figure")
         if "[figure removed" in text:
             problems.append("the memo has a scar where a figure was")

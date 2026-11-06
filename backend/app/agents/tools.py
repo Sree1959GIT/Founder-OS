@@ -42,6 +42,7 @@ class ToolOutcome:
     artifacts: list[Artifact] = field(default_factory=list)
     citations: list[Citation] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
+    passages: dict[str, list[str]] = field(default_factory=dict, repr=False)  # source -> the text retrieved from it
     error: str | None = None
 
     @property
@@ -183,7 +184,8 @@ def web_outcome(ctx: ToolContext, answer: WebAnswer) -> ToolOutcome:
     """A grounded search's answer. Its figures are backed by the pages it names, like a passage from a note."""
     citations = [Citation(path=s.url, heading=s.title or s.url, chunk_id="web") for s in answer.sources]
     content = {"answer": answer.text, "sources": [s.model_dump() for s in answer.sources]}
-    return ToolOutcome(content, citations=citations, facts=quoted_facts(answer.text))
+    passages = {s.url: [answer.text] for s in answer.sources}
+    return ToolOutcome(content, citations=citations, facts=quoted_facts(answer.text), passages=passages)
 
 
 def _web_search(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -388,7 +390,11 @@ def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         if not _is_a_written_memo(ctx, str(h.get("path", "")))
         for fact in quoted_facts(json.dumps(h, ensure_ascii=False))
     ]
-    return ToolOutcome(content, artifacts=cards, citations=citations, facts=quoted)
+    passages: dict[str, list[str]] = {}
+    for h, r in zip(hits, result["results"], strict=True):
+        if not _is_a_written_memo(ctx, str(h.get("path", ""))):
+            passages.setdefault(str(h["path"]), []).extend([json.dumps(h, ensure_ascii=False), str(r["snippet"])])
+    return ToolOutcome(content, artifacts=cards, citations=citations, facts=quoted, passages=passages)
 
 
 def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -406,7 +412,12 @@ def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         if not _is_a_written_memo(ctx, r.path)
         for fact in quoted_facts(json.dumps(row, ensure_ascii=False))
     ]
-    return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, facts=quoted)
+    passages = {
+        r.path: [json.dumps(row, ensure_ascii=False)]
+        for r, row in zip(records, rows, strict=True)
+        if not _is_a_written_memo(ctx, r.path)
+    }
+    return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, facts=quoted, passages=passages)
 
 
 def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -420,10 +431,10 @@ def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         "frontmatter": frontmatter,
         "body": str(note.get("body", ""))[:4000],
     }
-    quoted = quoted_facts(f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}")
+    text = f"{json.dumps(frontmatter, ensure_ascii=False)}\n{content['body']}"
     if _is_unconfirmed_memo(frontmatter):
-        quoted = []
-    return ToolOutcome(content, citations=[citation], facts=quoted)
+        return ToolOutcome(content, citations=[citation])
+    return ToolOutcome(content, citations=[citation], facts=quoted_facts(text), passages={note["path"]: [text]})
 
 
 def _write_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
