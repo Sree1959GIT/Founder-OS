@@ -285,9 +285,13 @@ function laneTurn(state: WorkspaceState, event: AgentEvent): WorkspaceState {
       const turn: Turn = { id, role: "queued", queueId, text: data.text as string, status: "offered" };
       return { ...state, turns: [...state.turns, turn] };
     }
+    // The offer comes after the answer, so it moves below it: an offer scrolled out of sight is one never seen.
+    const offered: Turn[] = state.turns.flatMap((t) =>
+      t.role === "queued" && t.queueId === queueId ? [{ ...t, status: "offered" as const }] : [],
+    );
     return {
       ...state,
-      turns: state.turns.map((t) => (t.role === "queued" && t.queueId === queueId ? { ...t, status: "offered" } : t)),
+      turns: [...state.turns.filter((t) => !(t.role === "queued" && t.queueId === queueId)), ...offered],
     };
   }
   return state;

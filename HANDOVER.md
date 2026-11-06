@@ -166,8 +166,8 @@ Previous session (M3a):
 - The UI formats numbers and never calculates them. The one position it works out is the "Under 3 months of cash" band: the three months before the zero-cash month on the chart, counted in months, not money.
 
 **Measured here on 2026-11-06 (PowerShell, scratch backend on port 8011, your vault untouched)**
-- `scripts/metric_loop.py`: `METRIC LOOP: verified 10/10 | median 1.7 s | slowest 2.4 s | target under 8 s`. Before the fix: 7.5 to 8.4 s and verified 4/5. Cause: three LLM calls with about 4,775 input tokens, and the Verifier rejected a correct burn answer that mentioned months as a wrong meaning.
-- In the browser with the real model: "What is our runway?" 2.1 s and 4.9 s, Verified, both runs. A Dubai decision after approval: 59 s and 63 s, **Not verified** both runs (see below). No removed figure on any screen, and no page errors.
+- `scripts/metric_loop.py` on the final code: `METRIC LOOP: verified 10/10 | median 1.7 s | slowest 3.1 s | target under 8 s`; net burn 3/3 (median 1.6 s); gross margin 3/3 (median 1.6 s). Before the fix: 7.5 to 8.4 s and verified 4/5. Cause: three LLM calls with about 4,775 input tokens, and the Verifier rejected a correct burn answer that mentioned months as a wrong meaning.
+- In the browser with the real model: "What is our runway?" 2.1 s and 4.9 s, Verified, both runs. A Dubai decision after approval: 59 s and 63 s, **Not verified** both runs (see below). No removed figure on any screen, and no page errors. W9 ran live too: status reply, amendment with Keep going, queued question offered at the end of the run, Ask it now answered and Verified. Quiet mode was not in that run.
 - The Ollama move to a named volume is done (your request): warm responses are about 0.5 s.
 
 **Not done, and limits**
@@ -179,7 +179,7 @@ Previous session (M3a):
 - Dragging a bubble in the matrix sets every criterion on that axis to one score. To vary them separately, edit `notes/priorities.md` in Obsidian.
 - The base and scenario lines use one colour pair from the mock-ups. The palette validator passes colour-blind separation and contrast, and fails only its lightness band for dark surfaces; the line style (solid against dashed) and the legend also separate them. I kept your mock-up colours.
 - With nothing running, small talk such as "how is it going?" starts a run, and the Advisor answers with a chatty reply that can carry a Verified badge, since it has no figures to fail. It is backend behaviour, so I left it.
-- The conversation lane's question offers and amendments are unit-tested on the state and covered by the backend tests, but the Playwright smoke test does not drive them: with a scripted model a run finishes too quickly to interrupt. W9 covers them by hand.
+- The conversation lane's question offers and amendments are unit-tested on the state and covered by the backend tests, but the Playwright smoke test does not drive them: with a scripted model a run finishes too quickly to interrupt. I ran them live once with a browser script; W9 is the check on your PC.
 
 ### Source check (fix after the founder's M3c review, 2026-11-06)
 **What you can do now**
@@ -594,7 +594,7 @@ Known issues / notes:
 - **W4. A metric question.** Click the chip **What is our runway?** **See:** in a few seconds an answer with a green **Verified**, "written by code", the figure 10.65 months, and a chip you can click for its lineage.
 - **W5. The metric loop.** In PowerShell:
   `.\.venv\Scripts\python.exe scripts\metric_loop.py --base http://127.0.0.1:8000 --question "What is our runway?" --count 10 | Select-Object -Last 1`
-  **Expect:** `METRIC LOOP: verified 10/10 | median ... | slowest ... | target under 8 s`, every time under 8 s once warm.
+  **Expect:** `METRIC LOOP: verified 10/10 | median ... | slowest ... | target under 8 s`, every time under 8 s once warm. If it seems to hang, **Ask before a team runs** is on **Always**, and each run is waiting for an approval that this script does not give: set it back in Settings first. (It caught me out too.)
 - **W6. Dubai: the team.** Gear > **Ask before a team runs** > **Always**. Back on Workspace, ask **Should we open a Dubai office?** **See:** under your question a card leading with **Proposed: Travel-led pilot** and its monthly cost, then **Full model: Full office**, tagged "assumption, confirm". In the middle, the title "Dubai office" (or your words), a pill "One-way door · full analysis", and the **Decision frame**: options, a low/base/high cost table, Goal check. Click **Review the team**. **See:** the amber approval panel with a card per agent. Change one brief, remove one agent, choose **Memo Writer** in the list and press **Add agent** (W11 needs its memo). If an agent on the team is Cloud, you also see **Run all locally instead**. Click **Approve and run**.
 - **W7. Dubai: the run.** **See:** cards appear, each with Local or Cloud, its brief (your edit on that one), a step line, a thin progress bar, and a status in words. Slots show `n/2`. Flip **Timeline** and back. Press **Cancel** on one running agent: it says Cancelled, the run goes on. When the run ends, press **Re-run** on an agent, change its brief, **Run again**: a new run starts. (While the team is still working, re-running an agent that has finished is refused with a message: that is the backend rule.)
 - **W8. Dubai: the answer.** Back on Workspace (it takes about a minute or two). **See:** the same lead card, then the text, then source chips, one per file. Click a chip: that note opens in the Vault. Under the frame, a card per agent with its findings; Devil's Advocate shows High and Med risk badges if it wrote risks. The badge says **Verified** or **Not verified · n**. **Expect Not verified here, for now, if a Dubai memo is already in your vault: see Current state > Not done, and limits.**
@@ -1027,6 +1027,7 @@ Second planning round (2026-11-02):
 - Backend for the UI: `/api/settings`, `/api/priorities`, `GET /api/runs/{id}/stream`, `PUT /api/data/mappings`, the frame on `team.proposed`, `local_only` on approve, run detail with message and frame.
 - Frontend: all views, Recharts, Markdown, hash routes, one state store fed by `/api/events`.
 - Playwright smoke test with a scripted model that invents a figure and a citation, in CI.
+- Self-review (`/code-review`, medium, full diff): 10 findings, all fixed: see the PR. One is a change you should know about: the fast path now takes a question only if every other word is one a plain lookup uses, so "MRR for January" goes to the model.
 - Found by driving it live: events arriving before the POST returned were lost (now held); a small question cleared the open decision off the canvas (the latest decision now stays); the same file showed one chip per heading (now one per file); `safeStep` left "illion" behind after masking "$160 b" (fixed, with a test).
 
 ### M3c fix session (2026-11-06)
