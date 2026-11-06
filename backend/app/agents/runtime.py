@@ -519,6 +519,7 @@ class AgentRunner:
         web_used = any(c["tool"] == "web_search" and not c.get("error") for c in result.tool_calls)
         if spec.name == "market_scout" and not web_used and not self._can_search_web(spec):
             result.text = scout_without_web(result.text, {c.path for c in result.retrieved})
+            result.removed = []  # what to find is in its text now: the model's recollections go nowhere, even reworded
         pages = [c for c in result.retrieved if c.chunk_id == "web" and c.path not in result.text]
         if pages and spec.name in ("market_scout", "regulatory_tax"):
             result.text = f"{result.text} Sources: {', '.join(c.path for c in pages[:5])}."

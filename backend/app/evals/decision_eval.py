@@ -218,8 +218,16 @@ def check_decision(
     before_findings = memo.split("## Team findings")[0]
     if _NOT_YOU.search(before_findings):
         problems.append("the memo says we, us or our")
-    if _CONTRADICTS.search(before_findings):
-        problems.append("the memo contradicts the goal check, or says assumptions were confirmed")
+    towards = [
+        str(g.get("goal"))
+        for g in (reply.get("decision_frame") or {}).get("goals", [])
+        if g.get("status") == "moves_towards"
+    ]
+    # "Aligns with the goal" is true of a goal the check says it moves towards. Seen live: a price rise and runway.
+    for piece in split_sentences(before_findings):
+        if _CONTRADICTS.search(piece) and not any(names_goal(goal, piece) for goal in towards):
+            problems.append("the memo contradicts the goal check, or says assumptions were confirmed")
+            break
     moves_away = bool(case.goal_moves_away)
     chosen_gives_back = bool(reply.get("decision_frame")) and _gives_back(reply, str(memo_ref.get("chosen", "")))
     if moves_away and not chosen_gives_back:

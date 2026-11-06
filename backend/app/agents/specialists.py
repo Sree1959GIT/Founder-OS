@@ -23,7 +23,7 @@ from app.agents.decision_frame import (
     starter_outcomes_for,
 )
 from app.agents.events import Artifact
-from app.agents.guards import guarded, without_contradictions
+from app.agents.guards import goal_contradiction, guarded, unbacked_decision_claim, without_contradictions
 from app.agents.sources import (
     REMOVED_NOTE,
     Evidence,
@@ -888,13 +888,23 @@ def render_body(
             f"## Options\n{_bullets(_option_lines(draft, frame))}",
             f"## Rejected alternatives\n{_bullets(draft.rejected)}",
             f"## Assumptions\n{_bullets(_assumption_lines(draft, frame))}",
-            f"## Open numbers to confirm\n{_bullets(list(dict.fromkeys(moved)), 'None.')}",
+            f"## Open numbers to confirm\n{_bullets(_open_lines(moved, draft, frame), 'None.')}",
             f"## Metrics\n{_bullets(_metric_lines(upstream, frame), 'No metrics were computed for this decision.')}",
             f"## Predictions\n{_bullets(predictions)}",
             f"## Kill criteria\n{_bullets([k.line() for k in draft.kill_criteria])}",
             f"## Team findings\n{_bullets(findings)}",
         ]
     )
+
+
+def _open_lines(moved: list[str], draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
+    """This section speaks to the founder too. What was taken out for its figure can still claim what is not true."""
+    lines = [_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], line) for line in dict.fromkeys(moved)]
+    return [
+        line
+        for line in lines
+        if goal_contradiction(line, frame, draft.chosen) is None and not unbacked_decision_claim(line, [])
+    ]
 
 
 def _one_line(text: str) -> str:

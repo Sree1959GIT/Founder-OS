@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
+from app.agents.decision_frame import DecisionFrame, GoalCheck
 from app.agents.events import Citation, EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, findings_for_advisor
@@ -14,6 +15,7 @@ from app.agents.sources import (
     REMOVED_NOTE,
     Evidence,
     cited_sources,
+    gather,
     masked,
     simple_evidence,
     without_unsupported,
@@ -23,6 +25,7 @@ from app.agents.specialists import (
     MemoCriterion,
     MemoDraft,
     MemoPrediction,
+    _open_lines,
     scout_without_web,
     with_real_outcomes,
 )
@@ -48,6 +51,15 @@ def finance(tmp_path: Any) -> Any:
 @pytest.fixture
 def vault(tmp_path: Any) -> Any:
     return make_sample_vault(tmp_path / "vault")
+
+
+def build_frame_with_a_goal_moved_away() -> DecisionFrame:
+    goal = GoalCheck(
+        goal="Extend runway past 12 months",
+        status="moves_away",
+        sentence='This moves you away from your goal "Extend runway past 12 months".',
+    )
+    return DecisionFrame(type="new_office", subject="s", goals=[goal])
 
 
 def _on_disk(*paths: str) -> Any:
@@ -84,6 +96,10 @@ def test_every_form_of_a_citation_is_found() -> None:
         "notes/my pricing note.md",
         "https://example.test/r.pdf",
     }
+
+
+def test_two_folders_named_in_prose_are_not_a_citation() -> None:
+    assert cited_sources("Check your notes/journal for this.") == set()
 
 
 def test_a_real_file_that_was_never_retrieved_backs_no_figure() -> None:
@@ -148,6 +164,44 @@ def test_what_is_left_to_confirm_has_no_figure_and_no_source() -> None:
     assert masked(FAKE_CLAIM) == "Dubai's GDP is a figure to confirm"
     assert masked("- Rent is about AED 40,000 [notes/x.md].") == "Rent is a figure to confirm"
     assert not extract_figures(masked("Worth $1.5 trillion, or 40 % of $3 trillion, per https://x.test/a"))
+
+
+def test_what_is_left_to_confirm_reads_cleanly() -> None:
+    line = masked("- **Churn**: keep it under 1.5% a month (from a goal in profile/company.md).")
+    assert line == "Churn: keep it under a figure to confirm a month (from a goal)"
+
+
+def test_a_figure_in_the_founders_own_goal_stands_even_with_its_citation() -> None:
+    class Goal:
+        goal = "Bring logo churn under 1.5 % a month"
+        sentence = "Your goal is open."
+
+    class Frame:
+        facts: ClassVar[list[Fact]] = []
+        goals: ClassVar[list[Any]] = [Goal()]
+        options: ClassVar[list[Any]] = []
+        baseline: ClassVar[list[Any]] = []
+        cost_model = None
+        currency = "USD"
+
+        def for_agents(self) -> str:
+            return ""
+
+        def findings_block(self) -> list[str]:
+            return []
+
+    evidence = gather("q", [], Frame(), _on_disk("profile/company.md"))
+    assert evidence.supports("Keep churn under 1.5% a month [profile/company.md].")
+    assert not evidence.supports("Keep churn under 2.5% a month [profile/company.md].")
+
+
+def test_the_list_to_confirm_claims_nothing_the_goal_check_denies() -> None:
+    frame = build_frame_with_a_goal_moved_away()
+    draft = MemoDraft(chosen="Go", open_numbers=[])
+    lines = _open_lines(
+        ["It aligns with the goal to extend runway past 12 months.", "Our rent is a figure to confirm"], draft, frame
+    )
+    assert lines == ["Your rent is a figure to confirm"]
 
 
 def test_a_flag_for_the_advisor_names_no_figure_and_no_source() -> None:
@@ -366,6 +420,18 @@ def test_the_rubric_catches_a_fabricated_citation_and_a_figure_in_a_question() -
     assert any("a question in the answer has the unsupported figure" in p for p in asked)
 
 
+def test_the_rubric_allows_saying_it_helps_a_goal_the_check_says_it_helps() -> None:
+    case = decision_eval.load_cases()[1]
+    memo = "## Decision\nThis aligns with the goal to extend runway past 12 months without new financing.\n"
+    towards = {"goal": "Extend runway past 12 months without new financing", "status": "moves_towards"}
+    reply = {**_reply("Fine.", memo), "decision_frame": {"goals": [towards]}}
+    problems = decision_eval.check_decision(case, "t", reply, exists=lambda path: False).problems
+    assert not any("contradicts" in p for p in problems)
+    reply["decision_frame"] = {"goals": [{**towards, "status": "moves_away"}]}
+    problems = decision_eval.check_decision(case, "t", reply, exists=lambda path: False).problems
+    assert any("contradicts" in p for p in problems)
+
+
 def test_the_rubric_catches_a_scout_with_an_example_figure() -> None:
     reply = {"agents": [{"type": "market_scout", "text": "The market may be $5 billion.", "tool_calls": []}]}
     problems = decision_eval._scout_problems(reply)
@@ -375,8 +441,6 @@ def test_the_rubric_catches_a_scout_with_an_example_figure() -> None:
 
 def test_citation_objects_are_still_what_a_run_retrieved() -> None:
     # A run's `retrieved` paths resolve even when no vault is at hand, as in a direct call to `advise`.
-    from app.agents.sources import gather
-
     result = AgentResult(
         agent_id="a",
         type="librarian",

@@ -27,7 +27,8 @@ FIGURE_TO_CONFIRM = "a figure to confirm"
 _URL = re.compile(r"https?://[^\s\]\)>,\"']+")
 _WIKI_LINK = re.compile(r"\[\[[^\[\]\n]*\]\]")
 _BRACKETS = re.compile(r"(?<!\[)\[([^\[\]\n]{1,300})\](?!\])")
-_NO_EXTENSION = re.compile(r"\b(?:notes|decisions|journal|sources|profile)/[\w-][\w./-]*")
+# In brackets only: "your notes/journal" in plain prose is not a citation.
+_NO_EXTENSION = re.compile(r"(?<=\()(?:notes|decisions|journal|sources|profile)/[\w-][\w./-]*(?=\))")
 _LOOKS_LIKE_A_SOURCE = re.compile(r"^(?:notes|decisions|journal|sources|profile)/|\.(?:markdown|md|pdf|csv|xlsx|txt)$")
 _CITE_AFTER_STOP = re.compile(r"([.!?])(\s+)(\[[^\[\]\n]{1,300}\])(?=\s|$)")
 _LIST_MARK = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
@@ -35,6 +36,7 @@ _HEDGED = (
     r"(?:(?:approximately|approx\.?|about|around|roughly|nearly|almost|over|some|circa|~)\s*)?"
     r"(?:(?:USD|AED|EUR|GBP|INR|SAR|Rs\.?)\s*)?"
 )
+_LEFT_HANGING = re.compile(r"\s+(?:in|from|at|see|per)\s*([).,;:]|$)", re.I)  # "(from a goal in )", its path gone
 _A_CITATION = re.compile(r"\s*\[[^\[\]\n]{1,300}\]")
 
 
@@ -80,6 +82,7 @@ def masked(sentence: str) -> str:
         pattern = _HEDGED + re.escape(figure.text)
         text = re.sub(pattern, FIGURE_TO_CONFIRM, text, count=1, flags=re.I)
     text = re.sub(r"\[\s*\]|\(\s*\)", " ", text)
+    text = _LEFT_HANGING.sub(r"\1", text.replace("**", ""))
     return re.sub(r"\s+", " ", _LIST_MARK.sub("", text)).strip(" .")
 
 
@@ -209,7 +212,8 @@ def gather(
     lines: list[str] = list(code_lines)
     if frame is not None:
         lines.extend([frame.for_agents(), *frame.findings_block()])
-        lines.extend(goal.sentence for goal in frame.goals)
+        # The goal's own words are the founder's, from the company profile: "bring churn under 1.5 % a month".
+        lines.extend(text for goal in frame.goals for text in (goal.goal, goal.sentence))
         lines.extend(option.line(frame.currency) for option in frame.options)
         if frame.cost_model is not None:
             evidence.data_files.update(frame.cost_model.sources)

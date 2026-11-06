@@ -1175,6 +1175,8 @@ def _facts(frame: DecisionFrame) -> list[Fact]:
         money(option.one_off, f"{option.name}: up-front cost ({ASSUMPTION_LABEL})")
         money(option.monthly, f"{option.name}: monthly cost ({ASSUMPTION_LABEL})")
         months(option.runway_change_months, f"{option.name}: change in projected runway")
+    for goal in frame.goals:
+        facts.extend(Fact(f.value) for f in extract_figures(goal.goal))  # the founder's own, from the company profile
     for figure in frame.baseline:
         if figure.unit == "months":
             months(figure.value, figure.label)
