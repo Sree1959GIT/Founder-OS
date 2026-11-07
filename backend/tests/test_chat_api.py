@@ -27,6 +27,10 @@ def client(settings: Settings) -> Iterator[TestClient]:
         yield c
 
 
+def _down(_messages: Any, _tools: Any, _schema: Any) -> Any:
+    raise LLMUnavailable("down")
+
+
 def script(client: TestClient, replies: list[Any]) -> FakeProvider:
     provider = FakeProvider(list(replies))
     client.app.state.orchestrator.router.local = provider  # type: ignore[attr-defined]
@@ -43,7 +47,7 @@ def parse_sse(text: str) -> list[tuple[str, dict[str, Any]]]:
 
 def test_chat_json_answers_runway_with_lineage(client: TestClient) -> None:
     script(client, RUNWAY_SCRIPT)
-    response = client.post("/api/chat", json={"message": "What's our runway?", "stream": False})
+    response = client.post("/api/chat", json={"message": "Walk me through our runway.", "stream": False})
     assert response.status_code == 200
     body = response.json()
     assert body["answer"].startswith("You have 10.65 months") and body["verified"] is True
@@ -101,3 +105,71 @@ def test_agents_endpoint_and_errors(client: TestClient) -> None:
 
 def test_sse_frame_format() -> None:
     assert sse("delta", {"text": "hi"}, 7) == 'id: 7\nevent: delta\ndata: {"text": "hi"}\n\n'
+
+
+def test_a_single_metric_question_is_answered_by_code_with_one_short_llm_call(client: TestClient) -> None:
+    provider = script(client, ["What does that burn rest on?"])
+    body = client.post("/api/chat", json={"message": "What's our runway?", "stream": False}).json()
+    assert body["verified"] is True
+    assert body["issues"] == []
+    assert body["answer"].startswith("Runway (actual burn) is 10.65 months as of ")
+    assert "$1,835,125.06" in body["answer"]
+    assert body["answer"].endswith("What does that burn rest on?")
+    agent = body["agents"][0]
+    assert agent["written_by_code"] is True
+    assert [c["tool"] for c in agent["tool_calls"]] == ["get_metric"]
+    assert body["metrics"][0]["lineage"]["source_files"]
+    assert len(provider.calls) == 1  # the question only: no planning, no tool loop, no findings
+    assert provider.calls[0]["tools"] is None
+    assert sum(len(m.content) for m in provider.calls[0]["messages"]) < 600
+
+
+def test_a_metric_question_from_the_model_with_a_figure_is_dropped(client: TestClient) -> None:
+    script(client, ["Is the $150 billion market real?"])
+    body = client.post("/api/chat", json={"message": "What's our runway?", "stream": False}).json()
+    assert body["verified"] is True
+    assert "150" not in body["answer"]
+    assert body["answer"].endswith(".")
+
+
+def test_a_metric_answer_needs_no_model(client: TestClient) -> None:
+    client.app.state.orchestrator.router.local = FakeProvider(default=_down)  # type: ignore[attr-defined]
+    body = client.post("/api/chat", json={"message": "What's our runway?", "stream": False}).json()
+    assert body["verified"] is True
+    assert body["answer"].startswith("Runway (actual burn) is 10.65 months")
+    assert body["advisor_provider"] == "rules"
+
+
+def test_the_number_streams_before_the_question(client: TestClient) -> None:
+    script(client, ["What does that burn rest on?"])
+    with client.stream("POST", "/api/chat", json={"message": "What's our runway?"}) as response:
+        frames = parse_sse(response.read().decode())
+    deltas = [d["text"] for kind, d in frames if kind == "delta"]
+    assert deltas[0].startswith("Runway (actual burn) is 10.65 months")
+    assert deltas[1] == " What does that burn rest on?"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What's our runway?",
+        "What's our MRR?",
+        "What is our ARR?",
+        "What's our net burn?",
+        "What is our gross margin?",
+        "What's our CAC?",
+        "What's our logo churn?",
+        "What is our NRR?",
+        "What's our LTV?",
+        "What's our LTV:CAC?",
+        "What's our payback?",
+        "What's our ARPA?",
+        "What's our headcount cost?",
+        "What's our gross burn?",
+    ],
+)
+def test_every_plain_metric_question_verifies(client: TestClient, question: str) -> None:
+    script(client, ["What does that rest on?"])
+    body = client.post("/api/chat", json={"message": question, "stream": False}).json()
+    assert body["verified"] is True, body["issues"]
+    assert body["agents"][0]["written_by_code"] is True, question

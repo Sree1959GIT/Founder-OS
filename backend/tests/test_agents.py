@@ -337,7 +337,7 @@ async def test_graph_runs_runway_end_to_end(finance: Any) -> None:
         ]
     )
     orch = orchestrator(provider, finance, None)
-    run = orch.start("What's our runway?")
+    run = orch.start("Walk me through our runway.")
     result = await run.task  # type: ignore[misc]
     assert result.answer.startswith("Your runway is 10.65 months") and result.verified and result.intent == "finance"
     assert result.metrics[0].value == 10.65 and result.metrics[0].lineage["metric"] == "runway"
@@ -356,7 +356,7 @@ async def test_advisor_invented_number_is_flagged(finance: Any) -> None:
     provider = FakeProvider(
         [[ToolCall(name="get_metric", arguments={"name": "runway"})], RUNWAY_ANSWER, "You have 24 months of runway."]
     )
-    result = await orchestrator(provider, finance, None).start("What's our runway?").task  # type: ignore[misc]
+    result = await orchestrator(provider, finance, None).start("Walk me through our runway.").task  # type: ignore[misc]
     assert not result.verified and result.issues == ["advisor: removed: unsupported source (1)"]
     assert "24 months" not in result.answer and "10.65" in result.answer
 
@@ -479,3 +479,28 @@ async def test_event_bus_replays_and_filters() -> None:
     await asyncio.wait_for(task, 1)
     assert got == ["1:run.started", "4:run.finished"]
     assert [e.seq for e in bus.history(since=2)] == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["What's our MRR for January?", "What's our burn this quarter?", "How much runway do we need?"],
+)
+def test_a_question_about_another_period_or_a_target_is_not_a_lookup(question: str) -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric(question) is None
+
+
+@pytest.mark.parametrize(
+    ("question", "metric"),
+    [
+        ("What is our runway?", "runway"),
+        ("What's our net burn?", "net_burn"),
+        ("Tell me our MRR", "mrr"),
+        ("How long is our runway?", "runway"),
+    ],
+)
+def test_a_plain_lookup_still_takes_the_fast_path(question: str, metric: str) -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric(question) == metric

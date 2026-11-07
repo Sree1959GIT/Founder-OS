@@ -36,7 +36,8 @@ from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, _t
 from app.agents.sources import vault_checker
 from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
-from app.agents.verifier import verify_numbers
+from app.agents.verification import Verification, verification
+from app.agents.verifier import extract_figures, number_supported, verify_numbers
 from app.decision.base import DecisionService
 from app.llm.base import Usage
 from app.llm.router import LLMRouter
@@ -66,6 +67,21 @@ class MetricOut(BaseModel):
     as_of: str
     agent_id: str
     lineage: dict[str, Any]
+
+
+def _removed_before_shown(results: list[AgentResult]) -> list[str]:
+    """Audit lines about a figure the source check then took out: the founder never saw it, so it is counted as a
+    removed claim (the chip by the badge), not as a failure of the figures that are shown."""
+    resolved: list[str] = []
+    for r in results:
+        gone = list(r.removed_figures)
+        for issue in r.issues:
+            if not issue.startswith("number without lineage"):
+                continue
+            figures = extract_figures(issue.split(":", 1)[1])
+            if figures and gone and all(number_supported(f, gone) for f in figures):
+                resolved.append(f"{r.name}: {issue}")
+    return resolved
 
 
 class ChatResult(BaseModel):
@@ -98,6 +114,10 @@ class ChatResult(BaseModel):
     memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     verified: bool
+    verification: Verification = Field(
+        default_factory=lambda: Verification(state="not_verified"),
+        description="The badge: verified, figures verified with assumptions to confirm, or not verified (with reasons)",
+    )
     issues: list[str]
     advisor_provider: str
     advisor_model: str
@@ -124,6 +144,7 @@ class RunContext:
     stop_agents: set[str] = field(default_factory=set)
     new_briefs: dict[str, str] = field(default_factory=dict)
     context: Any = None  # the conversation lane's frozen run snapshot
+    streamed: bool = False  # someone is reading `deltas`: each piece of text goes to one reader
 
 
 class TeamEdit(BaseModel):
@@ -132,6 +153,7 @@ class TeamEdit(BaseModel):
     briefs: dict[str, str] = Field(default_factory=dict, description="Agent id -> new brief")
     remove: list[str] = Field(default_factory=list, description="Agent ids to leave out")
     add: list[dict[str, str]] = Field(default_factory=list, description='Each {"type": ..., "brief": ...}')
+    local_only: bool = Field(False, description="Run everyone on the local model: nothing leaves this PC")
 
 
 class RerunOutcome(BaseModel):
@@ -210,6 +232,7 @@ class AgentOrchestrator:
             team=team,
             needs_approval=needs,
             questions=the_plan.frame.questions if the_plan.frame is not None else [],
+            decision_frame=the_plan.frame.model_dump(mode="json") if the_plan.frame is not None else None,
         )
         approved = True
         if needs:
@@ -245,7 +268,12 @@ class AgentOrchestrator:
         ]
         added = [(a["type"], a.get("brief", "")) for a in edit.add if a.get("type") in REGISTRY]
         added = [(t, brief) for t, brief in added if REGISTRY[t].spawnable]
-        return the_plan.model_copy(update={"team": [*team, *_team(added, self.router)]})
+        everyone = [*team, *_team(added, self.router)]
+        if edit.local_only:
+            local = self.router.local
+            changes = {"local_only": True, "is_cloud": False, "provider": local.name, "model": local.model}
+            everyone = [i.model_copy(update=changes) for i in everyone]
+        return the_plan.model_copy(update={"team": everyone})
 
     @staticmethod
     def _stage_of(state: GraphState, done: set[str]) -> list[Send]:
@@ -402,7 +430,11 @@ class AgentOrchestrator:
             citations.extend(c for c in r.citations if c not in citations)
         answer = state.get("answer", "")
         frame = the_plan.frame
-        known = [*(n for r in results for n in r.numbers), *(f.value for f in (frame.facts if frame else []))]
+        known = [
+            *(n for r in results for n in r.numbers),
+            *(f.value for f in (frame.facts if frame else [])),
+            *(f.value for r in results for f in r.record_facts),  # cited to the memo by the source check
+        ]
         cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
         advisor_issues = [f"advisor number without lineage: {n}" for n in verify_numbers(answer, known, context)]
@@ -415,6 +447,14 @@ class AgentOrchestrator:
         if assumptions:
             issues.append(f"this rests on {assumptions} assumptions to confirm")
         usage = sum((r.usage for r in results), Usage()) + advisor.get("usage", Usage())
+        all_done = all(r.status == "done" for r in results)
+        model = frame.cost_model if frame is not None and results else None
+        to_confirm = [model.item_line(i) for i in model.items if i.basis == "assumption"] if model else []
+        sources = list(
+            dict.fromkeys(
+                [*(c.path for c in citations), *(f for r in results for lin in r.lineage for f in lin.source_files)]
+            )
+        )
         approved = bool(state.get("approved", True))
         return ChatResult(
             run_id=run.run_id,
@@ -437,7 +477,8 @@ class AgentOrchestrator:
             assumptions_to_confirm=assumptions,
             memo=next((r.memo for r in results if r.memo is not None), None),
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
-            verified=not issues and all(r.status == "done" for r in results),
+            verified=not issues and all_done,
+            verification=verification(issues, all_done, to_confirm, sources, resolved=_removed_before_shown(results)),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
             advisor_model=str(advisor.get("model", "")),

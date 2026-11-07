@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import dataclasses
 import datetime as dt
 import json
 import re
@@ -20,7 +21,7 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agents.decision_frame import DecisionFrame, build_frame, names_goal
+from app.agents.decision_frame import ASSUMPTION_LABEL, DecisionFrame, OptionCost, build_frame, names_goal
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
@@ -120,6 +121,30 @@ _CHITCHAT = re.compile(
 
 KILL_CRITERIA_OVERLAP = 0.6
 
+# A single-metric question is answered by code, plus at most one short question from the model (PRD R1).
+MAX_LOOKUP_WORDS = 12
+MAX_QUESTION_WORDS = 22
+METRIC_QUESTION_TIMEOUT_S = 4.0
+_ASKS_FOR_A_NUMBER = re.compile(
+    # "What about our churn?" is a lookup too: plain "churn" is logo churn, the goal's own metric (founder review 23).
+    r"^\s*(?:what(?:'|\u2019)?s|what is|what are|what about|how about|how much|how long|how(?:'|\u2019)s|show(?: me)?|"
+    r"tell me|give me|"
+    r"our|my|current)\b",
+    re.I,
+)
+_MORE_THAN_A_NUMBER = re.compile(
+    r"\b(?:why|compare[ds]?|versus|vs|trend\w*|over time|histor\w+|last|previous|prior|forecast\w*|project\w*|"
+    r"next|by|each|if|would|could|should|will|after|before|since|in|between|good|bad|ok|okay|healthy|enough|"
+    r"explain\w*|break\w*|channel\w*|segment\w*|customers?|because|and|or|plus|with|without)\b",
+    re.I,
+)
+_SPELLED_NUMBERS = frozenset(
+    {
+        *("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"),
+        *("hundred", "thousand", "million", "billion", "trillion", "half", "double", "twice", "percent"),
+    }
+)
+
 # Keyword -> metric routine, for the rule-based Financial Analyst (first match wins).
 METRIC_KEYWORDS: list[tuple[str, str]] = [
     ("runway", "runway"),
@@ -153,6 +178,8 @@ class AgentInstance(BaseModel):
     provider: str = ""
     model: str = ""
     is_cloud: bool = False
+    fast_metric: str | None = Field(default=None, description="A single-metric question: code writes the answer")
+    local_only: bool = Field(default=False, description="The founder chose to keep this team on the local model")
 
 
 class Plan(BaseModel):
@@ -179,6 +206,7 @@ class AgentResult(BaseModel):
     past_decisions: list[DecisionRecord] = Field(default_factory=list, description="On record for this topic")
     decision_impact: DecisionImpact | None = Field(default=None, description="From run_scenario, computed in code")
     memo: MemoRef | None = Field(default=None, description="The memo this agent wrote")
+    written_by_code: bool = Field(default=False, description="The fast path: no model wrote this answer")
     removed: list[str] = Field(
         default_factory=list, description="What the source check took out, reworded with no figure or source in it"
     )
@@ -186,6 +214,10 @@ class AgentResult(BaseModel):
     passages: dict[str, list[str]] = Field(default_factory=dict, exclude=True, description="Source -> text retrieved")
     facts: list[Fact] = Field(default_factory=list, exclude=True)
     inherited: list[Fact] = Field(default_factory=list, exclude=True, description="From earlier stages of the team")
+    record_passages: dict[str, list[str]] = Field(default_factory=dict, exclude=True, description="Proposed memos")
+    record_facts: list[Fact] = Field(
+        default_factory=list, exclude=True, description="Figures of a proposed memo on record: backed once it is cited"
+    )
     inherited_impact: DecisionImpact | None = Field(default=None, exclude=True)
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
@@ -239,6 +271,78 @@ def rule_metric(text: str) -> str | None:
     return None
 
 
+_LOOKUP_WORDS = frozenset(
+    [
+        "a",
+        "about",
+        "am",
+        "are",
+        "at",
+        "can",
+        "cost",
+        "costs",
+        "current",
+        "currently",
+        "do",
+        "does",
+        "give",
+        "have",
+        "how",
+        "i",
+        "is",
+        "latest",
+        "logo",
+        "long",
+        "many",
+        "me",
+        "month",
+        "monthly",
+        "months",
+        "much",
+        "my",
+        "now",
+        "of",
+        "our",
+        "per",
+        "please",
+        "rate",
+        "right",
+        "s",
+        "show",
+        "tell",
+        "the",
+        "today",
+        "us",
+        "we",
+        "what",
+        "whats",
+        "you",
+    ]
+)
+
+
+def single_metric(message: str) -> str | None:
+    """The one metric a plain question asks for, or None if it asks for anything more than that number.
+
+    "What's our runway?" is a lookup. "Why is burn up?", "runway in March" and "burn and churn" need the model.
+    """
+    if not _ASKS_FOR_A_NUMBER.match(message) or _MORE_THAN_A_NUMBER.search(message) or re.search(r"\d", message):
+        return None
+    if len(message.split()) > MAX_LOOKUP_WORDS:
+        return None
+    left = message.lower()
+    found: set[str] = set()
+    for keyword, metric in METRIC_KEYWORDS:  # longer forms come first, so "net burn" is not read as "burn" as well
+        pattern = rf"(?<![\w:]){re.escape(keyword)}(?![\w:])"
+        if re.search(pattern, left):
+            found.add(metric)
+            left = re.sub(pattern, " ", left)
+    # Every other word must be one a plain lookup uses: "MRR for January" and "runway we need" are other questions.
+    if set(re.findall(r"[a-z]+", left)) - _LOOKUP_WORDS:
+        return None
+    return found.pop() if len(found) == 1 else None
+
+
 def _instance(agent_type: str, brief: str, router: LLMRouter, index: int = 1) -> AgentInstance:
     spec = REGISTRY[agent_type]
     provider = router.primary(spec.privacy, needs_tools=bool(spec.tools), agent_type=agent_type)
@@ -287,6 +391,7 @@ async def plan(message: str, router: LLMRouter, decisions: DecisionService) -> P
         return Plan(intent=intent, planner=how, intent_decision_id=decision_id)
     if intent == "finance":
         team = _team([("financial_analyst", message)], router)
+        team[0].fast_metric = single_metric(message)
         return Plan(intent=intent, team=team, planner=how, intent_decision_id=decision_id)
     if intent == "knowledge":
         team = _team([("librarian", message)], router)
@@ -397,6 +502,8 @@ class AgentRunner:
         frame: DecisionFrame | None = None,
     ) -> AgentResult:
         spec = REGISTRY[inst.type]
+        if inst.local_only:
+            spec = dataclasses.replace(spec, privacy="local")
         started = time.perf_counter()
         upstream = upstream or []
         if frame is None and spec.name == "memo_writer":
@@ -408,6 +515,7 @@ class AgentRunner:
             name=inst.name,
             brief=inst.brief,
             inherited=[*(fact for r in upstream for fact in r.facts), *(frame.facts if frame else [])],
+            record_facts=[fact for r in upstream for fact in r.record_facts],
             inherited_impact=team_impact(upstream),
         )
         self._emit("agent.status", inst.id, status="thinking")
@@ -422,6 +530,9 @@ class AgentRunner:
             if frame is not None:
                 messages.append(Message.user(_memo_brief(frame)))
             await self._write_memo(spec, inst, user_message, messages, upstream, result)
+            return self._finish(inst, result, started)
+        if await self._metric_written_by_code(spec, inst, user_message, result):
+            self._verify(spec, inst, user_message, result)
             return self._finish(inst, result, started)
         await self._search_first(spec, inst, user_message, messages, result)
         await self._cost_model_first(spec, inst, messages, result)
@@ -466,11 +577,27 @@ class AgentRunner:
         self._remove_unsupported(inst, user_message, upstream, result)
         if not result.text.replace(REMOVED_NOTE, "").strip() and spec.name in RULE_TEXT:
             # Seen live: a small model can return nothing, twice. Or nothing it said could be backed.
-            removed = f" {REMOVED_NOTE}" if REMOVED_NOTE in result.text else ""
-            result.text = RULE_TEXT[spec.name] + removed
+            result.text = RULE_TEXT[spec.name]
         self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
         return self._finish(inst, result, started)
+
+    async def _metric_written_by_code(
+        self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult
+    ) -> bool:
+        """A single-metric question: the routine's result is the answer. An edited brief goes to the model instead."""
+        if inst.fast_metric is None or inst.brief != user_message:
+            return False
+        call = ToolCall(name="get_metric", arguments={"name": inst.fast_metric})
+        outcome = await self._call_tool(spec, inst, call, result)
+        if outcome.error:
+            return False  # the model explains what is missing
+        result.provider, result.model = "rules", ""
+        result.text = metric_sentence(
+            outcome.content, inst.fast_metric, self.ctx_factory(inst.id).finance.metrics.currency
+        )
+        result.written_by_code = True
+        return True
 
     def _evidence(self, inst: AgentInstance, user_message: str, results: list[AgentResult]) -> Evidence:
         return gather(user_message, results, self.frame, vault_checker(self.ctx_factory(inst.id)))
@@ -482,7 +609,7 @@ class AgentRunner:
         kept, removed = without_unsupported(result.text, self._evidence(inst, user_message, [result, *upstream]))
         if not removed:
             return
-        result.text = f"{kept} {REMOVED_NOTE}".strip()
+        result.text = kept.strip()  # no inline note: the UI shows how many claims went, by the badge
         result.removed = [masked(sentence) for sentence in removed]
         result.removed_figures = figures_removed(removed)
         result.verified = False
@@ -756,7 +883,7 @@ class AgentRunner:
         cited = not honest_blank and (bool(result.past_decisions) or (searched and bool(result.retrieved)))
         report = verify(
             result.text,
-            result.known_facts,
+            [*result.known_facts, *result.record_facts],  # a memo's figure is cited to it later, by the source check
             result.retrieved,
             needs_citations=spec.name == "librarian" and cited,
             # Only the founder's own words may supply numbers: a Planner-written brief is LLM text (PRD R1).
@@ -787,6 +914,9 @@ class AgentRunner:
                 result.retrieved.append(citation)
         for source, texts in outcome.passages.items():
             result.passages.setdefault(source, []).extend(texts)
+        for source, texts in outcome.record_passages.items():
+            result.record_passages.setdefault(source, []).extend(texts)
+        result.record_facts.extend(outcome.record_facts)
         self._emit("agent.tool_call", inst.id, tool=call.name, arguments=call.arguments, error=outcome.error)
         for artifact in outcome.artifacts:
             result.artifacts.append(artifact)
@@ -936,7 +1066,7 @@ _NAMES_THE_JOURNAL = re.compile(r"\b(my|our|the) journal\b", re.I)
 def _memo_facts(draft: MemoDraft, result: AgentResult) -> list[Fact]:
     """The team's numbers, plus the memo's own forecasts: a stated belief, not a financial figure."""
     forecasts = [_forecast_fact(p) for p in draft.predictions]
-    return [*result.known_facts, *forecasts]
+    return [*result.known_facts, *result.record_facts, *forecasts]  # a figure quoted from a memo on record is cited
 
 
 def _forecast_fact(prediction: MemoPrediction) -> Fact:
@@ -1131,6 +1261,45 @@ def _fmt(value: Any, unit: str, metric: str = "") -> str:
     return f"{value} {unit}"
 
 
+def _month_label(iso: str) -> str:
+    """ "2027-09" as "September 2027". Anything else stays as it is."""
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", iso):
+        return iso
+    return f"{calendar.month_name[int(iso[5:])]} {iso[:4]}"
+
+
+def metric_sentence(content: dict[str, Any], metric: str, currency: str = "USD") -> str:
+    """The answer to a single-metric question, written by code from the routine's own result."""
+    label, value, unit, as_of = content["label"], content["value"], content["unit"], content["as_of"]
+    if value is None:
+        return (
+            f"{label} cannot be computed from the data as of {_month_label(as_of)}. {content.get('note') or ''}".strip()
+        )
+    written = format_money(float(value), unit) if re.fullmatch(r"[A-Z]{3}", unit) else _fmt(value, unit, metric)
+    sentence = f"{label} is {written} as of {_month_label(as_of)}"
+    detail = content.get("detail") or {}
+    if metric == "runway" and detail.get("closing_cash") is not None and detail.get("net_burn") is not None:
+        cash, burn = format_money(detail["closing_cash"], currency), format_money(detail["net_burn"], currency)
+        zero = (
+            f", so cash reaches zero in {_month_label(detail['zero_cash_month'])}"
+            if detail.get("zero_cash_month")
+            else ""
+        )
+        sentence += f": closing cash is {cash}, with a net burn of {burn} per month{zero}"
+    return f"{sentence}."
+
+
+def probing_question(text: str) -> str:
+    """One short question with no figure in it, or nothing. Code has already given the number."""
+    line = text.strip().splitlines()[0].strip() if text.strip() else ""
+    words = re.findall(r"[a-z']+", line.lower())
+    if not line.endswith("?") or len(split_sentences(line)) != 1 or len(line.split()) > MAX_QUESTION_WORDS:
+        return ""
+    if re.search(r"[\d$€£₹%]", line) or extract_figures(line) or set(words) & _SPELLED_NUMBERS:
+        return ""
+    return line
+
+
 def _plain(snippet: str) -> str:
     """A search snippet as one line of prose (no Markdown heading marks, no line breaks)."""
     return re.sub(r"\s+", " ", re.sub(r"(?m)^\s*#+\s*", "", snippet)).strip()
@@ -1196,6 +1365,77 @@ def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
     return "".join(parts)
 
 
+def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "") -> str:
+    """A decision answer opens with the proposed option, then the full model: the same order as the lead card.
+
+    Written by code, so the figures are the table's and the signs are never doubled ("reducing runway by -2.07").
+    A proposed memo already on record is a draft to update, so the founder is asked what has changed.
+    """
+    if frame is None or not frame.options:
+        return ""
+    wanted = chosen or frame.default_option
+    proposed = next((o for o in frame.options if o.name == wanted), None)
+    full = next((o for o in frame.options if o.is_full), None)
+    model = frame.cost_model
+    parts: list[str] = []
+    if proposed is not None:
+        parts.append(f"Proposed: {_option_words(proposed, frame.currency)}.")
+    if model is not None and (proposed is None or not proposed.is_full):
+        base = model.case("base")
+        name = full.name if full is not None else model.subject
+        runway = _runway_words(base.base_runway_months, base.scenario_runway_months, base.runway_change_months)
+        away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
+        goal = f', which moves you away from your goal "{away}"' if away else ""
+        parts.append(
+            f"The full model, {name}, is {model.money(base.one_off)} up front and {model.money(base.monthly)} a month"
+            f"{runway}{goal}; all of these are assumptions to confirm ({ASSUMPTION_LABEL})."
+        )
+    elif parts:
+        parts.append(f"These are assumptions to confirm ({ASSUMPTION_LABEL}).")
+    drafts = [r for r in records if not r.is_decided]
+    if drafts:
+        # A proposal never started, so it is not asked about its kill criteria: only what has changed.
+        record = drafts[0]
+        when = f" from {record.drafted_on()}" if record.drafted_on() else ""
+        parts.append(
+            f"You already have a {record.status} memo on this{when} [{record.path}]: what has changed since you "
+            "drafted it?"
+        )
+    return " ".join(parts)
+
+
+def _runway_words(before: float | None, after: float | None, change: float | None) -> str:
+    if before is None or after is None or change is None:
+        return "; runway does not run out in the model"
+    return f", moving projected runway from {before:.2f} to {after:.2f} months ({change:+.2f})"
+
+
+def _option_words(option: OptionCost, currency: str) -> str:
+    if not option.modelled:
+        return f"{option.name} (its cost is not modelled)"
+    cost = (
+        f"{format_money(option.one_off, currency)} up front and {format_money(option.monthly, currency)} a month"
+        if option.one_off
+        else f"{format_money(option.monthly, currency)} a month"
+    )
+    effect = (
+        "runway does not run out in the model"
+        if option.runway_change_months is None
+        else f"runway {option.runway_change_months:+.2f} months"
+    )
+    return f"{option.name}, {cost}, {effect}"
+
+
+# A decision answer: code's lead, then at most this many of the model's sentences (founder review 18).
+DECISION_PROSE_SENTENCES = 2
+# A question about whether the drafted memo's target will be met: with a draft on record, the founder is asked what
+# has changed since it was drafted instead (founder review, 18).
+_TARGET_QUESTION = re.compile(
+    r"\b(?:expected to|likely to|realistic\w*|going to)\b[^?]*\b(?:meet|hit|reach|achieve)\b[^?]*\?", re.I
+)
+_KILL_QUESTION = re.compile(r"\b(?:kill criteri\w*|on track|meet(?:ing)? (?:its|the) (?:targets?|criteria))\b", re.I)
+
+
 class _SentenceGate:
     """Checks the Advisor's reply one sentence at a time, before the founder sees it (the reply streams)."""
 
@@ -1216,6 +1456,30 @@ class _SentenceGate:
         self.pending = ""
         self.written: set[str] = set()
         self.noted = False
+        self.max_sentences: int | None = None  # a decision answer stays short
+        self.said: list[str] = []  # what went out, to drop a sentence said twice
+        self.lead_figures: list[float] = []  # code's lead already gave these: a sentence of only these repeats it
+        self.draft_on_record = False  # a proposed memo is on record: no question about its kill criteria
+
+    def _budgeted(self, text: str) -> str:
+        """No sentence twice, and no more than the budget."""
+        kept: list[str] = []
+        for piece in split_sentences(text):
+            key = re.sub(r"\W+", " ", piece).strip().lower()
+            if not key:
+                kept.append(piece)
+                continue
+            if key in self.said or (self.max_sentences is not None and len(self.said) >= self.max_sentences):
+                continue
+            figures = extract_figures(piece)
+            if figures and self.lead_figures and all(number_supported(f, self.lead_figures) for f in figures):
+                continue  # the proposal and the full model, said again in the model's words
+            if self.draft_on_record and (_KILL_QUESTION.search(piece) or _TARGET_QUESTION.search(piece)):
+                continue
+            self.said.append(key)
+            kept.append(piece)
+        out = "".join(kept)
+        return out if out.strip() else ""  # nothing left: no stray spaces between what was said
 
     def _without_unsupported(self, text: str) -> str:
         """A figure with no source never reaches the founder, not even inside a question."""
@@ -1225,10 +1489,11 @@ class _SentenceGate:
         if not removed:
             return text
         self.issues.append(f"advisor: removed: unsupported source ({len(removed)})")
-        trailing = text[len(text.rstrip()) :]
-        note = "" if self.noted else f" {REMOVED_NOTE}"
         self.noted = True
-        return f"{kept}{note}".strip() + (trailing or " ")
+        if not kept.strip():
+            return ""
+        trailing = text[len(text.rstrip()) :]
+        return kept.strip() + (trailing or " ")
 
     def _checked(self, text: str) -> str:
         text = guarded(text, self.frame, self.records, self.written, self.chosen)
@@ -1238,9 +1503,21 @@ class _SentenceGate:
         fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
         self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
         if not failed:
-            return text
+            return self._budgeted(text)
         trailing = text[len(text.rstrip()) :]
-        return fixed + trailing
+        return self._budgeted(fixed + trailing)
+
+    def _budgeted_notes(self, note: str) -> str:
+        """Code's own notes always go out, but never a sentence the reply has already said."""
+        kept: list[str] = []
+        for piece in split_sentences(note):
+            key = re.sub(r"\W+", " ", piece).strip().lower()
+            if key and key in self.said:
+                continue
+            self.said.append(key)
+            kept.append(piece)
+        out = "".join(kept)
+        return f" {out.strip()}" if out.strip() else ""
 
     def feed(self, delta: str) -> str:
         """Any sentences `delta` completed, checked. The unfinished one waits."""
@@ -1271,7 +1548,7 @@ def advisor_memo_note(answer: str, results: list[AgentResult], frame: DecisionFr
     if option is not None and frame is not None and option.modelled:
         # What is proposed may not be what the cost sentence above priced: name its own cost.
         line = option.line(frame.currency)
-        proposes = "" if line in answer else f" The memo proposes {line}"
+        proposes = "" if line in answer or f"Proposed: {memo.chosen}" in answer else f" The memo proposes {line}"
     else:
         proposes = f" The memo proposes {memo.chosen}." if memo.chosen and memo.chosen not in answer else ""
     return f"{proposes} It is at {memo.path}, for review on {memo.review_date}."
@@ -1319,6 +1596,32 @@ def advisor_impact_note(answer: str, plan_: Plan, results: list[AgentResult]) ->
     return ""
 
 
+async def _advise_metric(
+    router: LLMRouter, user_message: str, result: AgentResult, issues: list[str], evidence: Evidence
+) -> AsyncIterator[StreamChunk]:
+    """The number first and at once, then at most one short question from the model, if it comes in time."""
+    spec = REGISTRY["advisor"]
+    yield StreamChunk(delta=result.text)
+    system = (PROMPTS_DIR / "advisor_metric_question.md").read_text(encoding="utf-8")
+    messages = [Message.system(system), Message.user(f"The founder asked: {user_message}")]
+    usage, used, model, question = Usage(), "rules", "", ""
+    try:
+        completion = await asyncio.wait_for(
+            router.complete(spec.privacy, messages, agent_type=spec.name), timeout=METRIC_QUESTION_TIMEOUT_S
+        )
+        usage, used, model = completion.usage, completion.provider, completion.model
+        question = probing_question(completion.text)
+    except (LLMError, TimeoutError) as exc:
+        logger.info("No question after a metric answer: {}", repr(exc))
+    if question:
+        gate = _SentenceGate(result.known_facts, user_message, None, issues, evidence=evidence)
+        question = gate._checked(question).strip()
+    if question:
+        yield StreamChunk(delta=f" {question}")
+    text = f"{result.text} {question}".strip()
+    yield StreamChunk(done=True, completion=Completion(text=text, provider=used, model=model, usage=usage))
+
+
 async def advise(
     router: LLMRouter,
     user_message: str,
@@ -1334,6 +1637,11 @@ async def advise(
     """
     spec = REGISTRY["advisor"]
     frame = plan_.frame
+    if len(results) == 1 and results[0].written_by_code and results[0].verified:
+        evidence = gather(user_message, results, frame, exists)
+        async for chunk in _advise_metric(router, user_message, results[0], [] if issues is None else issues, evidence):
+            yield chunk
+        return
     findings = findings_for_advisor(results, frame)
     context = (
         f"Founder's message: {user_message}\nIntent: {plan_.intent}"
@@ -1351,15 +1659,29 @@ async def advise(
         system += (PROMPTS_DIR / "advisor_decision_impact.md").read_text(encoding="utf-8")
     if frame is not None and frame.non_hire and frame.cost_model is not None:
         system += (PROMPTS_DIR / "advisor_cost_model.md").read_text(encoding="utf-8")
+    records = _team_decisions(results)
+    lead = decision_lead(frame, records, _chosen_in(results))
+    if lead:
+        context += (
+            f"\n\nAlready said to the founder, first, by code: {lead}\nDo not repeat it, the goal or the proposal. "
+            f"Add at most {DECISION_PROSE_SENTENCES} short sentences: the main trade-off, and one question."
+        )
     messages = [Message.system(system), Message.user(context)]
     sent: list[str] = []
     facts = [*(fact for r in results for fact in r.facts), *(frame.facts if frame else [])]
-    records = _team_decisions(results)
     claims = issues if issues is not None else []
-    evidence = gather(user_message, results, frame, exists, quoted_text=findings)
+    evidence = gather(user_message, results, frame, exists, quoted_text=findings, code_lines=[lead] if lead else ())
     gate = _SentenceGate(
         facts, user_message, team_impact(results), claims, frame, records, _chosen_in(results), evidence
     )
+    if lead:
+        gate.max_sentences = DECISION_PROSE_SENTENCES
+        gate.said.extend(re.sub(r"\W+", " ", p).strip().lower() for p in split_sentences(lead))
+        gate.max_sentences += len(gate.said)
+        gate.lead_figures = [f.value for f in extract_figures(lead)]
+        gate.draft_on_record = any(not r.is_decided for r in records)
+        sent.append(f"{lead} ")
+        yield StreamChunk(delta=f"{lead} ")
     try:
         async for chunk in router.stream(spec.privacy, messages, agent_type=spec.name):
             ready = gate.feed(chunk.delta) if chunk.delta else ""
@@ -1377,10 +1699,12 @@ async def advise(
                     if findings_text:
                         sent.append(f" {findings_text}")
                         yield StreamChunk(delta=f" {findings_text}")
-                note = advisor_decision_note("".join(sent), results)
+                # With code's lead, a proposed memo on record is already named and asked about.
+                note = "" if lead else advisor_decision_note("".join(sent), results)
                 note += advisor_impact_note("".join(sent) + note, plan_, results)
                 note += advisor_frame_note("".join(sent) + note, frame)
                 note += advisor_memo_note("".join(sent) + note, results, frame)
+                note = gate._budgeted_notes(note) if lead else note
                 if note:
                     sent.append(note)
                     yield StreamChunk(delta=note)
@@ -1392,7 +1716,7 @@ async def advise(
         if ready:
             sent.append(ready)
             yield StreamChunk(delta=ready)
-        if any(sent):
+        if any(sent[1:] if lead else sent):
             # The founder already saw part of the reply: end it honestly instead of appending a second answer.
             logger.warning("Advisor stream broke after {} chunks: {}", len(sent), exc)
             note = " (The reply was cut off; see the findings.)" + advisor_decision_note("".join(sent), results)
@@ -1402,10 +1726,15 @@ async def advise(
             return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
         text = guarded(template_answer(results), frame, records, chosen=_chosen_in(results))
-        text += advisor_impact_note(text, plan_, results)
-        text += advisor_frame_note(text, frame)
-        text += advisor_memo_note(text, results, frame)
+        shown = lead + " " + text if lead else text
+        text += advisor_impact_note(shown, plan_, results)
+        text += advisor_frame_note(lead + " " + text if lead else text, frame)
+        text += advisor_memo_note(lead + " " + text if lead else text, results, frame)
+        if lead:
+            gate.max_sentences = None  # the findings are the answer here: only what the lead already said goes
+            text = gate._budgeted(text)
         yield StreamChunk(delta=text)
+        text = f"{lead} {text}" if lead else text
         yield StreamChunk(
             done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)
         )

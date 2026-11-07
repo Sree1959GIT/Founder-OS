@@ -427,8 +427,10 @@ def _claimed_concepts(clause: str, sentence: str, written: FactKind, context: st
     can compare several.
     """
     named = set(concepts_in(clause))
-    if written == "months" and "cash" in named:  # "cash lasts 10.65 months" is a claim about runway
-        named = (named - {"cash"}) | {"runway"}
+    # "cash lasts 10.65 months" and "10.65 months at this burn" are about runway: burn and cash are not in months.
+    money_words = named & {"cash", "burn", "net_burn", "gross_burn"}
+    if written == "months" and money_words:
+        named = (named - money_words) | {"runway"}
     roles = _hire_roles(context)
     if _names_a_hire_cost(clause, roles):
         return frozenset({"hire_cost"})  # explicit: a broader word in the clause does not rescue it

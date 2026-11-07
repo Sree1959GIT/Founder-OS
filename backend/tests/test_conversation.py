@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.agents.decision_frame import parse_inputs
 from app.agents.events import EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.tools import ToolContext
@@ -96,10 +97,27 @@ def client(settings: Settings) -> Iterator[TestClient]:
         ("Can we make it to December?", "new_question"),
         ("Cancel the Acme contract", None),
         ("Stop hiring contractors", None),
+        # Founder review 21: a change to the running request, worded as an addition, was queued as a question.
+        ("also make it a two person team", "amendment"),
+        ("Add a travel budget of 2000 a month", "amendment"),
+        ("only two hires", "amendment"),
+        ("change the rent to 3000", "amendment"),
+        ("Use a partner instead", "amendment"),
+        ("assume 4k rent", "amendment"),
+        ("what about our churn?", "new_question"),
+        ("What does adding a hire do to runway?", "new_question"),
     ],
 )
 def test_clear_turns_need_no_model(text: str, kind: str | None) -> None:
     assert by_rules(text) == kind
+
+
+@pytest.mark.parametrize(
+    "text", ["also make it a two person team", "a two-person team", "make it two people", "only 2 local hires"]
+)
+def test_an_amendment_changes_the_runs_inputs(text: str) -> None:
+    """Accepted, the amendment re-runs with the founder's own count: local hires = 2, not the placeholder."""
+    assert parse_inputs(text, "new_office") == {"hires": 2.0}
 
 
 class Unsure(FakeDecisionProvider):

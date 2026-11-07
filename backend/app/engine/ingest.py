@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import duckdb
 import numpy as np
@@ -441,6 +441,18 @@ def _create_and_insert(con: duckdb.DuckDBPyConnection, spec: TableSpec, rows: li
         con.unregister("_ingest_rows")
 
 
+def _append(con: duckdb.DuckDBPyConnection, spec: TableSpec, rows: list[list[Any]]) -> None:
+    """Add rows to a table that is already loaded, through a scratch table with the same columns."""
+    scratch = TableSpec(name=f"_append_{spec.name}", description=spec.description, columns=spec.columns)
+    _create_and_insert(con, scratch, rows)
+    try:
+        con.execute(f'INSERT INTO "{spec.name}" SELECT * FROM "{scratch.name}"')
+    except duckdb.Error as exc:
+        raise IngestError(f"{spec.name}: these rows could not be added ({exc})") from exc
+    finally:
+        con.execute(f'DROP TABLE IF EXISTS "{scratch.name}"')
+
+
 def _log(con: duckdb.DuckDBPyConnection, report: TableReport) -> None:
     con.execute(
         f"CREATE TABLE IF NOT EXISTS {INGEST_LOG_TABLE} (table_name VARCHAR PRIMARY KEY, source_file VARCHAR, "
@@ -459,14 +471,159 @@ def _log(con: duckdb.DuckDBPyConnection, report: TableReport) -> None:
     )
 
 
+BACKUP_PREFIX = "_backup_"
+BACKUPS_TABLE = "_backups"
+IngestMode = Literal["replace", "append"]
+
+
+class Conflict(BaseModel):
+    """A table the upload would change that already holds data: the founder chooses before anything is written."""
+
+    table: str
+    existing_rows: int
+    existing_source: str | None
+    incoming_rows: int
+    incoming_source: str
+
+
+class BackupInfo(BaseModel):
+    table: str
+    rows: int
+    source_file: str | None
+    saved_at: str
+
+
 def ingest_file(
-    db: FinanceDB, path: Path, *, table: str | None = None, display_name: str | None = None
+    db: FinanceDB,
+    path: Path,
+    *,
+    table: str | None = None,
+    display_name: str | None = None,
+    mode: IngestMode = "replace",
 ) -> list[TableReport]:
     """Load every sheet of `path`. All sheets are parsed before anything is written, so a bad sheet loads nothing."""
     sheets = read_file(path, display_name)
     if table and len(sheets) > 1:
         raise IngestError("Choosing a table is only possible for single-sheet files")
-    return _ingest_sheets(db, sheets, table)
+    return _ingest_sheets(db, sheets, table, mode=mode, backup=True)
+
+
+def upload_conflicts(
+    db: FinanceDB, path: Path, *, table: str | None = None, display_name: str | None = None
+) -> list[Conflict]:
+    """Which tables `path` would change that already hold rows, with both row counts. Writes nothing.
+
+    Seen in the founder's review: a one-row file mapped to `pnl` replaced all 360 rows, with no warning.
+    """
+    sheets = read_file(path, display_name)
+    if table and len(sheets) > 1:
+        raise IngestError("Choosing a table is only possible for single-sheet files")
+    prepared = _prepare(db, sheets, table)
+    if not db.path.exists():
+        return []  # nothing loaded yet, so nothing to overwrite
+    loaded = {row["table"]: row for row in ingest_log(db)}
+    conflicts: list[Conflict] = []
+    with db.connect() as con:
+        present = {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
+        for spec, sheet, _, rows in prepared:
+            if spec.name not in present:
+                continue
+            count = con.execute(f'SELECT count(*) FROM "{spec.name}"').fetchone()
+            existing = int(count[0]) if count else 0
+            if existing:
+                conflicts.append(
+                    Conflict(
+                        table=spec.name,
+                        existing_rows=existing,
+                        existing_source=loaded.get(spec.name, {}).get("source_file"),
+                        incoming_rows=len(rows),
+                        incoming_source=sheet.file_name,
+                    )
+                )
+    return conflicts
+
+
+def _backup(con: duckdb.DuckDBPyConnection, name: str) -> None:
+    """Keep the table as it was before this upload, with its log row, so the upload can be undone."""
+    present = con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [name]).fetchone()
+    if not present or not present[0]:
+        return
+    con.execute(f'CREATE OR REPLACE TABLE "{BACKUP_PREFIX}{name}" AS SELECT * FROM "{name}"')
+    con.execute(
+        f"CREATE TABLE IF NOT EXISTS {BACKUPS_TABLE} (table_name VARCHAR PRIMARY KEY, row_count BIGINT, "
+        "source_file VARCHAR, log_json VARCHAR, saved_at TIMESTAMP)"
+    )
+    log: dict[str, Any] | None = None
+    has_log = con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [INGEST_LOG_TABLE]
+    ).fetchone()
+    if has_log and has_log[0]:
+        row = con.execute(
+            f"SELECT source_file, source_sheet, row_count, columns_json FROM {INGEST_LOG_TABLE} WHERE table_name = ?",
+            [name],
+        ).fetchone()
+        if row:
+            log = {"source_file": row[0], "sheet": row[1], "rows": row[2], "columns_json": row[3]}
+    count = con.execute(f'SELECT count(*) FROM "{name}"').fetchone()
+    con.execute(
+        f"INSERT OR REPLACE INTO {BACKUPS_TABLE} VALUES (?, ?, ?, ?, ?)",
+        [
+            name,
+            int(count[0]) if count else 0,
+            log["source_file"] if log else None,
+            json.dumps(log) if log else None,
+            datetime.now(UTC).replace(tzinfo=None),
+        ],
+    )
+
+
+def backups(db: FinanceDB) -> list[BackupInfo]:
+    if not db.path.exists():
+        return []
+    with db.connect() as con:
+        exists = con.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [BACKUPS_TABLE]
+        ).fetchone()
+        if not exists or not exists[0]:
+            return []
+        rows = con.execute(
+            f"SELECT table_name, row_count, source_file, saved_at FROM {BACKUPS_TABLE} ORDER BY table_name"
+        ).fetchall()
+    return [
+        BackupInfo(table=t, rows=int(n), source_file=f, saved_at=at.isoformat() if at else "") for t, n, f, at in rows
+    ]
+
+
+def undo_upload(db: FinanceDB, name: str) -> BackupInfo:
+    """Put a table back as it was before the last upload that changed it. The backup is used up."""
+    found = next((b for b in backups(db) if b.table == name), None)
+    if found is None:
+        raise IngestError(f"There is no earlier version of {name} to go back to")
+    with db.connect(read_only=False) as con:
+        con.execute("BEGIN TRANSACTION")
+        try:
+            con.execute(f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM "{BACKUP_PREFIX}{name}"')
+            row = con.execute(f"SELECT log_json FROM {BACKUPS_TABLE} WHERE table_name = ?", [name]).fetchone()
+            log = json.loads(row[0]) if row and row[0] else None
+            if log is not None:
+                con.execute(
+                    f"INSERT OR REPLACE INTO {INGEST_LOG_TABLE} VALUES (?, ?, ?, ?, ?, ?)",
+                    [
+                        name,
+                        log["source_file"],
+                        log["sheet"],
+                        log["rows"],
+                        log["columns_json"],
+                        datetime.now(UTC).replace(tzinfo=None),
+                    ],
+                )
+            con.execute(f'DROP TABLE "{BACKUP_PREFIX}{name}"')
+            con.execute(f"DELETE FROM {BACKUPS_TABLE} WHERE table_name = ?", [name])
+            con.execute("COMMIT")
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
+    return found
 
 
 def ingest_directory(db: FinanceDB, directory: Path) -> list[TableReport]:
@@ -477,10 +634,12 @@ def ingest_directory(db: FinanceDB, directory: Path) -> list[TableReport]:
     return _ingest_sheets(db, [sheet for path in files for sheet in read_file(path)], None)
 
 
-def _ingest_sheets(db: FinanceDB, sheets: list[RawSheet], table: str | None) -> list[TableReport]:
-    store = MappingStore(db.data_dir)
-    saved_all = store.load()
-    prepared: list[tuple[TableSpec, RawSheet, dict[int, Column], list[list[Any]]]] = []
+Prepared = list[tuple[TableSpec, RawSheet, dict[int, Column], list[list[Any]]]]
+
+
+def _prepare(db: FinanceDB, sheets: list[RawSheet], table: str | None) -> Prepared:
+    saved_all = MappingStore(db.data_dir).load()
+    prepared: Prepared = []
     seen: set[str] = set()
     for sheet in sheets:
         saved = saved_all.get(sheet.key)
@@ -490,18 +649,43 @@ def _ingest_sheets(db: FinanceDB, sheets: list[RawSheet], table: str | None) -> 
         seen.add(spec.name)
         mapping = map_columns(spec, sheet.headers, saved)
         prepared.append((spec, sheet, mapping, parse_rows(spec, sheet, mapping)))
+    return prepared
+
+
+def _ingest_sheets(
+    db: FinanceDB,
+    sheets: list[RawSheet],
+    table: str | None,
+    *,
+    mode: IngestMode = "replace",
+    backup: bool = False,
+) -> list[TableReport]:
+    store = MappingStore(db.data_dir)
+    prepared = _prepare(db, sheets, table)
+    loaded = {row["table"]: row for row in ingest_log(db)} if mode == "append" else {}
 
     reports: list[TableReport] = []
     with db.connect(read_only=False) as con:
         con.execute("BEGIN TRANSACTION")
         try:
             for spec, sheet, mapping, rows in prepared:
-                _create_and_insert(con, spec, rows)
+                if backup:
+                    _backup(con, spec.name)
+                total = len(rows)
+                source = sheet.file_name
+                if mode == "append" and spec.name in loaded:
+                    _append(con, spec, rows)
+                    count = con.execute(f'SELECT count(*) FROM "{spec.name}"').fetchone()
+                    total = int(count[0]) if count else len(rows)
+                    before = loaded[spec.name].get("source_file")
+                    source = sheet.file_name if not before or before == sheet.file_name else f"{before} + {source}"
+                else:
+                    _create_and_insert(con, spec, rows)
                 report = TableReport(
                     table=spec.name,
-                    source_file=sheet.file_name,
+                    source_file=source,
                     sheet=sheet.sheet,
-                    rows=len(rows),
+                    rows=total,
                     columns={sheet.headers[i]: c.name for i, c in sorted(mapping.items())},
                     unmapped_headers=[h for i, h in enumerate(sheet.headers) if i not in mapping and h.strip()],
                     warnings=validation_warnings(con, spec.name),

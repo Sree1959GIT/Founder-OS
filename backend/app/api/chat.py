@@ -92,11 +92,28 @@ async def _chat_stream(run: RunContext, bus: EventBus) -> AsyncIterator[str]:
             task.cancel()
 
 
+@router.get("/runs/{run_id}/stream")
+async def stream_run(run_id: str, orchestrator: OrchestratorDep, bus: BusDep) -> StreamingResponse:
+    """The Advisor's text as it is written, then the full result: for a run the conversation lane started.
+
+    One reader only, because each piece of text is delivered once. A second reader, or one who arrives after the run
+    has finished, reads the result from `GET /api/runs/{id}`.
+    """
+    run = orchestrator.runs.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"unknown run {run_id}")
+    if run.streamed:
+        raise HTTPException(status_code=409, detail="this run is already being read: use GET /api/runs/{id}")
+    run.streamed = True
+    return StreamingResponse(_chat_stream(run, bus), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
 @router.post("/chat", response_model=None)
 async def chat(body: ChatRequest, orchestrator: OrchestratorDep, bus: BusDep) -> StreamingResponse | ChatResult:
     """Ask the advisor. The Planner picks a team, agents run in parallel, the Verifier checks, the Advisor answers."""
     run = orchestrator.start(body.message.strip())
     if body.stream:
+        run.streamed = True
         return StreamingResponse(_chat_stream(run, bus), media_type="text/event-stream", headers=SSE_HEADERS)
     assert run.task is not None
     try:
@@ -144,6 +161,8 @@ async def get_run(run_id: str, orchestrator: OrchestratorDep, bus: BusDep) -> di
         "awaiting_approval": run.plan is not None
         and not run.approval.is_set()
         and orchestrator.needs_approval(run.plan.team),
+        "message": run.message,
+        "decision_frame": run.plan.frame.model_dump(mode="json") if run.plan and run.plan.frame else None,
         "result": run.result.model_dump(mode="json") if run.result else None,
         "snapshot": run.context.model_dump(mode="json") if run.context is not None else None,
         "events": [e.model_dump(mode="json") for e in bus.history(run_id)],

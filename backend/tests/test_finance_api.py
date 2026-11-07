@@ -200,6 +200,8 @@ def test_upload_table_override(empty_client: TestClient) -> None:
 def test_load_sample_endpoint(empty_client: TestClient) -> None:
     body = empty_client.post("/api/data/load-sample").json()
     assert len(body["tables"]) == 7
+    # One source for every table (founder review 33), with the same numbers as the CSVs.
+    assert {t["source_file"] for t in body["tables"]} == {"northwind_financials.xlsx"}
     assert empty_client.get("/api/metrics/mrr").json()["value"] == 255344.27
 
 
@@ -215,3 +217,58 @@ def test_load_sample_endpoint(empty_client: TestClient) -> None:
 )
 def test_safe_file_name(raw: str, expected: str) -> None:
     assert safe_file_name(raw) == expected
+
+
+# --- founder review 32: an upload never replaces a loaded table without asking ------------------------------------
+ONE_ROW = b"month,account,category,amount\n2026-11,Subscriptions,Revenue,1000\n"
+
+
+def _pnl_rows(client: TestClient) -> int:
+    return int(client.post("/api/data/query", json={"sql": "SELECT count(*) FROM pnl"}).json()["rows"][0][0])
+
+
+def test_an_upload_over_a_loaded_table_asks_first_with_row_counts(client: TestClient) -> None:
+    before = _pnl_rows(client)
+    assert before == 360
+    body = client.post("/api/data/upload", files={"file": ("one.csv", ONE_ROW, "text/csv")}).json()
+    assert body["tables"] == []
+    (conflict,) = body["conflicts"]
+    assert conflict == {
+        "table": "pnl",
+        "existing_rows": 360,
+        "existing_source": "pnl.csv",
+        "incoming_rows": 1,
+        "incoming_source": "one.csv",
+    }
+    assert _pnl_rows(client) == 360  # nothing was written
+
+
+def test_replace_keeps_a_backup_and_undo_restores_it(client: TestClient) -> None:
+    files = {"file": ("one.csv", ONE_ROW, "text/csv")}
+    replaced = client.post("/api/data/upload", files=files, data={"mode": "replace"}).json()
+    assert replaced["tables"][0]["rows"] == 1 and _pnl_rows(client) == 1
+    assert [b["table"] for b in replaced["backups"]] == ["pnl"] and replaced["backups"][0]["rows"] == 360
+    undone = client.post("/api/data/undo", json={"table": "pnl"})
+    assert undone.status_code == 200 and undone.json()["restored"]["rows"] == 360
+    assert _pnl_rows(client) == 360
+    loaded = {t["table"]: t for t in client.get("/api/data/tables").json()["loaded"]}
+    assert loaded["pnl"]["source_file"] == "pnl.csv" and loaded["pnl"]["rows"] == 360
+    assert client.get("/api/metrics/runway").json()["value"] == 10.65
+    assert client.post("/api/data/undo", json={"table": "pnl"}).status_code == 404  # the backup is used up
+
+
+def test_append_adds_rows_and_can_be_undone(client: TestClient) -> None:
+    files = {"file": ("one.csv", ONE_ROW, "text/csv")}
+    appended = client.post("/api/data/upload", files=files, data={"mode": "append"}).json()
+    (report,) = appended["tables"]
+    assert report["rows"] == 361 and report["source_file"] == "pnl.csv + one.csv"
+    assert _pnl_rows(client) == 361
+    client.post("/api/data/undo", json={"table": "pnl"})
+    assert _pnl_rows(client) == 360
+
+
+def test_a_first_upload_into_an_empty_table_needs_no_choice(empty_client: TestClient) -> None:
+    body = empty_client.post("/api/data/upload", files={"file": ("one.csv", ONE_ROW, "text/csv")}).json()
+    assert body["conflicts"] == [] and body["tables"][0]["rows"] == 1
+    assert empty_client.post("/api/data/undo", json={"table": "pnl"}).status_code == 404
+    assert empty_client.post("/api/data/undo", json={"table": "nope"}).status_code == 422

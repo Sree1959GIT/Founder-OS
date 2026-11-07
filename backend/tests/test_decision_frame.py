@@ -304,7 +304,8 @@ def test_a_one_hire_cost_is_never_the_cost_of_something_else(ctx: ToolContext) -
 
 def test_one_voice_is_you_and_your_adviser() -> None:
     assert in_one_voice("The founder should ask the Legal Team.") == "You should ask your adviser."
-    assert in_one_voice("Ask your tax team and the legal department.") == "Ask your adviser and your adviser."
+    # Founder review 27: two job titles that both become "your adviser" are said once.
+    assert in_one_voice("Ask your tax team and the legal department.") == "Ask your adviser."
     assert in_one_voice("The Legal and Tax teams can confirm.") == "Your adviser can confirm."
     assert in_one_voice("Their tax position.") == "Their tax position."
 
@@ -736,8 +737,9 @@ async def test_the_reply_states_the_real_cost_and_the_goal_whatever_the_model_sa
     result = await run.task  # type: ignore[misc]
     assert result.decision_type == "new_office" and result.decision_impact is None
     assert result.decision_frame.cost_model is not None and result.assumptions_to_confirm == 5
-    assert "A full Dubai office is modelled at" in result.answer
+    assert result.answer.startswith("Proposed: ") and "The full model, " in result.answer  # founder review 16
     assert "moves you away from your goal" in result.answer
+    assert "-2.07" not in result.answer.split("The full model")[1].split(".")[0] or "(-2.07)" in result.answer
     assert "assumptions to confirm" in " ".join(result.issues) and not result.verified
     people = (
         next(a for a in result.agents if a.type != "memo_writer" and "Decision Memo" in a.text)
@@ -1037,3 +1039,93 @@ def test_only_unconditional_advice_against_the_option_on_the_table_is_off_brief(
     only = frame.model_copy(update={"default_option": "No raise: cut burn instead"})
     assert not role_problems("people_ops", "Cut burn by trimming the slowest channel.", DUBAI, only)
     assert in_role("people_ops", "Stop non-essential travel now.", DUBAI, frame) == "Stop non-essential travel now."
+    # Seen live on People & Ops v2: other forms of the word.
+    for wrote in ("Stop traveling for the pilot.", "Stop travelling for the pilot.", "Avoid traveling now."):
+        assert role_problems("people_ops", wrote, DUBAI, frame), wrote
+    assert not role_problems("devils_advocate", "Pause traveling if no customer signs by March.", DUBAI, frame)
+
+
+def test_you_are_you_never_reaches_the_founder() -> None:
+    # Seen live: "You are the founder." came out as "You are you."
+    assert in_one_voice("You are the founder. Own the first three deals.") == "Own the first three deals."
+    assert in_one_voice("Own the deals. You are you.") == "Own the deals."
+    assert in_one_voice("Owner: You are the founder.\nTrade-off: ask.") == "Owner: you.\nTrade-off: ask."
+    assert in_one_voice("You are your own closer.") == "You are your own closer."
+
+
+# --- founder review 24: superlatives and comparisons match the options table --------------------------------------
+def test_a_false_cheapest_claim_is_rewritten_from_the_table(ctx: ToolContext) -> None:
+    from app.agents.guards import false_comparison, guarded
+
+    frame = build_frame(DUBAI, ctx)
+    costs = {o.name: o.runway_change_months for o in frame.options if o.modelled}
+    cheapest = max(costs, key=lambda n: costs[n] or 0)
+    pricier = next(n for n in costs if n != cheapest and not next(o for o in frame.options if o.name == n).is_full)
+    claim = f"The {pricier} is the least costly option."
+    fixed = guarded(claim, frame, chosen=pricier)
+    assert "least costly" not in fixed and fixed.startswith(f"{cheapest} costs the least runway")
+    assert "assumption, confirm" in fixed
+    # True claims stay as they are.
+    true_claim = f"{cheapest} is the cheapest option."
+    assert guarded(true_claim, frame, chosen=pricier) == true_claim
+    assert false_comparison(f"{pricier} is cheaper than {cheapest}.", frame) is not None
+    assert false_comparison(f"{cheapest} is cheaper than {pricier}.", frame) is None
+
+
+def test_speed_and_risk_superlatives_are_not_stated_as_facts(ctx: ToolContext) -> None:
+    from app.agents.guards import guarded
+
+    frame = build_frame(DUBAI, ctx)
+    fixed = guarded("The pilot is the fastest option to learn.", frame)
+    assert "fastest" not in fixed and "not compared in the options table" in fixed
+
+
+# --- founder review 16, 18, 23, 26, 27 ----------------------------------------------------------------------------
+def test_a_decision_answer_leads_with_the_proposal_then_the_full_model(ctx: ToolContext) -> None:
+    from app.agents.runtime import decision_lead
+    from app.vault.decisions import DecisionRecord
+
+    frame = build_frame(DUBAI, ctx)
+    lead = decision_lead(frame, [])
+    assert lead.startswith(f"Proposed: {frame.default_option},")
+    assert lead.index("Proposed:") < lead.index("The full model")
+    assert "assumption" in lead and "by -" not in lead
+    draft = DecisionRecord(
+        path="decisions/2026-11-06-dubai-office.md",
+        title="Dubai office",
+        status="proposed",
+        kill_criteria=["No signed customer within 6 months"],
+    )
+    with_draft = decision_lead(frame, [draft])
+    asked = "from 2026-11-06 [decisions/2026-11-06-dubai-office.md]: what has changed since you drafted it?"
+    assert asked in with_draft
+    assert "kill criteria" not in with_draft
+
+
+def test_what_about_our_churn_is_the_goals_logo_churn() -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric("What about our churn?") == "logo_churn"
+    assert single_metric("How about our revenue churn?") == "revenue_churn"
+    assert single_metric("What about hiring in Dubai?") is None
+
+
+def test_no_doubled_words_signs_or_sentences() -> None:
+    from app.agents.guards import guarded, in_one_voice
+
+    assert in_one_voice("Check with your adviser or your adviser.") == "Check with your adviser."
+    assert in_one_voice("It means reducing runway by -2.07 months.") == "It means reducing runway by 2.07 months."
+    costs = "Costs only: no new revenue is modelled."
+    assert guarded(f"{costs} Rent is the largest item. {costs}", None) == f"{costs} Rent is the largest item."
+
+
+def test_with_a_draft_on_record_no_question_about_meeting_its_target() -> None:
+    """Founder review 18: with a proposed memo on record, the Advisor asks what has changed, not about its target."""
+    from app.agents.runtime import _SentenceGate
+
+    gate = _SentenceGate([], "Should we open Dubai?", None, [])
+    gate.draft_on_record = True
+    text = "Hiring locally takes time. Is the pipeline realistically expected to meet $18,000 by May 2027? "
+    assert gate._budgeted(text).strip() == "Hiring locally takes time."
+    gate = _SentenceGate([], "Should we open Dubai?", None, [])
+    assert "expected to meet" in gate._budgeted(text)
