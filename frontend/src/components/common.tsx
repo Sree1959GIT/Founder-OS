@@ -138,6 +138,12 @@ export function VerificationBadge({ verification }: { verification: Verification
               </button>
             </>
           ) : null}
+          {removed > 0 && state !== "not_verified" ? (
+            <span className="mt-2 block text-muted-foreground">
+              <span className="num">{removed}</span> unsupported {removed === 1 ? "claim was" : "claims were"} taken out
+              before you saw {removed === 1 ? "it" : "them"}.
+            </span>
+          ) : null}
           {state === "not_verified" ? (
             <>
               <span className="mb-1.5 block font-semibold text-foreground">Read this answer with care</span>

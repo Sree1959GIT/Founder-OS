@@ -1097,7 +1097,8 @@ def test_a_decision_answer_leads_with_the_proposal_then_the_full_model(ctx: Tool
         kill_criteria=["No signed customer within 6 months"],
     )
     with_draft = decision_lead(frame, [draft])
-    assert "what has changed since you drafted this on 2026-11-06?" in with_draft
+    asked = "from 2026-11-06 [decisions/2026-11-06-dubai-office.md]: what has changed since you drafted it?"
+    assert asked in with_draft
     assert "kill criteria" not in with_draft
 
 
@@ -1116,3 +1117,15 @@ def test_no_doubled_words_signs_or_sentences() -> None:
     assert in_one_voice("It means reducing runway by -2.07 months.") == "It means reducing runway by 2.07 months."
     costs = "Costs only: no new revenue is modelled."
     assert guarded(f"{costs} Rent is the largest item. {costs}", None) == f"{costs} Rent is the largest item."
+
+
+def test_with_a_draft_on_record_no_question_about_meeting_its_target() -> None:
+    """Founder review 18: with a proposed memo on record, the Advisor asks what has changed, not about its target."""
+    from app.agents.runtime import _SentenceGate
+
+    gate = _SentenceGate([], "Should we open Dubai?", None, [])
+    gate.draft_on_record = True
+    text = "Hiring locally takes time. Is the pipeline realistically expected to meet $18,000 by May 2027? "
+    assert gate._budgeted(text).strip() == "Hiring locally takes time."
+    gate = _SentenceGate([], "Should we open Dubai?", None, [])
+    assert "expected to meet" in gate._budgeted(text)

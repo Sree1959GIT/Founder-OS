@@ -37,7 +37,7 @@ from app.agents.sources import vault_checker
 from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
 from app.agents.verification import Verification, verification
-from app.agents.verifier import verify_numbers
+from app.agents.verifier import extract_figures, number_supported, verify_numbers
 from app.decision.base import DecisionService
 from app.llm.base import Usage
 from app.llm.router import LLMRouter
@@ -67,6 +67,21 @@ class MetricOut(BaseModel):
     as_of: str
     agent_id: str
     lineage: dict[str, Any]
+
+
+def _removed_before_shown(results: list[AgentResult]) -> list[str]:
+    """Audit lines about a figure the source check then took out: the founder never saw it, so it is counted as a
+    removed claim (the chip by the badge), not as a failure of the figures that are shown."""
+    resolved: list[str] = []
+    for r in results:
+        gone = list(r.removed_figures)
+        for issue in r.issues:
+            if not issue.startswith("number without lineage"):
+                continue
+            figures = extract_figures(issue.split(":", 1)[1])
+            if figures and gone and all(number_supported(f, gone) for f in figures):
+                resolved.append(f"{r.name}: {issue}")
+    return resolved
 
 
 class ChatResult(BaseModel):
@@ -463,7 +478,7 @@ class AgentOrchestrator:
             memo=next((r.memo for r in results if r.memo is not None), None),
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             verified=not issues and all_done,
-            verification=verification(issues, all_done, to_confirm, sources),
+            verification=verification(issues, all_done, to_confirm, sources, resolved=_removed_before_shown(results)),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
             advisor_model=str(advisor.get("model", "")),

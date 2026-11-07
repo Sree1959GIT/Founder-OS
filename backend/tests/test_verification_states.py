@@ -33,6 +33,16 @@ def test_a_failed_check_is_not_verified_with_reasons_that_name_no_figure() -> No
     assert "A cited note was not found in your vault." in v.reasons
 
 
+def test_a_figure_removed_before_it_was_shown_is_counted_not_failed() -> None:
+    issues = [
+        "Market Scout: number without lineage: $166 billion",
+        "Market Scout: removed: unsupported source (1)",
+        "this rests on 5 assumptions to confirm",
+    ]
+    v = verification(issues, True, ASSUMPTIONS, [], resolved=["Market Scout: number without lineage: $166 billion"])
+    assert v.state == "assumptions" and v.removed_claims == 1 and v.reasons == []
+
+
 def test_an_unfinished_agent_is_not_verified() -> None:
     v = verification([], False, [], [])
     assert v.state == "not_verified" and v.reasons == ["An agent did not finish."]

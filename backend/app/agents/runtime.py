@@ -1066,7 +1066,7 @@ _NAMES_THE_JOURNAL = re.compile(r"\b(my|our|the) journal\b", re.I)
 def _memo_facts(draft: MemoDraft, result: AgentResult) -> list[Fact]:
     """The team's numbers, plus the memo's own forecasts: a stated belief, not a financial figure."""
     forecasts = [_forecast_fact(p) for p in draft.predictions]
-    return [*result.known_facts, *forecasts]
+    return [*result.known_facts, *result.record_facts, *forecasts]  # a figure quoted from a memo on record is cited
 
 
 def _forecast_fact(prediction: MemoPrediction) -> Fact:
@@ -1384,16 +1384,23 @@ def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], ch
         base = model.case("base")
         name = full.name if full is not None else model.subject
         runway = _runway_words(base.base_runway_months, base.scenario_runway_months, base.runway_change_months)
+        away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
+        goal = f', which moves you away from your goal "{away}"' if away else ""
         parts.append(
             f"The full model, {name}, is {model.money(base.one_off)} up front and {model.money(base.monthly)} a month"
-            f"{runway}."
+            f"{runway}{goal}; all of these are assumptions to confirm ({ASSUMPTION_LABEL})."
         )
-    if parts:
-        parts.append(f"All of these are assumptions to confirm ({ASSUMPTION_LABEL}).")
+    elif parts:
+        parts.append(f"These are assumptions to confirm ({ASSUMPTION_LABEL}).")
     drafts = [r for r in records if not r.is_decided]
     if drafts:
+        # A proposal never started, so it is not asked about its kill criteria: only what has changed.
         record = drafts[0]
-        parts.append(f"You already have a {record.status} memo on this [{record.path}]. {record.follow_up_question()}")
+        when = f" from {record.drafted_on()}" if record.drafted_on() else ""
+        parts.append(
+            f"You already have a {record.status} memo on this{when} [{record.path}]: what has changed since you "
+            "drafted it?"
+        )
     return " ".join(parts)
 
 
@@ -1420,7 +1427,13 @@ def _option_words(option: OptionCost, currency: str) -> str:
 
 
 # A decision answer: code's lead, then at most this many of the model's sentences (founder review 18).
-DECISION_PROSE_SENTENCES = 3
+DECISION_PROSE_SENTENCES = 2
+# A question about whether the drafted memo's target will be met: with a draft on record, the founder is asked what
+# has changed since it was drafted instead (founder review, 18).
+_TARGET_QUESTION = re.compile(
+    r"\b(?:expected to|likely to|realistic\w*|going to)\b[^?]*\b(?:meet|hit|reach|achieve)\b[^?]*\?", re.I
+)
+_KILL_QUESTION = re.compile(r"\b(?:kill criteri\w*|on track|meet(?:ing)? (?:its|the) (?:targets?|criteria))\b", re.I)
 
 
 class _SentenceGate:
@@ -1445,6 +1458,8 @@ class _SentenceGate:
         self.noted = False
         self.max_sentences: int | None = None  # a decision answer stays short
         self.said: list[str] = []  # what went out, to drop a sentence said twice
+        self.lead_figures: list[float] = []  # code's lead already gave these: a sentence of only these repeats it
+        self.draft_on_record = False  # a proposed memo is on record: no question about its kill criteria
 
     def _budgeted(self, text: str) -> str:
         """No sentence twice, and no more than the budget."""
@@ -1456,9 +1471,15 @@ class _SentenceGate:
                 continue
             if key in self.said or (self.max_sentences is not None and len(self.said) >= self.max_sentences):
                 continue
+            figures = extract_figures(piece)
+            if figures and self.lead_figures and all(number_supported(f, self.lead_figures) for f in figures):
+                continue  # the proposal and the full model, said again in the model's words
+            if self.draft_on_record and (_KILL_QUESTION.search(piece) or _TARGET_QUESTION.search(piece)):
+                continue
             self.said.append(key)
             kept.append(piece)
-        return "".join(kept)
+        out = "".join(kept)
+        return out if out.strip() else ""  # nothing left: no stray spaces between what was said
 
     def _without_unsupported(self, text: str) -> str:
         """A figure with no source never reaches the founder, not even inside a question."""
@@ -1657,6 +1678,8 @@ async def advise(
         gate.max_sentences = DECISION_PROSE_SENTENCES
         gate.said.extend(re.sub(r"\W+", " ", p).strip().lower() for p in split_sentences(lead))
         gate.max_sentences += len(gate.said)
+        gate.lead_figures = [f.value for f in extract_figures(lead)]
+        gate.draft_on_record = any(not r.is_decided for r in records)
         sent.append(f"{lead} ")
         yield StreamChunk(delta=f"{lead} ")
     try:

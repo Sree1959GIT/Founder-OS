@@ -415,7 +415,8 @@ async def test_nothing_the_advisor_wrote_could_be_backed_and_the_findings_still_
     )
     result = await orchestrator.start("Walk me through our runway.").task  # type: ignore[misc]
     assert "99.5" not in result.answer and REMOVED_NOTE not in result.answer and "10.65" in result.answer
-    assert result.verification.removed_claims == 1 and result.verification.state == "not_verified"
+    # What was removed is counted by the badge; what is shown checked out (founder review 14 and 19).
+    assert result.verification.removed_claims == 1 and result.verification.state != "not_verified"
 
 
 # --- the evals -------------------------------------------------------------------------------------------------------

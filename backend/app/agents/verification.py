@@ -62,15 +62,20 @@ def verification(
     all_done: bool,
     assumptions: list[str],
     sources: list[str],
+    resolved: list[str] | None = None,
 ) -> Verification:
+    """`resolved`: audit lines about text the source check took out, so the founder never saw it. Those claims are
+    counted (`removed_claims`, the chip by the badge) but do not make the shown figures "not verified"."""
+    done = set(resolved or [])
     core = [i for i in issues if not ASSUMPTION_ISSUE.match(i)]
     removed = removed_count(core)
-    reasons = list(dict.fromkeys(r for r in (_reason(i) for i in core) if r))
-    if removed:
-        reasons.append(f"{removed} unsupported claim{'s' if removed != 1 else ''} removed.")
+    failing = [i for i in core if i not in done and not _REMOVED.search(i)]
+    reasons = list(dict.fromkeys(r for r in (_reason(i) for i in failing) if r))
     if not all_done and "An agent did not finish." not in reasons:
         reasons.append("An agent did not finish.")
-    if core or not all_done:
+    if removed and (failing or not all_done):
+        reasons.append(f"{removed} unsupported claim{'s' if removed != 1 else ''} removed.")
+    if failing or not all_done:
         state: Literal["verified", "assumptions", "not_verified"] = "not_verified"
     else:
         state = "assumptions" if assumptions else "verified"

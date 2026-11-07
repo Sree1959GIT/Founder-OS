@@ -58,16 +58,16 @@
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
-| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (W0 to W15) |
+| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RW1 to RW12; W0 to W15 reviewed, fixes in this PR) |
 
 ## Current session
 - Started (UTC): 2026-11-07 09:50 (local Windows bug-fix session for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
 - Plan, in the founder's priority order (P1, then P2, then P3):
   - [x] Record the founder feedback first
-  - [ ] P1: 14 badge states, 20 memo-on-record figures, 17 reload, 32 upload warning, 24 superlatives, 21 amendments, 22 early turns
-  - [ ] P2: 16, 18, 19, 23, 25, 26, 27, 9, 10
-  - [ ] P3 and 36 (Settings Save/Discard), as time allows
-  - [ ] Tests, self-review, RW re-test steps, PR #9 updated, CI green
+  - [x] P1: 14 badge states, 20 memo-on-record figures, 17 reload, 32 upload warning, 24 superlatives, 21 amendments, 22 early turns
+  - [x] P2: 16, 18, 19, 23, 25, 26, 27, 9, 10
+  - [x] P3 and 36 (Settings Save/Discard); 7 is M5, left
+  - [x] Tests (backend 1013 passed, frontend 34 vitest, lint, tsc, build), RW re-test steps, PR #9 updated
 
 Previous session (2026-11-06, M4):
 - Started (UTC): 2026-11-06 11:53 (local Windows session, time-box 2 hours), branch `claude/m4-canvas-ui`, target **M4** (gate tier: **Major**). An "M4 (partial)" PR is fine if time runs out.
@@ -593,7 +593,35 @@ Known issues / notes:
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M4 Canvas UI (Major gate, about 40 minutes). Run this one first: W0 to W15.** I ran the same flow in a browser here against a test backend with the real model. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+**M4 re-test after the founder-review fixes (Major gate, about 30 minutes). Run this one first: RW1 to RW12.** It covers P1 and P2 of "[M4] Founder review W0–W15". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. W0 to W15 below still apply; run them again only if something here looks off. Then merge, or write what you saw under "Founder feedback".
+
+- **RW1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; Set-Location frontend; npm install; Set-Location ..; .\run.bat`
+  **Expect:** the browser opens `http://127.0.0.1:3000`. Press **Load sample data** on **Data** once, so the numbers are the demo set (one workbook, `northwind_financials.xlsx`).
+- **RW2. Green badge (14).** Ask **What is our runway?** **See:** a green **Verified** badge. Click it: a popover lists the sources (the data file). No assumption narration under the answer (9).
+- **RW3. Dubai end to end, amber badge (14, 16, 18, 19, 23, 24, 26, 27).** Keep the proposed Dubai memo from W11 in the vault. Gear > **Ask before a team runs** > **Always**; ask **Should we open a Dubai office?** and approve. **See:**
+  - The answer starts with "Proposed: <option>, $… a month, runway ±… months.", then "The full model, …", then at most about three more sentences, none said twice. No "your adviser or your adviser", no "by -2.07".
+  - It asks "what has changed since you drafted it?" about the memo from its date, and never about meeting its kill criteria or targets.
+  - The badge is amber, "Figures verified · N assumptions to confirm". Click it: the assumptions are listed, with **Enter your figures**; that button puts "My figures: " in the input box.
+  - No "(removed: unsupported source)" in the text. If something was taken out, a small "N claims removed" chip sits by the badge.
+  - Any "cheapest / least costly" sentence names the option that is cheapest in the options table, or says speed and risk are not compared there.
+  - Figures from the memo on record show its path in brackets and are not counted as unsupported (20).
+  - The time shows the work time, plus "· Ns waiting for you" for the approval.
+- **RW4. Red badge (14).** Ask **What will our MRR be in 2031?** (no data for it). If the badge is red **Not verified**, click it: the reasons are in words and name no removed figure. (If it is amber or green, that is fine too; note which.)
+- **RW5. Amendment (21).** While the Dubai answer is on screen, type **also make it a two person team**. **See:** "That changes the request. Restart with your change?" (not a new queued question). Press **Restart with my change**. **See:** the rerun's options show 2 local hires.
+- **RW6. Early turns (22).** Ask a new question and, in the first two seconds, type a second one and press Enter. **See:** it is accepted at once (sent, or queued with a note), never ignored.
+- **RW7. Reload (17).** Press F5. **See:** the conversation and the open decision come back. Press F5 during a run: the run finishes, or shows as finished, on its own.
+- **RW8. Upload warning, backup and undo (32).** On **Data**, make a one-row file and upload it, choosing table `pnl`:
+  `"month,account,category,amount`n2026-10,Rent,opex,1000" | Set-Content -Encoding UTF8 $env:TEMP\one_row.csv`
+  **See:** "one_row.csv would change data you already have. Nothing is written yet.", "pnl has 360 rows …; this file has 1", with **Append**, **Replace** and **Cancel**. Press **Replace**. **See:** pnl has 1 row and a backup line with **Undo**. Press **Undo**: pnl has 360 rows again. Check from PowerShell:
+  `Invoke-RestMethod http://127.0.0.1:8000/api/data/backups | ConvertTo-Json -Depth 4`
+  **Expect:** a list (empty after the undo is fine).
+- **RW9. Memo title (25).** On **Decisions**, edit the memo's title and save. **See:** the H1 and the file's `title:` line both change (open it in **Vault**).
+- **RW10. Neutral title (10).** **See:** the decision card's title is the question as a neutral topic ("Dubai office"), not a verdict.
+- **RW11. Settings Save and Discard (36).** Gear: change **Allow cloud agents**. **See:** "You have unsaved changes" with **Save** and **Discard**; nothing applies yet (the top bar still says "Local only"). Click **Workspace**: a "Save your changes?" dialog with Save, Discard and Stay. Press **Discard**: the old value is back. Change it again and press **Save**: "Saved.", and the badge in the top bar changes. Set it back and **Save**.
+- **RW12. Smoke test (optional).** `Set-Location frontend; npx playwright install chromium; npx playwright test; Set-Location ..` **Expect:** `1 passed`.
+
+**M4 Canvas UI, first review (done: the findings are under "Founder feedback"; reference). W0 to W15.** I ran the same flow in a browser here against a test backend with the real model. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
 
 - **W0. Get the code.** Close the backend and frontend windows, then:
   `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; Set-Location frontend; npm install; Set-Location ..; .\run.bat`
@@ -896,7 +924,15 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M4] Founder review W0–W15: OPEN (fix session 2026-11-07)
+### [M4] Founder review W0–W15: RESOLVED, awaiting re-test (fix session 2026-11-07)
+**Resolved (2026-11-07, PR #9):** P1 (14, 20, 17, 32, 24, 21, 22), P2 (16, 18, 19, 23, 25, 26, 27, 9, 10) and P3
+(1–6, 8, 11–13, 15, 28–31, 33–35, 36) are fixed, with tests. Re-test: RW1 to RW12 in the checklist. What remains:
+- 7 is M5 (left, as agreed).
+- **Load sample data** now loads the one workbook, but a fresh start still seeds from the demo CSVs: the same numbers, a different file name in lineage.
+- The "leave the page" prompt for unsaved Settings is the browser's own dialog when closing the tab (the in-app dialog covers the app's own links).
+- A memo's "Open numbers to confirm" section may still list a line whose figure was masked as unsupported.
+- The live Dubai answer still depends on the local model: code drops repeats, extra sentences and questions about a draft's targets, but the remaining one to three sentences are the model's.
+
 W0–W15 otherwise pass: metric loop 10/10 (median 1.7 s); no fabricated figures or sources on any screen; exports, matrix, upload mapping and settings work.
 
 **P1 Trust and safety (must fix):**
@@ -1060,6 +1096,11 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M4 fix session (2026-11-07)
+- Recorded the founder review W0–W15, then fixed P1, P2 and P3 in order (see the feedback item). New: `app/agents/verification.py` (three badge states), upload conflicts/backup/undo (`/api/data/backups`, `/api/data/undo`), `frontend/src/lib/persist.ts` (reload keeps the session), Settings draft with Save/Discard and a leave guard.
+- Verified live against a scratch backend with the real local model and a proposed Dubai memo in the vault: issues went from 13 to the removed Scout figure; the answer leads with the proposal and the full model.
+- Last fixes from the live runs: a memo's figures quoted by the Memo Writer count as cited; with a draft on record, questions about meeting its targets are dropped.
+
 ### M4 session (2026-11-06)
 - Item (1): "You are you." and "traveling" guards, with tests. The metric question: cause found, Verifier fixed ("months at this burn" is a claim about runway), code-written fast path. Live 10/10 verified, median 1.7 s.
 - Backend for the UI: `/api/settings`, `/api/priorities`, `GET /api/runs/{id}/stream`, `PUT /api/data/mappings`, the frame on `team.proposed`, `local_only` on approve, run detail with message and frame.
