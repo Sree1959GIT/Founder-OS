@@ -31,6 +31,7 @@ export function PriorityMatrix() {
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [options, setOptions] = useState<ScoredOption[]>([]);
   const [scores, setScores] = useState<OptionScore[]>([]);
+  const [shares, setShares] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const board = useRef<HTMLDivElement>(null);
@@ -43,6 +44,7 @@ export function PriorityMatrix() {
         setCriteria(view.criteria);
         setOptions(view.options);
         setScores(view.scoring?.options ?? []);
+        setShares(view.scoring?.weights ?? {});
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Priorities could not be read"));
   }, []);
@@ -57,6 +59,7 @@ export function PriorityMatrix() {
     try {
       const view = await putPriorities(nextCriteria, nextOptions);
       setScores(view.scoring?.options ?? []);
+      setShares(view.scoring?.weights ?? {});
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Priorities could not be saved");
@@ -214,9 +217,16 @@ export function PriorityMatrix() {
                 }}
                 className="num h-8 w-full bg-transparent text-[15px] font-semibold"
               />
+              {typeof shares[c.name] === "number" ? (
+                <span className="num block text-[11px] text-muted-foreground">counts as {((shares[c.name] ?? 0) * 100).toFixed(0)}%</span>
+              ) : null}
             </div>
           ))}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Weights are rescaled to add up to 1, so only how they compare matters. A new initiative starts in the middle,
+          not scored yet: drag it to score it.
+        </p>
         {error ? <ErrorNote>{error}</ErrorNote> : null}
       </div>
     </Section>

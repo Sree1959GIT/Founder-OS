@@ -52,13 +52,17 @@ test("the canvas shows lineage, a decision goes through approval, and no removed
 
   await page.getByRole("link", { name: "Workspace", exact: true }).click();
   const answer = page.getByTestId("advisor-answer").first();
-  await expect(answer.getByText(/Verified|Not verified/)).toBeVisible({ timeout: 60_000 });
+  await expect(answer.getByTestId("verification-badge")).toBeVisible({ timeout: 60_000 });
+  await expect(answer.getByTestId("verification-badge")).not.toHaveText("Verified"); // assumptions are never green
   await expectNothingRemoved(page);
   await expect(answer).not.toContainText("The team is waiting");
 
-  // Settings apply at once: no approval step from here on.
+  // Settings apply only on Save (founder review 36): no approval step from here on.
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByLabel("Ask before a team runs").selectOption("never");
+  await expect(page.getByTestId("unsaved")).toContainText("You have unsaved changes");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved.")).toBeVisible();
   await expect(page.getByLabel("Ask before a team runs")).toHaveValue("never");
   await page.getByRole("link", { name: "Workspace", exact: true }).click();
 

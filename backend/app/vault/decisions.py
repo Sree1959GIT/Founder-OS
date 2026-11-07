@@ -88,9 +88,19 @@ class DecisionRecord(BaseModel):
             parts.append(f"review date {self.review_date}" + (" (overdue)" if self.review_state == "overdue" else ""))
         return f'"{self.title}" [{self.path}]: ' + ", ".join(parts) + "."
 
+    def drafted_on(self) -> str:
+        """The date the note was written: its decision date, or the date its file name starts with."""
+        if self.decided:
+            return str(self.decided)[:10]
+        match = re.match(r"(\d{4}-\d{2}-\d{2})", self.path.rsplit("/", 1)[-1])
+        return match.group(1) if match else ""
+
     def follow_up_question(self) -> str:
         if not self.is_decided:
-            return f"It is marked {self.status}: what has changed since?"
+            # A proposal is not tested against its own kill criteria: it never started (founder review 18).
+            drafted = self.drafted_on()
+            when = f" on {drafted}" if drafted else ""
+            return f"It is marked {self.status}: what has changed since you drafted this{when}?"
         if not self.kill_criteria:
             return f"What has changed since this was decided on {self.decided or 'that date'}?"
         if self.review_date and self.review_state == "overdue":

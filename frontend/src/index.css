@@ -135,9 +135,20 @@
 }
 
 /* Export PDF prints only the memo sheet, on white. */
+@page {
+  /* No margin box, so the browser prints no title, URL, date or page number around the memo. */
+  margin: 0;
+}
+
 @media print {
   body {
     background: #fff;
+    padding: 14mm 16mm;
+  }
+  .memo-chips > * {
+    border-color: #6a6e76 !important;
+    background: #fff !important;
+    color: #1b1d21 !important;
   }
   .print-hide {
     display: none !important;

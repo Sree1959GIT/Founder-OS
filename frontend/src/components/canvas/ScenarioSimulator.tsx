@@ -331,7 +331,7 @@ export function ScenarioSimulator({ frame }: { frame: DecisionFrame | null }) {
               <Tile label="Runway P50" value={runway(fan.runway_p50)} />
               <Tile label="Runway P90" value={runway(fan.runway_p90)} />
               <Tile
-                label="Out of cash in 12 months"
+                label="Chance of running out of cash within 12 months"
                 value={`${(fan.probability_cash_out_within_12_months * 100).toFixed(0)}%`}
               />
             </div>

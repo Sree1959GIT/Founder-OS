@@ -21,7 +21,7 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agents.decision_frame import DecisionFrame, build_frame, names_goal
+from app.agents.decision_frame import ASSUMPTION_LABEL, DecisionFrame, OptionCost, build_frame, names_goal
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
@@ -126,7 +126,9 @@ MAX_LOOKUP_WORDS = 12
 MAX_QUESTION_WORDS = 22
 METRIC_QUESTION_TIMEOUT_S = 4.0
 _ASKS_FOR_A_NUMBER = re.compile(
-    r"^\s*(?:what(?:'|\u2019)?s|what is|what are|how much|how long|how(?:'|\u2019)s|show(?: me)?|tell me|give me|"
+    # "What about our churn?" is a lookup too: plain "churn" is logo churn, the goal's own metric (founder review 23).
+    r"^\s*(?:what(?:'|\u2019)?s|what is|what are|what about|how about|how much|how long|how(?:'|\u2019)s|show(?: me)?|"
+    r"tell me|give me|"
     r"our|my|current)\b",
     re.I,
 )
@@ -272,6 +274,7 @@ def rule_metric(text: str) -> str | None:
 _LOOKUP_WORDS = frozenset(
     [
         "a",
+        "about",
         "am",
         "are",
         "at",
@@ -1362,6 +1365,64 @@ def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
     return "".join(parts)
 
 
+def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "") -> str:
+    """A decision answer opens with the proposed option, then the full model: the same order as the lead card.
+
+    Written by code, so the figures are the table's and the signs are never doubled ("reducing runway by -2.07").
+    A proposed memo already on record is a draft to update, so the founder is asked what has changed.
+    """
+    if frame is None or not frame.options:
+        return ""
+    wanted = chosen or frame.default_option
+    proposed = next((o for o in frame.options if o.name == wanted), None)
+    full = next((o for o in frame.options if o.is_full), None)
+    model = frame.cost_model
+    parts: list[str] = []
+    if proposed is not None:
+        parts.append(f"Proposed: {_option_words(proposed, frame.currency)}.")
+    if model is not None and (proposed is None or not proposed.is_full):
+        base = model.case("base")
+        name = full.name if full is not None else model.subject
+        runway = _runway_words(base.base_runway_months, base.scenario_runway_months, base.runway_change_months)
+        parts.append(
+            f"The full model, {name}, is {model.money(base.one_off)} up front and {model.money(base.monthly)} a month"
+            f"{runway}."
+        )
+    if parts:
+        parts.append(f"All of these are assumptions to confirm ({ASSUMPTION_LABEL}).")
+    drafts = [r for r in records if not r.is_decided]
+    if drafts:
+        record = drafts[0]
+        parts.append(f"You already have a {record.status} memo on this [{record.path}]. {record.follow_up_question()}")
+    return " ".join(parts)
+
+
+def _runway_words(before: float | None, after: float | None, change: float | None) -> str:
+    if before is None or after is None or change is None:
+        return "; runway does not run out in the model"
+    return f", moving projected runway from {before:.2f} to {after:.2f} months ({change:+.2f})"
+
+
+def _option_words(option: OptionCost, currency: str) -> str:
+    if not option.modelled:
+        return f"{option.name} (its cost is not modelled)"
+    cost = (
+        f"{format_money(option.one_off, currency)} up front and {format_money(option.monthly, currency)} a month"
+        if option.one_off
+        else f"{format_money(option.monthly, currency)} a month"
+    )
+    effect = (
+        "runway does not run out in the model"
+        if option.runway_change_months is None
+        else f"runway {option.runway_change_months:+.2f} months"
+    )
+    return f"{option.name}, {cost}, {effect}"
+
+
+# A decision answer: code's lead, then at most this many of the model's sentences (founder review 18).
+DECISION_PROSE_SENTENCES = 3
+
+
 class _SentenceGate:
     """Checks the Advisor's reply one sentence at a time, before the founder sees it (the reply streams)."""
 
@@ -1382,6 +1443,22 @@ class _SentenceGate:
         self.pending = ""
         self.written: set[str] = set()
         self.noted = False
+        self.max_sentences: int | None = None  # a decision answer stays short
+        self.said: list[str] = []  # what went out, to drop a sentence said twice
+
+    def _budgeted(self, text: str) -> str:
+        """No sentence twice, and no more than the budget."""
+        kept: list[str] = []
+        for piece in split_sentences(text):
+            key = re.sub(r"\W+", " ", piece).strip().lower()
+            if not key:
+                kept.append(piece)
+                continue
+            if key in self.said or (self.max_sentences is not None and len(self.said) >= self.max_sentences):
+                continue
+            self.said.append(key)
+            kept.append(piece)
+        return "".join(kept)
 
     def _without_unsupported(self, text: str) -> str:
         """A figure with no source never reaches the founder, not even inside a question."""
@@ -1405,9 +1482,21 @@ class _SentenceGate:
         fixed, failed = repair_claims(text, self.facts, self.message, _written_by_code(self.impact), self.written)
         self.issues.extend(f"advisor: wrong meaning: {i.message}" for i in failed)
         if not failed:
-            return text
+            return self._budgeted(text)
         trailing = text[len(text.rstrip()) :]
-        return fixed + trailing
+        return self._budgeted(fixed + trailing)
+
+    def _budgeted_notes(self, note: str) -> str:
+        """Code's own notes always go out, but never a sentence the reply has already said."""
+        kept: list[str] = []
+        for piece in split_sentences(note):
+            key = re.sub(r"\W+", " ", piece).strip().lower()
+            if key and key in self.said:
+                continue
+            self.said.append(key)
+            kept.append(piece)
+        out = "".join(kept)
+        return f" {out.strip()}" if out.strip() else ""
 
     def feed(self, delta: str) -> str:
         """Any sentences `delta` completed, checked. The unfinished one waits."""
@@ -1438,7 +1527,7 @@ def advisor_memo_note(answer: str, results: list[AgentResult], frame: DecisionFr
     if option is not None and frame is not None and option.modelled:
         # What is proposed may not be what the cost sentence above priced: name its own cost.
         line = option.line(frame.currency)
-        proposes = "" if line in answer else f" The memo proposes {line}"
+        proposes = "" if line in answer or f"Proposed: {memo.chosen}" in answer else f" The memo proposes {line}"
     else:
         proposes = f" The memo proposes {memo.chosen}." if memo.chosen and memo.chosen not in answer else ""
     return f"{proposes} It is at {memo.path}, for review on {memo.review_date}."
@@ -1549,15 +1638,27 @@ async def advise(
         system += (PROMPTS_DIR / "advisor_decision_impact.md").read_text(encoding="utf-8")
     if frame is not None and frame.non_hire and frame.cost_model is not None:
         system += (PROMPTS_DIR / "advisor_cost_model.md").read_text(encoding="utf-8")
+    records = _team_decisions(results)
+    lead = decision_lead(frame, records, _chosen_in(results))
+    if lead:
+        context += (
+            f"\n\nAlready said to the founder, first, by code: {lead}\nDo not repeat it, the goal or the proposal. "
+            f"Add at most {DECISION_PROSE_SENTENCES} short sentences: the main trade-off, and one question."
+        )
     messages = [Message.system(system), Message.user(context)]
     sent: list[str] = []
     facts = [*(fact for r in results for fact in r.facts), *(frame.facts if frame else [])]
-    records = _team_decisions(results)
     claims = issues if issues is not None else []
-    evidence = gather(user_message, results, frame, exists, quoted_text=findings)
+    evidence = gather(user_message, results, frame, exists, quoted_text=findings, code_lines=[lead] if lead else ())
     gate = _SentenceGate(
         facts, user_message, team_impact(results), claims, frame, records, _chosen_in(results), evidence
     )
+    if lead:
+        gate.max_sentences = DECISION_PROSE_SENTENCES
+        gate.said.extend(re.sub(r"\W+", " ", p).strip().lower() for p in split_sentences(lead))
+        gate.max_sentences += len(gate.said)
+        sent.append(f"{lead} ")
+        yield StreamChunk(delta=f"{lead} ")
     try:
         async for chunk in router.stream(spec.privacy, messages, agent_type=spec.name):
             ready = gate.feed(chunk.delta) if chunk.delta else ""
@@ -1575,10 +1676,12 @@ async def advise(
                     if findings_text:
                         sent.append(f" {findings_text}")
                         yield StreamChunk(delta=f" {findings_text}")
-                note = advisor_decision_note("".join(sent), results)
+                # With code's lead, a proposed memo on record is already named and asked about.
+                note = "" if lead else advisor_decision_note("".join(sent), results)
                 note += advisor_impact_note("".join(sent) + note, plan_, results)
                 note += advisor_frame_note("".join(sent) + note, frame)
                 note += advisor_memo_note("".join(sent) + note, results, frame)
+                note = gate._budgeted_notes(note) if lead else note
                 if note:
                     sent.append(note)
                     yield StreamChunk(delta=note)
@@ -1590,7 +1693,7 @@ async def advise(
         if ready:
             sent.append(ready)
             yield StreamChunk(delta=ready)
-        if any(sent):
+        if any(sent[1:] if lead else sent):
             # The founder already saw part of the reply: end it honestly instead of appending a second answer.
             logger.warning("Advisor stream broke after {} chunks: {}", len(sent), exc)
             note = " (The reply was cut off; see the findings.)" + advisor_decision_note("".join(sent), results)
@@ -1600,10 +1703,15 @@ async def advise(
             return
         logger.warning("Advisor LLM unavailable, using the template answer: {}", exc)
         text = guarded(template_answer(results), frame, records, chosen=_chosen_in(results))
-        text += advisor_impact_note(text, plan_, results)
-        text += advisor_frame_note(text, frame)
-        text += advisor_memo_note(text, results, frame)
+        shown = lead + " " + text if lead else text
+        text += advisor_impact_note(shown, plan_, results)
+        text += advisor_frame_note(lead + " " + text if lead else text, frame)
+        text += advisor_memo_note(lead + " " + text if lead else text, results, frame)
+        if lead:
+            gate.max_sentences = None  # the findings are the answer here: only what the lead already said goes
+            text = gate._budgeted(text)
         yield StreamChunk(delta=text)
+        text = f"{lead} {text}" if lead else text
         yield StreamChunk(
             done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)
         )

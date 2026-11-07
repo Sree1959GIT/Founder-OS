@@ -66,6 +66,9 @@ export function safeStep(step: string): string {
 }
 
 export function stepWords(step: string, status: string): string {
+  if (status === "done") return "finished";
+  if (status === "failed") return step ? `failed: ${safeStep(step)}` : "failed";
+  if (status === "cancelled") return "cancelled";
   if (step) return safeStep(step);
   if (status === "queued") return "waiting to start";
   return status === "done" || status === "failed" || status === "cancelled" ? "finished" : "working";
@@ -143,4 +146,53 @@ export function csvHeaders(text: string): string[] {
 /** Ask the conversation panel to put text in its input box (for "Enter your figures"). */
 export function prefillAsk(text: string) {
   window.dispatchEvent(new CustomEvent("founderos:prefill", { detail: text }));
+}
+
+/**
+ * A neutral title for an open decision: "Dubai office", not "A full Dubai office" while a pilot is proposed
+ * (founder review 10). Falls back to the founder's own question.
+ */
+export function decisionTitle(subject: string | null | undefined, message: string): string {
+  const plain = (subject ?? "").replace(/^\s*(?:an?|the)\s+/i, "").replace(/^(?:full|whole|complete)\s+/i, "").trim();
+  if (!plain) return message;
+  return plain.charAt(0).toUpperCase() + plain.slice(1);
+}
+
+const FRONT_TITLE = /^(---\r?\n[\s\S]*?^title:[ \t]*)(.*?)([ \t]*\r?\n[\s\S]*?^---[ \t]*\r?\n)/m;
+const H1 = /^#[ \t]+(.+?)[ \t]*$/m;
+
+function frontTitle(text: string): string | null {
+  const m = FRONT_TITLE.exec(text);
+  return m ? (m[2] ?? "").replace(/^["']|["']$/g, "") : null;
+}
+
+function headingOf(text: string): string | null {
+  const body = text.replace(/^---\r?\n[\s\S]*?^---[ \t]*\r?\n/m, "");
+  const m = H1.exec(body);
+  return m ? (m[1] ?? null) : null;
+}
+
+/**
+ * A memo has its title twice: frontmatter `title:` and the `#` heading. Whichever one the founder edited is copied to
+ * the other on save, so they never disagree (founder review 25).
+ */
+export function syncTitle(original: string, edited: string): string {
+  const [frontBefore, headBefore] = [frontTitle(original), headingOf(original)];
+  const [frontAfter, headAfter] = [frontTitle(edited), headingOf(edited)];
+  let wanted: string | null = null;
+  if (frontAfter !== null && frontAfter !== frontBefore) wanted = frontAfter;
+  else if (headAfter !== null && headAfter !== headBefore) wanted = headAfter;
+  if (!wanted) return edited;
+  let out = edited;
+  if (frontAfter !== null && frontAfter !== wanted) {
+    const quoted = /[:#]/.test(wanted) ? JSON.stringify(wanted) : wanted;
+    out = out.replace(FRONT_TITLE, (_m, a: string, _b: string, c: string) => `${a}${quoted}${c}`);
+  }
+  if (headAfter !== null && headAfter !== wanted) {
+    const fm = /^---\r?\n[\s\S]*?^---[ \t]*\r?\n/m.exec(out);
+    const head = fm ? out.slice(0, fm.index + fm[0].length) : "";
+    const body = fm ? out.slice(fm.index + fm[0].length) : out;
+    out = head + body.replace(H1, `# ${wanted}`);
+  }
+  return out;
 }

@@ -7,7 +7,7 @@ import { EmptyNote, ErrorNote, LineageChip, Pill } from "@/components/common";
 import { PriorityMatrix } from "@/components/memo/PriorityMatrix";
 import { Button } from "@/components/ui/button";
 import { fetchNote, fetchNotes, saveNote, type VaultNote, type VaultNoteInfo } from "@/lib/api";
-import { metricValue, stripFrontmatter, withoutWikilinks } from "@/lib/format";
+import { metricValue, stripFrontmatter, syncTitle, withoutWikilinks } from "@/lib/format";
 import { useWorkspace } from "@/lib/workspace";
 
 /** Markdown exactly as it is stored, frontmatter included, so it opens the same in Obsidian. */
@@ -62,7 +62,7 @@ export function MemoView({ path: wanted }: { path?: string }) {
   const save = async () => {
     if (!path) return;
     try {
-      await saveNote(path, draft);
+      await saveNote(path, syncTitle(note?.content ?? "", draft));
       setEditing(false);
       load(path);
     } catch (err) {
@@ -156,7 +156,7 @@ export function MemoView({ path: wanted }: { path?: string }) {
           </div>
         ) : note ? (
           <article className="memo-sheet rounded-xl bg-paper px-9 py-8 text-[#1B1D21]" data-testid="memo-sheet">
-            <div className="print-hide mb-3 flex flex-wrap gap-2">
+            <div className="memo-chips mb-3 flex flex-wrap gap-2">
               {status ? <Pill>{status === "draft" ? "Draft · Memo Writer" : status}</Pill> : null}
               {review ? (
                 <Pill>

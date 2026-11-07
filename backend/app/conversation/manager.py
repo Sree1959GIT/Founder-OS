@@ -190,7 +190,9 @@ class ConversationManager:
                     return
                 if event.type == "team.approved" and not asked:
                     asked = True
-                    self._say(session, await self._assumption_question(session, run_id))
+                    # A metric lookup rests on no assumption to question (founder review 9): only a decision is asked.
+                    if self._is_decision(run_id):
+                        self._say(session, await self._assumption_question(session, run_id))
                 text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
                 if text.strip():
                     self._say(session, text)
@@ -288,6 +290,11 @@ class ConversationManager:
             return fallback
         text = (completion.text or "").strip()
         return text if text and not extract_figures(text) else fallback
+
+    def _is_decision(self, run_id: str) -> bool:
+        run = self.orchestrator.runs.get(run_id)
+        plan = run.plan if run is not None else None
+        return plan is not None and (plan.intent == "decision" or plan.frame is not None)
 
     async def _assumption_question(self, session: Session, run_id: str) -> str:
         run = self.orchestrator.runs.get(run_id)

@@ -281,16 +281,12 @@ function AgentCard({ run, agent }: { run: RunView; agent: AgentView }) {
         </div>
       ) : (
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={finished}
-            onClick={() => void cancel()}
-            aria-label={`Cancel ${agent.name}`}
-          >
-            <Square aria-hidden="true" />
-            Cancel
-          </Button>
+          {finished ? null : (
+            <Button size="sm" variant="outline" onClick={() => void cancel()} aria-label={`Cancel ${agent.name}`}>
+              <Square aria-hidden="true" />
+              Cancel
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setEditing(true)} aria-label={`Re-run ${agent.name}`}>
             <RotateCcw aria-hidden="true" />
             Re-run
@@ -383,9 +379,9 @@ export function AgentActivity() {
       {run && agents.length ? (
         <section aria-label="Running now" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-[15px] font-semibold">Running now</h2>
+            <h2 className="text-[15px] font-semibold">{run.status === "running" ? "Running now" : "This run"}</h2>
             <span className="num text-xs text-muted-foreground">
-              {done} of {agents.length} done
+              {run.status === "running" ? `${done} of ${agents.length} done` : `Finished · ${done} of ${agents.length}`}
             </span>
             <span className="flex-1" />
             {run.status === "running" ? (

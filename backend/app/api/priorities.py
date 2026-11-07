@@ -27,12 +27,20 @@ DEFAULT_CRITERIA = [
 
 # The engine's names, in the words of the design's four corners.
 QUADRANT_WORDS = {"Quick win": "Do now", "Big bet": "Plan carefully", "Fill-in": "Quick wins", "Deprioritise": "Drop"}
+# A new initiative starts in the middle, scored nowhere yet: it is not "Do now" (founder review 31).
+UNSCORED = "Not scored yet"
+
+
+def _quadrant(option: Any) -> str | None:
+    if option.value == 0.5 and option.feasibility == 0.5:
+        return UNSCORED
+    return QUADRANT_WORDS.get(option.quadrant or "", option.quadrant)
 
 
 def _body(request: ScoringRequest) -> str:
     result = weighted_scoring(request)
     rows = "\n".join(
-        f"| {o.rank} | {o.name} | {o.total:.2f} | {QUADRANT_WORDS.get(o.quadrant or '', '')} |"
+        f"| {o.rank} | {o.name} | {o.total:.2f} | {_quadrant(o) or ''} |"
         for o in sorted(result.options, key=lambda x: x.rank)
     )
     return (
@@ -45,7 +53,7 @@ def _view(criteria: list[Criterion], options: list[ScoredOption]) -> dict[str, A
     scoring = weighted_scoring(ScoringRequest(criteria=criteria, options=options)) if options else None
     if scoring is not None:
         for option in scoring.options:
-            option.quadrant = QUADRANT_WORDS.get(option.quadrant or "", option.quadrant)
+            option.quadrant = _quadrant(option)
     return {
         "criteria": [c.model_dump() for c in criteria],
         "options": [o.model_dump() for o in options],

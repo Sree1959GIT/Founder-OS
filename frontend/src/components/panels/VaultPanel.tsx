@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import { EmptyNote, ErrorNote, Section } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { fetchNote, fetchNotes, saveNote, searchVault, uploadVaultFile, type VaultNote, type VaultNoteInfo } from "@/lib/api";
-import { stripFrontmatter, withoutWikilinks } from "@/lib/format";
+import { stripFrontmatter, syncTitle, withoutWikilinks } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface Hit {
@@ -87,7 +87,7 @@ export function VaultPanel({ path: wanted }: { path?: string }) {
   const save = async () => {
     if (!path) return;
     try {
-      setNote(await saveNote(path, draft));
+      setNote(await saveNote(path, syncTitle(note?.content ?? "", draft)));
       setEditing(false);
       fetchNote(path).then(setNote).catch(() => undefined);
     } catch (err) {

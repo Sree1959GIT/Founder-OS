@@ -112,6 +112,17 @@ def test_priorities_are_scored_in_code_and_kept_in_the_vault(client: TestClient)
     assert [o["name"] for o in client.get("/api/priorities").json()["options"]] == ["Dubai office", "Onboarding fix"]
 
 
+def test_a_new_initiative_in_the_middle_is_not_scored_yet_and_weights_sum_to_one(client: TestClient) -> None:
+    """Founder review 30 and 31: new items are not "Do now", and the weights the ranking uses add up to 1."""
+    criteria = client.get("/api/priorities").json()["criteria"]
+    criteria[0]["weight"] = 0.7  # the founder's weights no longer add up to 1
+    middle = {"name": "New idea", "scores": {c["name"]: 3 for c in criteria}}
+    view = client.put("/api/priorities", json={"criteria": criteria, "options": [middle]}).json()
+    (scored,) = view["scoring"]["options"]
+    assert scored["quadrant"] == "Not scored yet"
+    assert abs(sum(view["scoring"]["weights"].values()) - 1) < 1e-3
+
+
 def test_priorities_refuse_a_score_off_the_scale(client: TestClient) -> None:
     criteria = client.get("/api/priorities").json()["criteria"]
     scores = {c["name"]: 9 for c in criteria}
