@@ -1,7 +1,7 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { AssumptionTag, CitationChips, LineageChip, Pill, VerifiedBadge } from "@/components/common";
+import { AssumptionTag, CitationChips, LineageChip, Pill, VerificationBadge, VerifiedBadge } from "@/components/common";
 import type { DecisionFrame, OptionCost } from "@/lib/api";
 import { metricValue, money, seconds, signedMonths } from "@/lib/format";
 import type { RunView } from "@/lib/workspace";
@@ -62,7 +62,6 @@ export function AnswerCard({ run }: { run: RunView }) {
   const finished = run.status !== "running";
   const provider = result?.advisor_provider ?? "";
   const where = provider === "rules" ? "written by code" : provider === "ollama" ? "local" : provider;
-  const removed = result ? result.agents.reduce((n, a) => n + a.removed.length, 0) : 0;
   const unfinishedWithoutAnswer = finished && !run.answer;
   return (
     <article
@@ -77,7 +76,11 @@ export function AnswerCard({ run }: { run: RunView }) {
           {where ? ` · ${where}` : ""}
         </span>
         <span className="flex-1" />
-        {finished ? <VerifiedBadge verified={result ? result.verified : null} checks={result?.issues.length ?? 0} /> : null}
+        {finished && result?.verification ? (
+          <VerificationBadge verification={result.verification} />
+        ) : finished ? (
+          <VerifiedBadge verified={result ? result.verified : null} checks={result?.issues.length ?? 0} />
+        ) : null}
       </div>
       {run.frame ? <DecisionLead frame={run.frame} /> : null}
       {run.answer ? <AnswerText text={run.answer} /> : null}
@@ -109,11 +112,6 @@ export function AnswerCard({ run }: { run: RunView }) {
         </ul>
       ) : null}
       {result ? <CitationChips citations={result.citations} /> : null}
-      {removed > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          <span className="num">{removed}</span> {removed === 1 ? "claim" : "claims"} taken out by the source check.
-        </p>
-      ) : null}
       {result?.memo ? (
         <div>
           <a href="#/memo" className="text-[13px]">

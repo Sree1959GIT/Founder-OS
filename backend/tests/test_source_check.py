@@ -282,7 +282,8 @@ async def test_a_librarian_figure_from_the_wrong_note_goes(finance: Any, vault: 
     result = await _agent(provider, finance, vault).run(
         _instance("librarian", "annual prepayment"), "What do my notes say about annual prepayment?"
     )
-    assert "99 %" not in result.text and REMOVED_NOTE in result.text and result.verified is False
+    assert "99 %" not in result.text and REMOVED_NOTE not in result.text and result.verified is False
+    assert any(i.startswith("removed: unsupported source") for i in result.issues)
     assert result.removed and "99" not in " ".join(result.removed)
 
 
@@ -384,7 +385,8 @@ async def test_the_answer_and_the_memo_never_hold_it(finance: Any, vault: Any) -
     memo = (vault.vault.root / result.memo.path).read_text(encoding="utf-8")
     for text in (result.answer, memo, *(a.text for a in result.agents)):
         assert "150 billion" not in text and "economic-overview" not in text
-    assert "Are you certain" not in result.answer and REMOVED_NOTE in result.answer
+    assert "Are you certain" not in result.answer and REMOVED_NOTE not in result.answer
+    assert result.verification.removed_claims >= 1
     assert "You should run the pilot first." in result.answer
     assert REMOVED_NOTE in memo.split("## Open numbers to confirm")[1].split("## Metrics")[0]
     assert "Dubai's GDP is a figure to confirm" in memo
@@ -412,7 +414,8 @@ async def test_nothing_the_advisor_wrote_could_be_backed_and_the_findings_still_
         lambda agent_id: ToolContext(finance, vault, agent_id),
     )
     result = await orchestrator.start("Walk me through our runway.").task  # type: ignore[misc]
-    assert "99.5" not in result.answer and REMOVED_NOTE in result.answer and "10.65" in result.answer
+    assert "99.5" not in result.answer and REMOVED_NOTE not in result.answer and "10.65" in result.answer
+    assert result.verification.removed_claims == 1 and result.verification.state == "not_verified"
 
 
 # --- the evals -------------------------------------------------------------------------------------------------------

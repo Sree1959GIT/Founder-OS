@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { AnswerCard, DecisionLead } from "@/components/chat/AnswerCard";
-import { CitationChips, LineageChip, VerifiedBadge } from "@/components/common";
+import { CitationChips, LineageChip, VerificationBadge, VerifiedBadge } from "@/components/common";
 import { parseFrame, type ChatResult, type DecisionFrame, type Lineage } from "@/lib/api";
 import { csvHeaders, metricValue, safeStep, stripFrontmatter, withoutWikilinks } from "@/lib/format";
 import type { RunView } from "@/lib/workspace";
@@ -76,13 +76,43 @@ describe("what may be shown", () => {
     expect(screen.queryByText("Verified")).not.toBeInTheDocument();
   });
 
-  it("counts the issues and removed claims and never prints their text", () => {
-    const issues = ["Market Scout: number without lineage: $160 billion"];
-    const agents = [{ removed: ["(removed: unsupported figure)"] }] as unknown as ChatResult["agents"];
-    render(<AnswerCard run={run({ answer: "Clean text.", result: result({ verified: false, issues, agents }) })} />);
+  it("counts the removed claims by the badge and never prints the audit trail", () => {
+    const issues = ["Market Scout: number without lineage: $160 billion", "Market Scout: removed: unsupported source (2)"];
+    const verification = {
+      state: "not_verified" as const,
+      reasons: ["A figure had no source in your data, so it was checked as unsupported.", "2 unsupported claims removed."],
+      assumptions: [],
+      removed_claims: 2,
+      sources: [],
+    };
+    render(<AnswerCard run={run({ answer: "Clean text.", result: result({ verified: false, issues, verification }) })} />);
     expect(screen.getByText("Not verified")).toBeInTheDocument();
+    expect(screen.getByTestId("removed-chip").textContent).toContain("2 claims removed");
     expect(document.body.textContent).not.toContain("160 billion");
-    expect(document.body.textContent).toContain("taken out by the source check");
+    expect(document.body.textContent).not.toContain("(removed: unsupported source)");
+    fireEvent.click(screen.getByTestId("verification-badge"));
+    expect(screen.getByRole("dialog").textContent).toContain("had no source");
+    expect(screen.getByRole("dialog").textContent).not.toContain("160 billion");
+  });
+
+  it("shows three badge states, each opening what it rests on", () => {
+    const base = { reasons: [], removed_claims: 0, sources: ["notes/pricing.md"], assumptions: [] as string[] };
+    const { rerender } = render(<VerificationBadge verification={{ ...base, state: "verified" }} />);
+    fireEvent.click(screen.getByText("Verified"));
+    expect(screen.getByRole("dialog").textContent).toContain("notes/pricing.md");
+    const assumptions = ["Rent or desk: $5,000 a month (assumption, confirm).", "Travel: $3,000 a month (assumption, confirm)."];
+    rerender(<VerificationBadge verification={{ ...base, state: "assumptions", assumptions }} />);
+    const amber = screen.getByTestId("verification-badge");
+    expect(amber.textContent).toBe("Figures verified · 2 assumptions to confirm");
+    expect(amber.dataset.state).toBe("assumptions");
+    expect(screen.queryByText("Not verified")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog").textContent).toContain("Rent or desk");
+    let prefilled = "";
+    window.addEventListener("founderos:prefill", (e) => (prefilled = (e as CustomEvent<string>).detail), { once: true });
+    fireEvent.click(screen.getByText("Enter your figures"));
+    expect(prefilled).toBe("My figures: ");
+    rerender(<VerificationBadge verification={{ ...base, state: "not_verified", reasons: ["A cited note was not found in your vault."] }} />);
+    expect(screen.getByTestId("verification-badge").textContent).toBe("Not verified");
   });
 
   it("leads a decision with the proposed option, then the full model, labelled as an assumption", () => {

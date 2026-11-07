@@ -139,3 +139,8 @@ export function csvHeaders(text: string): string[] {
   cells.push(cell);
   return cells.filter((c) => c.trim()); // spaces stay: a saved mapping is matched on the exact header
 }
+
+/** Ask the conversation panel to put text in its input box (for "Enter your figures"). */
+export function prefillAsk(text: string) {
+  window.dispatchEvent(new CustomEvent("founderos:prefill", { detail: text }));
+}

@@ -212,6 +212,10 @@ class AgentResult(BaseModel):
     passages: dict[str, list[str]] = Field(default_factory=dict, exclude=True, description="Source -> text retrieved")
     facts: list[Fact] = Field(default_factory=list, exclude=True)
     inherited: list[Fact] = Field(default_factory=list, exclude=True, description="From earlier stages of the team")
+    record_passages: dict[str, list[str]] = Field(default_factory=dict, exclude=True, description="Proposed memos")
+    record_facts: list[Fact] = Field(
+        default_factory=list, exclude=True, description="Figures of a proposed memo on record: backed once it is cited"
+    )
     inherited_impact: DecisionImpact | None = Field(default=None, exclude=True)
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
@@ -508,6 +512,7 @@ class AgentRunner:
             name=inst.name,
             brief=inst.brief,
             inherited=[*(fact for r in upstream for fact in r.facts), *(frame.facts if frame else [])],
+            record_facts=[fact for r in upstream for fact in r.record_facts],
             inherited_impact=team_impact(upstream),
         )
         self._emit("agent.status", inst.id, status="thinking")
@@ -569,8 +574,7 @@ class AgentRunner:
         self._remove_unsupported(inst, user_message, upstream, result)
         if not result.text.replace(REMOVED_NOTE, "").strip() and spec.name in RULE_TEXT:
             # Seen live: a small model can return nothing, twice. Or nothing it said could be backed.
-            removed = f" {REMOVED_NOTE}" if REMOVED_NOTE in result.text else ""
-            result.text = RULE_TEXT[spec.name] + removed
+            result.text = RULE_TEXT[spec.name]
         self._finish_specialist(spec, inst, result)
         _keep_used_sources(result)
         return self._finish(inst, result, started)
@@ -602,7 +606,7 @@ class AgentRunner:
         kept, removed = without_unsupported(result.text, self._evidence(inst, user_message, [result, *upstream]))
         if not removed:
             return
-        result.text = f"{kept} {REMOVED_NOTE}".strip()
+        result.text = kept.strip()  # no inline note: the UI shows how many claims went, by the badge
         result.removed = [masked(sentence) for sentence in removed]
         result.removed_figures = figures_removed(removed)
         result.verified = False
@@ -876,7 +880,7 @@ class AgentRunner:
         cited = not honest_blank and (bool(result.past_decisions) or (searched and bool(result.retrieved)))
         report = verify(
             result.text,
-            result.known_facts,
+            [*result.known_facts, *result.record_facts],  # a memo's figure is cited to it later, by the source check
             result.retrieved,
             needs_citations=spec.name == "librarian" and cited,
             # Only the founder's own words may supply numbers: a Planner-written brief is LLM text (PRD R1).
@@ -907,6 +911,9 @@ class AgentRunner:
                 result.retrieved.append(citation)
         for source, texts in outcome.passages.items():
             result.passages.setdefault(source, []).extend(texts)
+        for source, texts in outcome.record_passages.items():
+            result.record_passages.setdefault(source, []).extend(texts)
+        result.record_facts.extend(outcome.record_facts)
         self._emit("agent.tool_call", inst.id, tool=call.name, arguments=call.arguments, error=outcome.error)
         for artifact in outcome.artifacts:
             result.artifacts.append(artifact)
@@ -1384,10 +1391,11 @@ class _SentenceGate:
         if not removed:
             return text
         self.issues.append(f"advisor: removed: unsupported source ({len(removed)})")
-        trailing = text[len(text.rstrip()) :]
-        note = "" if self.noted else f" {REMOVED_NOTE}"
         self.noted = True
-        return f"{kept}{note}".strip() + (trailing or " ")
+        if not kept.strip():
+            return ""
+        trailing = text[len(text.rstrip()) :]
+        return kept.strip() + (trailing or " ")
 
     def _checked(self, text: str) -> str:
         text = guarded(text, self.frame, self.records, self.written, self.chosen)

@@ -75,6 +75,17 @@ export function AdvisorPanel() {
   const { state, send, toggleQuiet } = useWorkspace();
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  // "Enter your figures" on the badge puts a start in this box.
+  useEffect(() => {
+    const onPrefill = (e: Event) => {
+      setText((e as CustomEvent<string>).detail ?? "");
+      input.current?.focus();
+    };
+    window.addEventListener("founderos:prefill", onPrefill);
+    return () => window.removeEventListener("founderos:prefill", onPrefill);
+  }, []);
   const lastAnswerLength = state.currentRunId ? (state.runs[state.currentRunId]?.answer.length ?? 0) : 0;
 
   useEffect(() => {
@@ -155,6 +166,7 @@ export function AdvisorPanel() {
         </label>
         <input
           id="ask"
+          ref={input}
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -162,7 +174,7 @@ export function AdvisorPanel() {
           autoComplete="off"
           className="h-11 min-w-0 flex-1 rounded-lg border border-border-strong bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground"
         />
-        <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim() || state.sending} className="h-11 w-11 rounded-lg">
+        <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()} className="h-11 w-11 rounded-lg">
           <SendHorizontal aria-hidden="true" />
         </Button>
         <Button

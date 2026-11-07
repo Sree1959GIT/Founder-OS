@@ -178,7 +178,7 @@ def test_a_saved_mapping_lets_a_messy_file_load(client: TestClient) -> None:
 
     def upload() -> Any:
         files = {"file": ("messy.csv", messy, "text/csv")}
-        return client.post("/api/data/upload", files=files, data={"table": "pnl"})
+        return client.post("/api/data/upload", files=files, data={"table": "pnl", "mode": "replace"})
 
     assert upload().status_code >= 400
     columns = {"Kol A": "month", "Kol B": "account", "Kol C": "category", "Kol D": "amount"}
@@ -203,7 +203,7 @@ def test_a_mapping_is_found_under_the_name_ingest_uses(client: TestClient) -> No
     name = "pnl (1).csv"
     assert client.put("/api/data/mappings", json={"key": name, "table": "pnl", "columns": columns}).status_code == 200
     files = {"file": (name, messy, "text/csv")}
-    assert client.post("/api/data/upload", files=files, data={"table": "pnl"}).status_code == 200
+    assert client.post("/api/data/upload", files=files, data={"table": "pnl", "mode": "replace"}).status_code == 200
 
 
 # --- what the review found -----------------------------------------------------------------------------------------

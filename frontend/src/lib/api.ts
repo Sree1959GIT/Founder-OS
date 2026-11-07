@@ -137,6 +137,14 @@ export interface DecisionFrame {
   as_of: string;
 }
 
+export interface VerificationView {
+  state: "verified" | "assumptions" | "not_verified";
+  reasons: string[];
+  assumptions: string[];
+  removed_claims: number;
+  sources: string[];
+}
+
 export interface MemoRef {
   path: string;
   title: string;
@@ -198,6 +206,8 @@ export interface ChatResult {
   memo: MemoRef | null;
   est_cost_usd: number | null;
   verified: boolean;
+  /** The badge's state, with reasons that never name a removed figure. Absent from older runs. */
+  verification?: VerificationView;
   /** Audit trail only: may name a removed figure, so the UI shows how many, never the text. */
   issues: string[];
   advisor_provider: string;
@@ -466,8 +476,30 @@ async function upload<T>(path: string, file: File, extra?: Record<string, string
   return request<T>(path, { method: "POST", body: form });
 }
 export const uploadVaultFile = (file: File) => upload<{ path: string; error?: string | null }>("/api/vault/upload", file);
-export const uploadDataFile = (file: File, table?: string) =>
-  upload<{ tables: unknown[] }>("/api/data/upload", file, table ? { table } : undefined);
+export interface UploadConflict {
+  table: string;
+  existing_rows: number;
+  existing_source: string | null;
+  incoming_rows: number;
+  incoming_source: string;
+}
+export interface BackupInfo {
+  table: string;
+  rows: number;
+  source_file: string | null;
+  saved_at: string;
+}
+export type UploadMode = "check" | "replace" | "append";
+export interface UploadOutcome {
+  tables: { table: string; rows: number; source_file: string }[];
+  conflicts: UploadConflict[];
+  backups: BackupInfo[];
+}
+/** "check" writes nothing when a table already holds rows: it returns the conflicts for the founder to choose. */
+export const uploadDataFile = (file: File, table?: string, mode: UploadMode = "check") =>
+  upload<UploadOutcome>("/api/data/upload", file, { ...(table ? { table } : {}), mode });
+export const fetchBackups = () => request<BackupInfo[]>("/api/data/backups");
+export const undoUpload = (table: string) => send<{ restored: BackupInfo }>("/api/data/undo", "POST", { table });
 
 export interface CanonicalTable {
   table: string;

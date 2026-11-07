@@ -171,7 +171,7 @@ _TEMPLATES: dict[str, list[ItemTemplate]] = {
             1,
             2,
             3,
-            r"(?:local )?(?:hires?|people|reps?|staff)",
+            r"(?:local )?(?:hires?|people|persons?|reps?|staff|team)",
             "how many local hires",
         ),
         ItemTemplate("travel", "Travel", "monthly", 1000, 3000, 6000, r"travel"),
@@ -289,7 +289,8 @@ def _value_in_clause(item: ItemTemplate, clause: str) -> float | None:
     if not re.search(rf"\b(?:{item.keywords})\b", clause, re.I):
         return None
     if item.cadence == "count":
-        match = re.search(rf"\b{_COUNT}\s+(?:\w+ )?(?:{item.keywords})\b", clause, re.I)
+        # "a two-person team" and "a two person team" are a count of two
+        match = re.search(rf"\b{_COUNT}[\s-]+(?:\w+ )?(?:{item.keywords})\b", clause, re.I)
         if match is None:
             return None
         word = match.group(1).lower()

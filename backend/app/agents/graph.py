@@ -36,6 +36,7 @@ from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, _t
 from app.agents.sources import vault_checker
 from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
+from app.agents.verification import Verification, verification
 from app.agents.verifier import verify_numbers
 from app.decision.base import DecisionService
 from app.llm.base import Usage
@@ -98,6 +99,10 @@ class ChatResult(BaseModel):
     memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     verified: bool
+    verification: Verification = Field(
+        default_factory=lambda: Verification(state="not_verified"),
+        description="The badge: verified, figures verified with assumptions to confirm, or not verified (with reasons)",
+    )
     issues: list[str]
     advisor_provider: str
     advisor_model: str
@@ -410,7 +415,11 @@ class AgentOrchestrator:
             citations.extend(c for c in r.citations if c not in citations)
         answer = state.get("answer", "")
         frame = the_plan.frame
-        known = [*(n for r in results for n in r.numbers), *(f.value for f in (frame.facts if frame else []))]
+        known = [
+            *(n for r in results for n in r.numbers),
+            *(f.value for f in (frame.facts if frame else [])),
+            *(f.value for r in results for f in r.record_facts),  # cited to the memo by the source check
+        ]
         cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
         advisor_issues = [f"advisor number without lineage: {n}" for n in verify_numbers(answer, known, context)]
@@ -423,6 +432,14 @@ class AgentOrchestrator:
         if assumptions:
             issues.append(f"this rests on {assumptions} assumptions to confirm")
         usage = sum((r.usage for r in results), Usage()) + advisor.get("usage", Usage())
+        all_done = all(r.status == "done" for r in results)
+        model = frame.cost_model if frame is not None and results else None
+        to_confirm = [model.item_line(i) for i in model.items if i.basis == "assumption"] if model else []
+        sources = list(
+            dict.fromkeys(
+                [*(c.path for c in citations), *(f for r in results for lin in r.lineage for f in lin.source_files)]
+            )
+        )
         approved = bool(state.get("approved", True))
         return ChatResult(
             run_id=run.run_id,
@@ -445,7 +462,8 @@ class AgentOrchestrator:
             assumptions_to_confirm=assumptions,
             memo=next((r.memo for r in results if r.memo is not None), None),
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
-            verified=not issues and all(r.status == "done" for r in results),
+            verified=not issues and all_done,
+            verification=verification(issues, all_done, to_confirm, sources),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
             advisor_model=str(advisor.get("model", "")),

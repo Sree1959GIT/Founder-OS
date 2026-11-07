@@ -4,14 +4,19 @@ import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { EmptyNote, ErrorNote, Section } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import {
+  fetchBackups,
   fetchMappings,
   fetchTables,
   loadSample,
   putMapping,
+  undoUpload,
   uploadDataFile,
+  type BackupInfo,
   type CanonicalTable,
   type LoadedTable,
   type SheetMapping,
+  type UploadConflict,
+  type UploadMode,
 } from "@/lib/api";
 import { csvHeaders } from "@/lib/format";
 
@@ -114,8 +119,13 @@ export function DataPanel() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<{ file: File; table?: string; conflicts: UploadConflict[] } | null>(null);
+  const [backups, setBackups] = useState<BackupInfo[]>([]);
 
   const refresh = useCallback(() => {
+    fetchBackups()
+      .then((b) => setBackups(Array.isArray(b) ? b : []))
+      .catch(() => undefined);
     fetchTables()
       .then((t) => {
         setTables(Array.isArray(t.loaded) ? t.loaded : []);
@@ -142,14 +152,22 @@ export function DataPanel() {
     }
   };
 
-  const tryUpload = async (file: File, table?: string) => {
+  const tryUpload = async (file: File, table?: string, mode: UploadMode = "check") => {
     setBusy(true);
     setError(null);
     setNote(null);
     try {
-      await uploadDataFile(file, table);
+      const outcome = await uploadDataFile(file, table, mode);
       setFailed(null);
-      setNote(`${file.name} is loaded.`);
+      if (outcome.conflicts?.length) {
+        // Nothing was written: the founder chooses replace or append, with both row counts in view.
+        setPending({ file, table, conflicts: outcome.conflicts });
+        return;
+      }
+      setPending(null);
+      const loaded = outcome.tables?.map((t) => `${t.table} now has ${t.rows.toLocaleString("en-US")} rows`) ?? [];
+      const verb = mode === "append" ? "added" : "loaded";
+      setNote(`${file.name} is ${verb}${loaded.length ? `: ${loaded.join("; ")}` : ""}.`);
       refresh();
     } catch (err) {
       const reason = err instanceof Error ? err.message : "The upload did not work";
@@ -211,6 +229,74 @@ export function DataPanel() {
           </div>
         ) : null}
         {note ? <p className="mb-3 text-[13px] text-ok">{note}</p> : null}
+        {pending ? (
+          <div
+            role="alertdialog"
+            aria-label="This upload changes data you already have"
+            data-testid="upload-warning"
+            className="mb-4 flex flex-col gap-3 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3.5 text-[13px]"
+          >
+            <p className="font-semibold">{pending.file.name} would change data you already have. Nothing is written yet.</p>
+            <ul className="flex flex-col gap-1">
+              {pending.conflicts.map((c) => (
+                <li key={c.table}>
+                  <span className="num">{c.table}</span> has{" "}
+                  <span className="num font-semibold">{c.existing_rows.toLocaleString("en-US")}</span> rows
+                  {c.existing_source ? (
+                    <>
+                      {" "}
+                      from <span className="num">{c.existing_source}</span>
+                    </>
+                  ) : null}
+                  ; this file has <span className="num font-semibold">{c.incoming_rows.toLocaleString("en-US")}</span>.
+                  {c.incoming_rows < c.existing_rows ? (
+                    <span className="text-signal-soft">
+                      {" "}
+                      Replacing leaves {c.incoming_rows.toLocaleString("en-US")} of {c.existing_rows.toLocaleString("en-US")}.
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">Either way, the current version is kept as a backup you can undo.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={busy} onClick={() => void tryUpload(pending.file, pending.table, "append")}>
+                Append the rows
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => void tryUpload(pending.file, pending.table, "replace")}>
+                Replace the table
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => setPending(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {backups.length ? (
+          <ul className="mb-3 flex flex-col gap-1.5" aria-label="Earlier versions" data-testid="backups">
+            {backups.map((b) => (
+              <li key={b.table} className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+                <span>
+                  Earlier <span className="num">{b.table}</span> kept: <span className="num">{b.rows.toLocaleString("en-US")}</span> rows
+                  {b.source_file ? <> from <span className="num">{b.source_file}</span></> : null}.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const r = await undoUpload(b.table);
+                      setNote(`Undone: ${r.restored.table} is back to ${r.restored.rows.toLocaleString("en-US")} rows.`);
+                    })
+                  }
+                >
+                  Undo the last upload to {b.table}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {failed ? (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3.5">
             <p className="text-[13px]">

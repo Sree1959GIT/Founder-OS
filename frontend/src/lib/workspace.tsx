@@ -24,6 +24,7 @@ import {
   type ChatResult,
   type DecisionFrame,
 } from "@/lib/api";
+import { load, save, unfinished } from "@/lib/persist";
 
 export interface AgentView extends AgentInstance {
   status: string;
@@ -435,10 +436,36 @@ const EVENT_TYPES = [
   "turn.classified",
 ];
 
+async function recover(runId: string, send: Dispatch<Action>, giveUpAfterMisses = RECOVER_ATTEMPTS) {
+  let misses = 0;
+  for (let attempt = 0; attempt < RECOVER_ATTEMPTS; attempt += 1) {
+    try {
+      const found = await fetchRun(runId);
+      if (found.result) {
+        send({ type: "result", runId, result: found.result });
+        return;
+      }
+      if (found.status !== "running") break;
+    } catch {
+      // the backend may be back in a moment; a run it no longer knows (it restarted) is given up on soon
+      misses += 1;
+      if (misses >= giveUpAfterMisses) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, RECOVER_WAIT_MS));
+  }
+  send({ type: "run-ended", runId, status: "failed" });
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, initialState, load);
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // A reload keeps the conversation and the open decision (founder review 17). Streaming text saves at most twice a second.
+  useEffect(() => {
+    const timer = setTimeout(() => save(state), 500);
+    return () => clearTimeout(timer);
+  }, [state]);
 
   // Live agent events for the whole window. A reconnect replays history; each run drops what it has already seen.
   useEffect(() => {
@@ -468,29 +495,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "run-ended", runId, status: "cancelled" });
       } catch {
         // The stream broke (a dropped connection, a sleeping PC): the run goes on, and its result stays on the backend.
-        for (let attempt = 0; attempt < RECOVER_ATTEMPTS; attempt += 1) {
-          try {
-            const found = await fetchRun(runId);
-            if (found.result) {
-              dispatch({ type: "result", runId, result: found.result });
-              return;
-            }
-            if (found.status !== "running") break;
-          } catch {
-            // the backend may be back in a moment
-          }
-          await new Promise((resolve) => setTimeout(resolve, RECOVER_WAIT_MS));
-        }
-        dispatch({ type: "run-ended", runId, status: "failed" });
+        await recover(runId, dispatch);
       }
     })();
   }, []);
 
-  const send = useCallback(
-    async (text: string) => {
-      const clean = text.trim();
-      if (!clean) return;
-      dispatch({ type: "turn", turn: { id: `you-${Date.now()}`, role: "you", text: clean } });
+  // After a reload, a run that was still working is followed through the backend until it has a result.
+  useEffect(() => {
+    unfinished(stateRef.current).forEach((runId) => void recover(runId, dispatch, 3));
+  }, []);
+
+  // Turns are accepted at once, even while the first is still being planned, and sent in order: the second turn of a
+  // new conversation must reach the session the first one opened.
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const post = useCallback(
+    async (clean: string) => {
       dispatch({ type: "sending", sending: true });
       dispatch({ type: "error", error: null });
       try {
@@ -519,6 +538,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     },
     [follow],
+  );
+
+  const send = useCallback(
+    (text: string) => {
+      const clean = text.trim();
+      if (!clean) return Promise.resolve();
+      dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text: clean } });
+      const next = chain.current.then(() => post(clean));
+      chain.current = next.catch(() => undefined);
+      return next;
+    },
+    [post],
   );
 
   const toggleQuiet = useCallback(async () => {

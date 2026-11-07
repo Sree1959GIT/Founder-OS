@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -13,12 +13,18 @@ from pydantic import BaseModel, Field
 from app.deps import FinanceDep, SettingsDep
 from app.engine.ingest import (
     SUPPORTED_SUFFIXES,
+    BackupInfo,
+    Conflict,
+    IngestError,
     MappingStore,
     SheetMapping,
     TableReport,
+    backups,
     ingest_directory,
     ingest_file,
     ingest_log,
+    undo_upload,
+    upload_conflicts,
 )
 from app.engine.schema import TABLES
 from app.engine.sql_guard import DEFAULT_MAX_ROWS, GuardedQueryResult, run_guarded_query
@@ -31,6 +37,11 @@ CHUNK_BYTES = 1024 * 1024
 
 class IngestResponse(BaseModel):
     tables: list[TableReport]
+    conflicts: list[Conflict] = Field(
+        default_factory=list,
+        description="mode=check only: tables that already hold rows. Nothing was written; upload again with a mode",
+    )
+    backups: list[BackupInfo] = Field(default_factory=list, description="Earlier versions that Undo can restore")
 
 
 class TablesResponse(BaseModel):
@@ -113,6 +124,10 @@ def upload(
     finance: FinanceDep,
     file: Annotated[UploadFile, File(description="CSV or XLSX")],
     table: Annotated[str | None, Form(description="Canonical table (optional; auto-detected)")] = None,
+    mode: Annotated[
+        Literal["check", "replace", "append"],
+        Form(description="check (default): write nothing if a table already holds rows; replace or append: do it"),
+    ] = "check",
 ) -> IngestResponse:
     name = safe_file_name(file.filename or "upload")
     if Path(name).suffix not in SUPPORTED_SUFFIXES:
@@ -129,12 +144,38 @@ def upload(
                 if size > limit:
                     raise HTTPException(status_code=413, detail=f"File is larger than {settings.max_upload_mb} MB")
                 out.write(chunk)
-        reports = ingest_file(finance.db, partial, table=table or None, display_name=name)
+        if mode == "check":
+            conflicts = upload_conflicts(finance.db, partial, table=table or None, display_name=name)
+            if conflicts:
+                return IngestResponse(tables=[], conflicts=conflicts, backups=backups(finance.db))
+        write_mode: Literal["replace", "append"] = "append" if mode == "append" else "replace"
+        reports = ingest_file(finance.db, partial, table=table or None, display_name=name, mode=write_mode)
         # Keep the accepted file so lineage can point at it.
         shutil.move(partial, uploads / name)
     finally:
         partial.unlink(missing_ok=True)
-    return IngestResponse(tables=reports)
+    return IngestResponse(tables=reports, backups=backups(finance.db))
+
+
+class UndoRequest(BaseModel):
+    table: str = Field(min_length=1, max_length=64)
+
+
+@router.get("/backups")
+def list_backups(finance: FinanceDep) -> list[BackupInfo]:
+    return backups(finance.db)
+
+
+@router.post("/undo")
+def undo(body: UndoRequest, finance: FinanceDep) -> dict[str, Any]:
+    """Put a table back as it was before the last upload that changed it."""
+    if body.table not in TABLES:
+        raise HTTPException(status_code=422, detail=f"Unknown table: {body.table}")
+    try:
+        restored = undo_upload(finance.db, body.table)
+    except IngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"restored": restored.model_dump(), "loaded": ingest_log(finance.db)}
 
 
 @router.post("/query", response_model=GuardedQueryResult)
