@@ -61,6 +61,15 @@
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (W0 to W15) |
 
 ## Current session
+- Started (UTC): 2026-11-07 09:50 (local Windows bug-fix session for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Plan, in the founder's priority order (P1, then P2, then P3):
+  - [x] Record the founder feedback first
+  - [ ] P1: 14 badge states, 20 memo-on-record figures, 17 reload, 32 upload warning, 24 superlatives, 21 amendments, 22 early turns
+  - [ ] P2: 16, 18, 19, 23, 25, 26, 27, 9, 10
+  - [ ] P3 and 36 (Settings Save/Discard), as time allows
+  - [ ] Tests, self-review, RW re-test steps, PR #9 updated, CI green
+
+Previous session (2026-11-06, M4):
 - Started (UTC): 2026-11-06 11:53 (local Windows session, time-box 2 hours), branch `claude/m4-canvas-ui`, target **M4** (gate tier: **Major**). An "M4 (partial)" PR is fine if time runs out.
 - Plan, in the founder's priority order:
   - [x] Gate log and stale lines tidied
@@ -887,6 +896,34 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M4] Founder review W0–W15: OPEN (fix session 2026-11-07)
+W0–W15 otherwise pass: metric loop 10/10 (median 1.7 s); no fabricated figures or sources on any screen; exports, matrix, upload mapping and settings work.
+
+**P1 Trust and safety (must fix):**
+- 14. Verification badge with three clickable states: Verified (shows sources), amber "Figures verified · N assumptions to confirm" (lists them, offers "enter your figures"), red Not verified (lists reasons). Placeholder assumptions alone give amber, not "Not verified".
+- 20. With a proposed Dubai memo in the vault, Dubai went from 1 issue to 7: figures quoted from an existing vault memo (targets, kill criteria, costs) must be cited to that memo and count as supported.
+- 17. A reload (F5) wipes the conversation and the open decision: persist the session and restore it on load.
+- 32. Uploading a file mapped to an existing table replaced all 360 pnl rows with 1 row, with no warning: warn with row counts, offer append or replace, keep a backup and an undo.
+- 24. The memo called the travel-led pilot "the least costly option", but partner/distributor is cheaper (-0.10 vs -0.21): superlatives and comparisons in prose must match the options table, or be rewritten.
+- 21. "also make it a two person team" was queued as a new question: widen amendment detection (add/also/make it/change to/instead/only/assume); when accepted, change the run's inputs (local hires = 2).
+- 22. The input box does not accept turns during the first seconds (planning): accept and classify turns at once.
+
+**P2 Answer and memo quality:**
+- 16. The decision answer text must lead with the proposed option, then the full model (as the lead card does).
+- 18. The answer is a repetitive wall of text: at most about 5 sentences, no repeated goal/proposed lines; for a PROPOSED memo on record ask "what has changed since you drafted this on <date>?", never about meeting its kill criteria; no "reducing runway by -2.07" double negatives.
+- 19. Never show "(removed: unsupported source)" inline: drop the sentence and show an "N claims removed" chip by the badge.
+- 23. "What about our churn?" answers revenue churn 1.22 % while the goal is logo churn 1.67 %: include the goal's metric.
+- 25. Editing a memo's title must update both frontmatter `title:` and the `#` heading.
+- 26. Duplicate "Costs only: no new revenue..." sentence in the Financial Analyst finding.
+- 27. "your adviser or your adviser" duplicate in Regulatory & Tax.
+- 9. Skip the "which assumption would change your mind" narration for metric lookups.
+- 10. Neutral page title for a decision (the question or "Dubai office"), not "A full Dubai office" when a pilot is proposed.
+
+**P3 UI polish:**
+- 1. KPI card "Runway · actual burn". 2. Gross-margin chip lists both row ranges. 3. "Chance of running out of cash within 12 months: N%". 4. Hide the cloud slot count when cloud is off. 5. Base line visible when it overlaps the scenario. 6. Cash chart y-axis fits the data. 8. Shorter lineage chip labels that do not truncate. 11. Finished agent cards show "finished", not stale step lines. 12. "Finished · 6 of 6" when done. 13. Hide or disable Cancel on finished agents. 15. Work time separate from time waiting for approval. 28. PDF export without the browser header/footer. 29. PDF includes the status and review-date chips. 30. Matrix weights rescaled to sum to 1 (or say so). 31. New matrix items start unscored in the middle, not in "Do now". 33. "Load sample data" keeps one consistent source (northwind_financials.xlsx). 34. Settings shows Ollama as "local", not "key set". 35. Badge and health strip agree when cloud is allowed without keys.
+- 36. Settings: no auto-save. Save and Discard appear on any change with "You have unsaved changes"; save only on Save. Leaving Settings (another tab, closing, reloading) with unsaved changes asks "Save your changes?" (Save / Discard / Stay). Privacy-relevant changes apply only after Save.
+- (7 is for M5; left.)
+
 ### [M3c] Fabricated figure with a fabricated citation reached the answer: RESOLVED (founder re-test RF1–RF6 pending)
 **Fixed 2026-11-06;** see "Source check" under Current state.
 - **Did:** checklist C4 (Dubai memo, cloud off).
