@@ -196,3 +196,20 @@ export function syncTitle(original: string, edited: string): string {
   }
   return out;
 }
+
+/**
+ * A lineage chip's label: each file once, with all its row ranges (gross margin reads two ranges of pnl.csv), short
+ * enough not to need cutting (founder review 2 and 8).
+ */
+export function lineageLabel(rows: { file: string; rows: string }[], fallback: string): string {
+  if (!rows.length) return fallback;
+  const byFile = new Map<string, string[]>();
+  rows.forEach((r) => {
+    const list = byFile.get(r.file) ?? [];
+    if (r.rows && !list.includes(r.rows)) list.push(r.rows);
+    byFile.set(r.file, list);
+  });
+  return [...byFile.entries()]
+    .map(([file, ranges]) => (ranges.length ? `${file} · rows ${ranges.join(", ").replace(/-/g, "–")}` : file))
+    .join("; ");
+}

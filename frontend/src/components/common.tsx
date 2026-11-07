@@ -2,7 +2,7 @@ import { CheckCircle2, CircleAlert, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { Citation, Lineage, VerificationView } from "@/lib/api";
-import { prefillAsk } from "@/lib/format";
+import { lineageLabel, prefillAsk } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Tone = "amber" | "ok" | "info" | "neutral" | "danger";
@@ -193,14 +193,13 @@ function usePopover() {
 }
 
 const chipClass =
-  "num inline-flex max-w-full cursor-pointer items-center gap-1 truncate rounded border border-dashed border-[#2E4A6E] bg-transparent px-1.5 py-0.5 text-[11px] text-info hover:bg-[#141E2C]";
+  "num inline-flex max-w-full cursor-pointer items-center gap-1 break-words rounded border border-dashed border-[#2E4A6E] bg-transparent px-1.5 py-0.5 text-left text-[11px] text-info hover:bg-[#141E2C]";
 
 /** Dashed blue chip that opens where a number came from: formula, rows, file. */
 export function LineageChip({ lineage, label, align = "left" }: { lineage: Lineage; label?: string; align?: "left" | "right" }) {
   const { open, setOpen, ref } = usePopover();
   const id = useId();
-  const first = lineage.source_rows[0];
-  const text = label ?? (first ? `${first.file}${first.rows ? ` · rows ${first.rows}` : ""}` : lineage.metric);
+  const text = label ?? lineageLabel(lineage.source_rows, lineage.metric);
   return (
     <span ref={ref} className="relative inline-flex max-w-full">
       <button
@@ -210,7 +209,7 @@ export function LineageChip({ lineage, label, align = "left" }: { lineage: Linea
         aria-controls={id}
         onClick={() => setOpen(!open)}
       >
-        <span className="truncate">{text}</span>
+        <span className="min-w-0 break-words">{text}</span>
       </button>
       {open ? (
         <span

@@ -31,3 +31,16 @@ describe("decision titles", () => {
     expect(decisionTitle("", "Should we open a Dubai office?")).toBe("Should we open a Dubai office?");
   });
 });
+
+describe("lineage chip labels", () => {
+  it("lists every row range of a file once", async () => {
+    const { lineageLabel } = await import("@/lib/format");
+    const rows = [
+      { file: "pnl.csv", rows: "2-121" },
+      { file: "pnl.csv", rows: "242-361" },
+      { file: "bank_balance.csv", rows: "2-13" },
+    ];
+    expect(lineageLabel(rows, "gross_margin")).toBe("pnl.csv · rows 2–121, 242–361; bank_balance.csv · rows 2–13");
+    expect(lineageLabel([], "runway")).toBe("runway");
+  });
+});

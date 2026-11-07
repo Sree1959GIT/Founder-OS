@@ -200,6 +200,8 @@ def test_upload_table_override(empty_client: TestClient) -> None:
 def test_load_sample_endpoint(empty_client: TestClient) -> None:
     body = empty_client.post("/api/data/load-sample").json()
     assert len(body["tables"]) == 7
+    # One source for every table (founder review 33), with the same numbers as the CSVs.
+    assert {t["source_file"] for t in body["tables"]} == {"northwind_financials.xlsx"}
     assert empty_client.get("/api/metrics/mrr").json()["value"] == 255344.27
 
 

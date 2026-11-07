@@ -49,7 +49,18 @@ async def health(request: Request, settings: SettingsDep, probes: ProbesDep) -> 
     orchestrator = getattr(request.app.state, "orchestrator", None)
     for dependency in dependencies:  # Settings can change this while the app runs: the badge must show what is true
         if dependency.name == "cloud" and orchestrator is not None:
-            dependency.info["cloud_allowed"] = orchestrator.router.cloud_allowed
+            allowed = bool(orchestrator.router.cloud_allowed)
+            dependency.info["cloud_allowed"] = allowed
+            keys = any(bool(v) for v in dict(dependency.info.get("configured") or {}).values())
+            dependency.info["cloud_usable"] = allowed and keys
+            # The strip and the privacy badge read the same facts (founder review 35).
+            if not allowed:
+                dependency.state = DependencyState.NOT_CONFIGURED
+                dependency.detail = "Cloud is off; all agents run locally"
+            elif not keys:
+                dependency.state = DependencyState.DEGRADED
+                dependency.detail = "Cloud is allowed, but no provider has a key: every agent runs locally"
+
     return HealthResponse(
         status=overall_status(dependencies),
         version=__version__,

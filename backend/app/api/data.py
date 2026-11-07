@@ -32,6 +32,7 @@ from app.engine.sql_guard import DEFAULT_MAX_ROWS, GuardedQueryResult, run_guard
 router = APIRouter(prefix="/data", tags=["data"])
 
 UPLOADS_DIR_NAME = "uploads"
+SAMPLE_WORKBOOK = "northwind_financials.xlsx"
 CHUNK_BYTES = 1024 * 1024
 
 
@@ -114,8 +115,16 @@ def save_mapping(body: MappingUpdate, finance: FinanceDep) -> dict[str, Any]:
 
 @router.post("/load-sample", response_model=IngestResponse)
 def load_sample(settings: SettingsDep, finance: FinanceDep) -> IngestResponse:
-    """(Re)load the Northwind demo data from `sample_data/`, replacing those tables."""
-    return IngestResponse(tables=ingest_directory(finance.db, settings.sample_data_path()))
+    """(Re)load the Northwind demo data, replacing those tables, all from one file (founder review 33).
+
+    The workbook holds every table, one sheet each, so every table's lineage names the same source. Without it, the
+    CSVs are used. The current tables are backed up first, so this can be undone like an upload.
+    """
+    folder = settings.sample_data_path()
+    workbook = folder / SAMPLE_WORKBOOK
+    if workbook.is_file():
+        return IngestResponse(tables=ingest_file(finance.db, workbook), backups=backups(finance.db))
+    return IngestResponse(tables=ingest_directory(finance.db, folder), backups=backups(finance.db))
 
 
 @router.post("/upload", response_model=IngestResponse)

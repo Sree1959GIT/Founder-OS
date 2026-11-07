@@ -72,7 +72,13 @@ export function AnswerCard({ run }: { run: RunView }) {
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>
           Advisor
-          {result ? <span className="num"> · {seconds(result.elapsed_ms)}</span> : null}
+          {result ? (
+            <span className="num" title="Time the team worked, not counting the wait for your approval">
+              {" "}
+              · {seconds(Math.max(0, result.elapsed_ms - (result.timings_ms?.approval_wait ?? 0)))}
+              {result.timings_ms?.approval_wait ? ` work · ${seconds(result.timings_ms.approval_wait)} waiting for you` : ""}
+            </span>
+          ) : null}
           {where ? ` · ${where}` : ""}
         </span>
         <span className="flex-1" />

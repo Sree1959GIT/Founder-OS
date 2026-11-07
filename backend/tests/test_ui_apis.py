@@ -238,3 +238,15 @@ def test_the_matrix_uses_the_same_four_words_on_the_board_and_in_the_note(client
     note = client.get("/api/vault/notes/notes/priorities.md").json()
     assert "Do now" in note["content"]
     assert "Quick win" not in note["content"]
+
+
+def test_cloud_allowed_with_no_key_reads_the_same_on_the_strip_and_the_badge(settings: Settings) -> None:
+    """Founder review 35: allowed in Settings, but no provider has a key, so nothing can leave this PC."""
+    with TestClient(create_app(settings.model_copy(update={"auto_load_sample_data": False}))) as client:
+        client.put("/api/settings", json={"cloud_allowed": True})
+        cloud = next(d for d in client.get("/api/health").json()["dependencies"] if d["name"] == "cloud")
+        assert cloud["info"]["cloud_allowed"] is True and cloud["info"]["cloud_usable"] is False
+        assert cloud["state"] == "degraded" and "no provider has a key" in cloud["detail"]
+        client.put("/api/settings", json={"cloud_allowed": False})
+        cloud = next(d for d in client.get("/api/health").json()["dependencies"] if d["name"] == "cloud")
+        assert cloud["state"] == "not_configured" and cloud["info"]["cloud_usable"] is False
