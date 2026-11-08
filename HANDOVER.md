@@ -61,6 +61,14 @@
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RX1 to RX12; RW round 2 fixes in this PR) |
 
 ## Current session
+- Started (UTC): 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate, time-box 60 minutes), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Plan:
+  - [x] Record the RX results first
+  - [ ] 58 metric routing (and 45 periods), 51 no badge when nothing ran, 54 de-dup sentences, 54b amendment clause
+  - [ ] 56 queued questions always offered, 57 why the proposal, 52 after cash runs out, 53 badge wraps, 59 collapse versions
+  - [ ] Tests, RY re-test steps, PR #9 updated, CI green
+
+Previous session (2026-11-08, M4 fix round 2):
 - Started (UTC): 2026-11-08 01:33 (local Windows bug-fix session, round 2 for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
 - Plan, in the founder's priority order:
   - [x] Record the re-test results first
@@ -964,6 +972,18 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M4] Re-test RX1–RX12: OPEN (fix session 2026-11-08, round 3)
+**Results (founder, 2026-11-08):** PASS RX2, RX3, RX4, RX5, RX6, RX7, RX8, RX9, RX10, RX12 (visible parts). FAIL RX11.
+To fix:
+- 58 (important): "What is our gross revenue churn?" was answered "Your gross burn is $428,612.47 as of 2026-10, but that's not the same as gross revenue churn…" with a green Verified badge. Route every metric name and synonym to the right metric; a reply that does not answer the question is never Verified; the answer and chip state the period (45).
+- 51: "I held the team back because it was not approved…" shows a green Verified badge. No badge, or a neutral "not run", when nothing ran.
+- 54: duplicate sentences in decision answers (the goal line twice; "what has changed since you drafted it? What has changed since you drafted the proposal?"). 54b: after an amendment, acknowledge the change in one clause.
+- 56: queued questions: always offer each one, one at a time, with Ask it now / Drop it.
+- 57: when the proposed option is not the best for runway, say why in one clause.
+- 52: when the projection's last month lies after the zero-cash month, say so in one clause.
+- 53: the amber badge text is truncated at the panel edge.
+- 59: collapse identical consecutive versions in "Earlier versions you can restore".
+
 ### [M4] Re-test RW1–RW12, round 2: RESOLVED, awaiting re-test (fix session 2026-11-08)
 **Resolved (2026-11-08, PR #9):** 49, 40, 22, 42, 46, 47, 48 (P1) and 44, 43, 45, 39, 41, 37, 38, 50 (P2), with tests.
 Re-test: RX1 to RX12. Causes worth knowing:
