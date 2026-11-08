@@ -29,6 +29,7 @@ from langgraph.types import Send
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agents.cash_risk import CashRisk, cash_risk, wants_warning
 from app.agents.decision_frame import DecisionFrame, build_frame
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.horizon import beyond, beyond_issue
@@ -126,6 +127,7 @@ class ChatResult(BaseModel):
     )
     assumptions_to_confirm: int = Field(0, description="Placeholder inputs the answer rests on")
     memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
+    cash_risk: CashRisk | None = Field(default=None, description="Monte Carlo cash-out warning, when it was given")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     verified: bool
     verification: Verification = Field(
@@ -158,6 +160,7 @@ class RunContext:
     stop_agents: set[str] = field(default_factory=set)
     new_briefs: dict[str, str] = field(default_factory=dict)
     context: Any = None  # the conversation lane's frozen run snapshot
+    cash_risk: CashRisk | None = None
     streamed: bool = False  # someone is reading `deltas`: each piece of text goes to one reader
 
 
@@ -191,6 +194,7 @@ class AgentOrchestrator:
         max_local: int = 2,
         max_cloud: int = 6,
         max_steps: int = 4,
+        cash_risk_warn_at: float = 2.0,
     ) -> None:
         self.router = router
         self.decisions = decisions
@@ -202,6 +206,7 @@ class AgentOrchestrator:
         self.local_slots = asyncio.Semaphore(max_local)
         self.cloud_slots = asyncio.Semaphore(max_cloud)
         self.max_steps = max_steps
+        self.cash_risk_warn_at = cash_risk_warn_at  # above 1: never warn
         self.runs: dict[str, RunContext] = {}
         self.graph = self._build()
 
@@ -221,6 +226,9 @@ class AgentOrchestrator:
 
     def needs_approval(self, team: list[AgentInstance]) -> bool:
         if not team or self.approval_policy == "never":
+            return False
+        # Founder note 63: a one-metric lookup is a local routine whose answer code writes; there is no team to approve.
+        if all(i.fast_metric is not None and not i.is_cloud for i in team):
             return False
         return self.approval_policy == "always" or any(i.is_cloud for i in team)
 
@@ -380,6 +388,15 @@ class AgentOrchestrator:
                     "model": chunk.completion.model,
                     "usage": chunk.completion.usage,
                 }
+        # Founder note 7: the Advisor speaks up when cash may run out within a year. Code writes it, last.
+        asked_for = [m for _, m in metrics_named(state["message"])]
+        if results and wants_warning(state["plan"].intent, asked_for):
+            finance = getattr(self.ctx_factory(""), "finance", None)
+            run.cash_risk = await asyncio.to_thread(cash_risk, finance, self.cash_risk_warn_at)
+            if run.cash_risk is not None:
+                warning = f" {run.cash_risk.sentence}"
+                parts.append(warning)
+                await run.deltas.put(warning)
         run.timings["advise"] = _ms(started)
         meta["claim_issues"] = claim_issues
         return {"answer": "".join(parts).strip(), "advisor": meta}
@@ -448,6 +465,7 @@ class AgentOrchestrator:
             *(n for r in results for n in r.numbers),
             *(f.value for f in (frame.facts if frame else [])),
             *(f.value for r in results for f in r.record_facts),  # cited to the memo by the source check
+            *(run.cash_risk.figures if run.cash_risk is not None else []),
         ]
         cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
@@ -508,6 +526,7 @@ class AgentOrchestrator:
             decision_frame=frame,
             assumptions_to_confirm=assumptions,
             memo=next((r.memo for r in results if r.memo is not None), None),
+            cash_risk=run.cash_risk,
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             verified=not issues and all_done,
             # Nothing ran (held back, or a greeting): no check to report, so the badge is a neutral "not run".

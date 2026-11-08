@@ -1476,7 +1476,12 @@ def team_projection(results: list[AgentResult]) -> Projection | None:
     return next((r.projection for r in results if r.projection is not None), None)
 
 
-def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "") -> str:
+AMENDED = "The founder then added:"  # how the conversation lane writes an amended request
+
+
+def decision_lead(
+    frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "", message: str = ""
+) -> str:
     """A decision answer opens with the proposed option, then the full model: the same order as the lead card.
 
     Written by code, so the figures are the table's and the signs are never doubled ("reducing runway by -2.07").
@@ -1489,7 +1494,8 @@ def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], ch
     full = next((o for o in frame.options if o.is_full), None)
     model = frame.cost_model
     parts: list[str] = []
-    asked = _as_you_asked(model)
+    # Founder note 62: only a real amendment is acknowledged; a figure in the first question was not "asked" again.
+    asked = _as_you_asked(model) if AMENDED in message else ""
     why = _why_proposed(frame, proposed) if proposed is not None else ""
     if proposed is not None:
         mine = asked if proposed.is_full or model is None else ""
@@ -1833,7 +1839,9 @@ async def advise(
     projection = team_projection(results)
     asked = beyond(user_message, projection)
     chosen = _chosen_in(results)
-    lead = horizon_lead(user_message, asked, projection) if asked else decision_lead(frame, records, chosen)
+    lead = (
+        horizon_lead(user_message, asked, projection) if asked else decision_lead(frame, records, chosen, user_message)
+    )
     if lead:
         context += (
             f"\n\nAlready said to the founder, first, by code: {lead}\nDo not repeat it, the goal or the proposal. "

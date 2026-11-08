@@ -230,6 +230,9 @@ class ConversationManager:
         inst = next((i for i in team if i.id == event.agent_id), None)
         if not ended or inst is None:
             return ""
+        # Founder note 60: a held-back team's agents are "cancelled" without ever starting. That is not "done".
+        if not any(e.type == "agent.spawned" and e.agent_id == inst.id for e in self.bus.history(run_id)):
+            return " "
         verified = bool(event.data.get("verified")) and event.data.get("status", "done") == "done"
         ended_so_far = session.finished.setdefault(run_id, [])
         ended_so_far.append((inst.id, verified))
@@ -262,6 +265,8 @@ class ConversationManager:
             return (
                 f"Waiting for your approval of this team: {names}." if data.get("needs_approval") else f"Team: {names}."
             )
+        if event.type == "team.rejected":
+            return "I held the team back: no agent ran."
         name = self._agent_name(run_id, event.agent_id)
         if event.type == "agent.status" and data.get("status") == "waiting_cloud":
             return f"{name} is waiting for a cloud model."

@@ -87,4 +87,5 @@ def build_orchestrator(
         max_local=settings.max_local_agents,
         max_cloud=settings.max_cloud_agents,
         max_steps=settings.agent_max_steps,
+        cash_risk_warn_at=settings.cash_risk_warn_at,
     )
