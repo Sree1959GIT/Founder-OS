@@ -120,12 +120,14 @@ def main() -> int:
         print(f"dubai: first words {fmt(r.get('turn', {}).get('first_audio_ms'))}; said {r.get('said', [])[:3]}")
         print(
             f"barge-in: audio paused {fmt(b.get('paused_ms'))} after speech began; speech cancelled "
-            f"{fmt(b.get('stopped_ms'))} ({b.get('verdict')} by {b.get('by')}); interrupted={r.get('interrupted', False)}"
+            f"{fmt(b.get('stopped_ms'))} ({b.get('verdict')} by {b.get('by')}); "
+            f"interrupted={r.get('interrupted', False)}"
         )
     vram = httpx.get(f"{args.backend}/api/voice/status", timeout=30).json()["vram_gb"]
     print(
         f"VRAM GB: total {vram['total']}, in use now {vram['used_now']}, Whisper load {vram.get('whisper')} "
-        f"(before/after all voice models: {vram['before_voice']} / {vram['after_voice']}; Ollama may have loaded between)"
+        f"(before/after all voice models: {vram['before_voice']} / {vram['after_voice']}; "
+        "Ollama may have loaded between)"
     )
     metrics = httpx.get(f"{args.backend}/api/voice/metrics", timeout=30).json()
     print("backend p50 (ms):", json.dumps(metrics["p50_ms"]))
