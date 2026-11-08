@@ -61,6 +61,14 @@
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RW1 to RW12; W0 to W15 reviewed, fixes in this PR) |
 
 ## Current session
+- Started (UTC): 2026-11-08 01:33 (local Windows bug-fix session, round 2 for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Plan, in the founder's priority order:
+  - [x] Record the re-test results first
+  - [ ] P1: 49 horizon, 40 follow-ups amend the open decision, 22 turns in every phase, 42 queue de-dup, 46 sample reset, 47 several backups, 48 backup labels
+  - [ ] P2: 44 units, 43 unmodelled option, 45 metric periods, 39 cloud off, 41 titles, 37 popover, 38 chart label, 50 tag
+  - [ ] Tests, RX re-test steps, PR #9 updated, CI green
+
+Previous session (2026-11-07, M4 fix round 1):
 - Started (UTC): 2026-11-07 09:50 (local Windows bug-fix session for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
 - Plan, in the founder's priority order (P1, then P2, then P3):
   - [x] Record the founder feedback first
@@ -924,6 +932,30 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M4] Re-test RW1–RW12, round 2: OPEN (fix session 2026-11-08)
+**Results:** PASS RW1, RW2, RW3, RW7, RW9, RW11 (the three-state badge, reload, Settings Save/Discard, memo title sync,
+superlatives and the short decision answer all pass). FAIL RW4, RW5, RW6. RW8 partly: the warning works; see 46–48.
+
+**P1 Trust and data safety:**
+- 49 (RW4). "What will our MRR be in 2031?" answered "projected to be $300,334.87 ... runway 11.23", green Verified. The scenario engine projects 12 months (to Oct 2027), so a month-12 figure was stated for 2031. The Verifier must check a claim's period against the tool output's period: a figure may only be stated for a date or period the tool covers. Beyond the horizon: say the model projects 12 months, give the month-12 figure labelled with its month and "assumption, confirm", and never mark a claim about an uncovered date Verified. Tests for 2031, "next year", "in 5 years".
+- 40 (RW5). After the Dubai answer, "also make it a two person team" started a NEW run titled with that text (Librarian + Market Scout, generic "target region" briefs, no Dubai, no Financial Analyst). While a decision is open on screen, follow-ups ("also…", "make it…", "what if…", "instead…", "change … to …") apply to that decision: show "Restart with your change?" and re-run the same decision with the change (local hires = 2), keeping its team, context and frame. Never a context-free run from a follow-up.
+- 22 (RW6, still open). The input box does not accept a second message while the first question is planning or awaiting team approval. Accept and classify turns at once in every phase (planning, awaiting approval, running) and queue them with a visible note.
+- 42. The same question was queued twice ("what is our runway?" / "What is our runway?"): de-duplicate queued questions (case and spacing insensitive).
+- 46. "Load sample data" did not restore pnl on the first press (pnl stayed one_row.csv, 1 row); a second press did. A reset always reloads every table from northwind_financials.xlsx, whatever pending uploads or saved mappings exist. Test: upload to pnl, one press restores 360 rows.
+- 47. Undo keeps one step only: after two uploads to pnl the 360-row version was gone from /api/data/backups. Keep several versions per table (at least the last 3 plus the last clean sample version), list them with source and row count, allow restoring any.
+- 48. After Load sample data every table shows "Undo the last upload to …" though nothing was uploaded: label backups by what made them (sample reload, upload, mapping) and show only meaningful undo buttons.
+
+**P2 Quality:**
+- 44 IMPORTANT. The price-rise cost model shows wrong units: "Price change $10 / $10 / $10" (should be 10 %), "Extra monthly churn it causes $0 / $1 / $1" (should be 0 / 0.5 / 1 pts). Every cost-model row carries its own unit (USD, %, pts, people, months). Tests.
+- 43. The price rise proposed "New customers only · cost not modelled" over modelled options, with no reason. Never propose an unmodelled option over modelled ones unless the answer says why; prefer modelling it (new_customer_arpa).
+- 45. Gross revenue churn (monthly) was 0.90 % in one answer and 1.22 % in another: every metric figure in answers and chips states its period (e.g. "Oct 2026" or "trailing 12 months").
+- 39. "0/6 cloud" and "Cloud slots 0/6" still show while cloud is off (agents panel, Activity): hide, or say "cloud off".
+- 41. Run titles concatenate amendments ("also make it a two person team The founder then added: …"): keep titles short.
+- 37. The badge popover on the runway answer is cut off at the left edge: keep popovers inside the viewport.
+- 38. "The scenario matches the base." overlaps the "Under 3 months of cash" label on the cash chart.
+- 50. "all of these are assumptions to confirm (assumption, confirm)": drop the redundant tag where the sentence says it.
+- (7 is M5; left.)
+
 ### [M4] Founder review W0–W15: RESOLVED, awaiting re-test (fix session 2026-11-07)
 **Resolved (2026-11-07, PR #9):** P1 (14, 20, 17, 32, 24, 21, 22), P2 (16, 18, 19, 23, 25, 26, 27, 9, 10) and P3
 (1–6, 8, 11–13, 15, 28–31, 33–35, 36) are fixed, with tests. Re-test: RW1 to RW12 in the checklist. What remains:
