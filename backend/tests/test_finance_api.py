@@ -317,3 +317,23 @@ def test_reloading_the_sample_over_the_sample_keeps_no_undo(client: TestClient) 
     assert before_upload["made_by"] == "upload" and before_upload["clean_sample"]
     assert before_reset["made_by"] == "sample" and before_reset["source_file"] == "one_row.csv"
     assert before_reset["label"] == "before the sample data was reloaded"
+
+
+def test_the_first_rounds_one_step_backup_is_migrated_to_a_version(client: TestClient) -> None:
+    """A database from the first fix round has `_backups` and `_backup_pnl`: they become one restorable version."""
+    from app.engine.ingest import backups
+
+    db = next(iter(client.app.state.finance.values())).db  # type: ignore[attr-defined]
+    with db.connect(read_only=False) as con:
+        con.execute('CREATE TABLE "_backup_pnl" AS SELECT * FROM pnl')
+        con.execute(
+            "CREATE TABLE _backups (table_name VARCHAR PRIMARY KEY, row_count BIGINT, source_file VARCHAR, "
+            "log_json VARCHAR, saved_at TIMESTAMP)"
+        )
+        con.execute("INSERT INTO _backups VALUES ('pnl', 360, 'pnl.csv', NULL, now())")
+    (version,) = backups(db)
+    assert version.table == "pnl" and version.rows == 360 and version.clean_sample
+    files = {"file": ("one_row.csv", ONE_ROW, "text/csv")}
+    client.post("/api/data/upload", files=files, data={"mode": "replace"})
+    client.post("/api/data/undo", json={"table": "pnl", "version_id": version.id})
+    assert _pnl_rows(client) == 360

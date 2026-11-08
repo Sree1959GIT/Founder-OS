@@ -670,10 +670,13 @@ def backups(db: FinanceDB, table: str | None = None) -> list[BackupInfo]:
     if not db.path.exists():
         return []
     with db.connect() as con:
-        if not _has_table(con, VERSIONS_TABLE) and not _has_table(con, LEGACY_BACKUPS_TABLE):
-            return []
-    with db.connect(read_only=False) as con:
-        _ensure_versions(con)
+        legacy, versions = _has_table(con, LEGACY_BACKUPS_TABLE), _has_table(con, VERSIONS_TABLE)
+    if not legacy and not versions:
+        return []
+    if legacy:  # once: the first fix round's one-step backup becomes a version (a write, so only when needed)
+        with db.connect(read_only=False) as con:
+            _ensure_versions(con)
+    with db.connect() as con:
         rows = con.execute(
             f"SELECT id, table_name, row_count, source_file, saved_at, made_by, replaced_by FROM {VERSIONS_TABLE} "
             "WHERE ? IS NULL OR table_name = ? ORDER BY saved_at DESC, id",

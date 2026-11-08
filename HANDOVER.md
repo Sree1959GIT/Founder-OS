@@ -58,15 +58,15 @@
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
-| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RW1 to RW12; W0 to W15 reviewed, fixes in this PR) |
+| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RX1 to RX12; RW round 2 fixes in this PR) |
 
 ## Current session
 - Started (UTC): 2026-11-08 01:33 (local Windows bug-fix session, round 2 for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
 - Plan, in the founder's priority order:
   - [x] Record the re-test results first
-  - [ ] P1: 49 horizon, 40 follow-ups amend the open decision, 22 turns in every phase, 42 queue de-dup, 46 sample reset, 47 several backups, 48 backup labels
-  - [ ] P2: 44 units, 43 unmodelled option, 45 metric periods, 39 cloud off, 41 titles, 37 popover, 38 chart label, 50 tag
-  - [ ] Tests, RX re-test steps, PR #9 updated, CI green
+  - [x] P1: 49 horizon, 40 follow-ups amend the open decision, 22 turns in every phase, 42 queue de-dup, 46 sample reset, 47 several backups, 48 backup labels
+  - [x] P2: 44 units, 43 unmodelled option, 45 metric periods, 39 cloud off, 41 titles, 37 popover, 38 chart label, 50 tag
+  - [x] Tests (backend full suite, frontend 37 vitest, 2 Playwright specs, lint, tsc, build), RX re-test steps, PR #9 updated
 
 Previous session (2026-11-07, M4 fix round 1):
 - Started (UTC): 2026-11-07 09:50 (local Windows bug-fix session for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
@@ -601,7 +601,39 @@ Known issues / notes:
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M4 re-test after the founder-review fixes (Major gate, about 30 minutes). Run this one first: RW1 to RW12.** It covers P1 and P2 of "[M4] Founder review W0–W15". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. W0 to W15 below still apply; run them again only if something here looks off. Then merge, or write what you saw under "Founder feedback".
+**M4 re-test after round 2 (Major gate, about 25 minutes). Run this one first: RX1 to RX12.** It covers 49, 40, 22, 42, 46, 47, 48, 44, 43 and 45 of "[M4] Re-test RW1–RW12, round 2". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. RW1 to RW12 below still apply. Then merge, or write what you saw under "Founder feedback".
+
+- **RX1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
+  On **Data**, press **Load sample data** once.
+- **RX2. Beyond the projection (49).** Ask **What will our MRR be in 2031?** **See:** the answer starts "The model's projection runs to Oct 2027, so it has no figure for 2031." (the month is later if the team projected further) Its last month's MRR follows, labelled "(assumption, confirm)". No other figure is given for 2031. The badge is amber, never green; click it and "2031 is beyond the projection, which ends Oct 2027" is listed. Repeat with **next year** and **in 5 years** in place of "in 2031". One line:
+  `$s = Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/conversation/turn -ContentType 'application/json' -Body '{"text":"What will our MRR be in 2031?"}'; Start-Sleep 60; (Invoke-RestMethod "http://127.0.0.1:8000/api/runs/$($s.run_id)").result.verification.state`
+  **Expect:** `assumptions` (or `not_verified`), never `verified`. If **Ask before a team runs** is **Always**, approve in the browser first.
+- **RX3. A follow-up changes the open decision (40).** Ask **Should we open a Dubai office?** and wait for the answer. Then type **also make it a two person team**. **See:** "That changes the decision. Restart with your change?" with **Restart with my change**; no new run yet. Press it. **See:**
+  - The new run has the same team as before, with the Financial Analyst.
+  - Its title reads "Should we open a Dubai office? · changed: also make it a two person team" (41).
+  - Its cost model shows **Local hires 2** as "your figure".
+- **RX4. Turns while planning and awaiting approval (22).** Gear > **Ask before a team runs** > **Always** > **Save**. Ask **Should we open a Dubai office?** and at once type **What is our runway?** and press Enter. **See:** a "Queued for when this run finishes" card straight away, and only one Advisor answer card (no second run). While "The team is waiting for your approval." shows, type **What is our churn?**: a second queued card appears. Set approval back and **Save**.
+- **RX5. Asked twice, queued once (42).** During RX4, type **what is our  RUNWAY?** **See:** "That question is already queued." and still one card for it.
+- **RX6. One press resets the data (46).** On **Data**, upload a one-row file to `pnl` and press **Replace**:
+  `"month,account,category,amount`n2026-10,Rent,opex,1000" | Set-Content -Encoding UTF8 $env:TEMP\one_row.csv`
+  Then press **Load sample data** once. **See:** every table, pnl included, shows `northwind_financials.xlsx`, and pnl has 360 rows. One line:
+  `(Invoke-RestMethod http://127.0.0.1:8000/api/data/tables).loaded | Where-Object table -eq pnl | Select-Object rows, source_file`
+  **Expect:** `360 northwind_financials.xlsx`.
+- **RX7. Several versions, any restorable (47).** Upload `one_row.csv` to `pnl` with **Replace** three times. **See:** "Earlier versions you can restore". The 360-row version is still listed, marked "(the sample data)", with its source, row count and time. Press **Restore this pnl** on it: pnl has 360 rows again. One line:
+  `Invoke-RestMethod http://127.0.0.1:8000/api/data/backups | Select-Object table, rows, source_file, label, clean_sample | Format-Table`
+- **RX8. Only meaningful versions (48).** Press **Load sample data** twice. **See:** the second press adds no version. Every listed version says what replaced it ("before uploading one_row.csv", "before the sample data was reloaded"). No "Undo the last upload" button remains.
+- **RX9. Units (44).** Ask **Should we raise our prices by 10%?** **See:** in the cost model, Price change reads **+10 %** (not $10), and the extra churn reads **+0.2 / +0.5 / +1 pts** (not $0 / $1 / $1). Money rows still show $.
+- **RX10. New customers only is costed (43).** In the same answer's options, **New customers only** shows a cost and a runway change, not "cost not modelled". If it is the proposal, its figures are in the options table.
+- **RX11. Periods (45).** Ask **What is our gross revenue churn?** **See:** the sentence says the period ("for August to October 2026", or "in October 2026"). Its lineage chip ends with the period, e.g. "· Aug–Oct 2026".
+- **RX12. Small ones (39, 37, 38, 50).**
+  - With cloud off, Activity shows "Cloud off" and the rail shows "cloud off" (no "0/6").
+  - On the runway answer, open the badge: the popover stays fully on screen.
+  - With the sliders reset, "The scenario matches the base." sits above the cash chart, clear of the "Under 3 months of cash" label.
+  - The Dubai lead ends "…all of these are assumptions to confirm." with no "(assumption, confirm)" after it.
+  Optional smoke tests: `Set-Location frontend; npx playwright test; Set-Location ..` **Expect:** `2 passed`.
+
+**M4 re-test after the founder-review fixes (done: results under "Founder feedback"; reference). RW1 to RW12.** It covers P1 and P2 of "[M4] Founder review W0–W15". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. W0 to W15 below still apply; run them again only if something here looks off. Then merge, or write what you saw under "Founder feedback".
 
 - **RW1. Get the code.** Close the backend and frontend windows, then:
   `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; Set-Location frontend; npm install; Set-Location ..; .\run.bat`
@@ -932,7 +964,23 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M4] Re-test RW1–RW12, round 2: OPEN (fix session 2026-11-08)
+### [M4] Re-test RW1–RW12, round 2: RESOLVED, awaiting re-test (fix session 2026-11-08)
+**Resolved (2026-11-08, PR #9):** 49, 40, 22, 42, 46, 47, 48 (P1) and 44, 43, 45, 39, 41, 37, 38, 50 (P2), with tests.
+Re-test: RX1 to RX12. Causes worth knowing:
+- 22: a turn sent while the first was still being planned opened a second session, and with it a second run awaiting
+  approval (the frontend read the session id before React had stored it). A Playwright test now covers it.
+- 40: "also make it a two person team" carries a figure, so it was taken as an answer to the lane's question and
+  re-run at once: planned afresh (so a new team, and the briefs lost Dubai), and the browser titled it with the
+  follow-up alone. Now a follow-up to an open decision is offered first, then re-runs that decision with the same
+  team (fresh agents) and a frame rebuilt in code from the edited request (2 local hires); the title is the question
+  plus "· changed: …".
+- 49: a new `app/agents/horizon.py`. The answer's first sentence is code's: what the projection covers and its last
+  month's figure, labelled. The prose may add no figure, an agent's sentence stating one for the uncovered date is
+  taken out (counted on the "claims removed" chip), and the badge lists it as an assumption, so it is never green.
+- 46: the reset could be steered by a saved mapping for a sheet of the workbook. Load sample data now ignores saved
+  mappings. The first-press failure itself did not reproduce here (one press restored pnl in every sequence tried).
+What remains: 7 is M5. The local model's own sentences after code's lead still vary run to run.
+
 **Results:** PASS RW1, RW2, RW3, RW7, RW9, RW11 (the three-state badge, reload, Settings Save/Discard, memo title sync,
 superlatives and the short decision answer all pass). FAIL RW4, RW5, RW6. RW8 partly: the warning works; see 46–48.
 
@@ -1128,6 +1176,10 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M4 fix session, round 2 (2026-11-08)
+- Recorded the RW1–RW12 results, then fixed P1 and P2 in order (see the feedback item). New: `app/agents/horizon.py`; versioned backups (`_versions` table; the old one-step `_backups` is migrated on first read); `price_applies_to_existing` in the scenario engine (new-customers-only pricing); `frontend/e2e/turns.spec.ts`.
+- Live against a scratch backend with the real local model: 49 found the Analyst projecting 36 months, and the lead's "36" was flagged as unsourced: the lead now names the end month only. 40 found the follow-up taken as figures and re-run without an offer: fixed.
+
 ### M4 fix session (2026-11-07)
 - Recorded the founder review W0–W15, then fixed P1, P2 and P3 in order (see the feedback item). New: `app/agents/verification.py` (three badge states), upload conflicts/backup/undo (`/api/data/backups`, `/api/data/undo`), `frontend/src/lib/persist.ts` (reload keeps the session), Settings draft with Save/Discard and a leave guard.
 - Verified live against a scratch backend with the real local model and a proposed Dubai memo in the vault: issues went from 13 to the removed Scout figure; the answer leads with the proposal and the full model.
@@ -1201,6 +1253,12 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M4 fix round 2, 2026-11-08)
+- A question beyond the projection gets code's sentence about the last projected month, as an assumption: amber, never green.
+- Restoring a version keeps the current one as a version too, so an undo can be undone. Up to 3 versions per table, plus the last clean sample one.
+- "Load sample data" is a reset: it ignores saved mappings, and keeps no version when a table already is the sample.
+- New-customers-only pricing is modelled with `price_applies_to_existing = 0` (existing customers' churn assumed unchanged).
 
 ## Decisions made (M4 session, 2026-11-06)
 - **Fast path for one metric:** a question of up to 22 words naming one metric gets a sentence written by code, plus at most one short LLM question under a 4 s timeout. It skips the Planner and the team. **Why:** your target; code cannot get the number wrong. **Tell me** if you would rather never have the optional question.
