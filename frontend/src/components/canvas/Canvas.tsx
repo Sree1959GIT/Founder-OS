@@ -5,7 +5,7 @@ import { DecisionFrameCard } from "@/components/canvas/DecisionFrameCard";
 import { ScenarioSimulator } from "@/components/canvas/ScenarioSimulator";
 import { CitationChips, EmptyNote, LineageChip, Pill, Section, VerifiedBadge } from "@/components/common";
 import { fetchSummary, type AgentResult, type Artifact, type MetricResult } from "@/lib/api";
-import { decisionTitle, metricValue, monthLabel } from "@/lib/format";
+import { decisionTitle, metricValue, monthLabel, runTitle } from "@/lib/format";
 import { useWorkspace, type RunView } from "@/lib/workspace";
 
 const KPIS = ["runway", "net_burn", "mrr", "gross_margin"];
@@ -152,7 +152,7 @@ export function Canvas() {
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
           <span className="text-xs text-muted-foreground">{isDecision ? "Open decision" : "Workspace"}</span>
-          <h1 className="text-[22px] font-bold tracking-tight">{isDecision ? decisionTitle(run?.frame?.subject, run?.message ?? "") : "No decision open yet"}</h1>
+          <h1 className="text-[22px] font-bold tracking-tight">{isDecision ? decisionTitle(run?.frame?.subject, runTitle(run?.message ?? "")) : "No decision open yet"}</h1>
         </div>
         {run?.reversibility === "one_way" ? <Pill tone="amber">One-way door · full analysis</Pill> : null}
         {run?.reversibility === "two_way" ? <Pill tone="info">Two-way door · light analysis</Pill> : null}

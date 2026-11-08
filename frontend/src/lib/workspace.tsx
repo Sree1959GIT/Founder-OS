@@ -25,6 +25,7 @@ import {
   type DecisionFrame,
 } from "@/lib/api";
 import { load, save, unfinished } from "@/lib/persist";
+import { runTitle } from "@/lib/format";
 
 export interface AgentView extends AgentInstance {
   status: string;
@@ -567,7 +568,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "amendment", id, status: accept ? "accepted" : "declined" });
         if (accept && answer.run_id) {
           const offered = turns.find((t) => t.role === "amendment" && t.amendmentId === id);
-          follow(answer.run_id, offered && offered.role === "amendment" ? offered.text : "");
+          const change = offered && offered.role === "amendment" ? offered.text : "";
+          const before = answer.replaces ? stateRef.current.runs[answer.replaces]?.message : undefined;
+          const root = before ? runTitle(before).split(" · changed: ")[0] : "";
+          follow(answer.run_id, root ? `${root} · changed: ${change}` : change);
         }
       } catch (err) {
         dispatch({ type: "error", error: err instanceof Error ? err.message : "That offer has closed" });

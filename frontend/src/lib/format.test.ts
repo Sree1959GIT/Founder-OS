@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decisionTitle, syncTitle } from "@/lib/format";
+import { decisionTitle, runTitle, syncTitle } from "@/lib/format";
 
 const memo = "---\ntitle: Dubai office\nstatus: proposed\n---\n# Dubai office\n\nBody.\n";
 
@@ -42,5 +42,16 @@ describe("lineage chip labels", () => {
     ];
     expect(lineageLabel(rows, "gross_margin")).toBe("pnl.csv · rows 2–121, 242–361; bank_balance.csv · rows 2–13");
     expect(lineageLabel([], "runway")).toBe("runway");
+  });
+});
+
+describe("runTitle", () => {
+  it("keeps the question and the last change, never the stacked amendments (founder review 41)", () => {
+    expect(runTitle("Should we open Dubai?\nThe founder then added: also make it a two person team")).toBe(
+      "Should we open Dubai? · changed: also make it a two person team",
+    );
+    expect(runTitle("Should we open Dubai? · changed: a\nThe founder then added: b")).toBe("Should we open Dubai? · changed: b");
+    expect(runTitle("What is our runway?")).toBe("What is our runway?");
+    expect(runTitle("x".repeat(200)).length).toBe(90);
   });
 });

@@ -386,3 +386,54 @@ def test_the_api(client: TestClient) -> None:
     assert client.post("/api/conversation/turn", json={"text": ""}).status_code == 422
     assert client.get(f"/api/runs/{turn.json()['run_id']}").json()["snapshot"]["session_id"] == session_id
     assert json.dumps(state)
+
+
+# --- founder re-test round 2 ------------------------------------------------------------------------------------------
+HIRE = "Should we hire SDRs?"
+
+
+async def test_a_follow_up_after_a_decision_changes_that_decision_not_a_new_run(finance: Any) -> None:
+    """40: "also make it a two person team" after the answer re-runs the same decision, same team, with the change."""
+    manager, provider = lane(finance)
+    provider.release.set()
+    first = await manager.turn("s40", HIRE)
+    run = manager.orchestrator.runs[first.run_id or ""]
+    await run.task
+    assert run.plan is not None and run.plan.intent == "decision"
+    offer = await manager.turn("s40", "also make it a two person team")
+    assert offer.kind == "amendment" and offer.amendment_id and offer.run_id == run.run_id
+    assert offer.reply == "That changes the decision. Restart with your change?"
+    assert len(manager.orchestrator.runs) == 1  # nothing started before the founder says yes
+    accepted = manager.answer_amendment("s40", offer.amendment_id or "", True)
+    new_run = manager.orchestrator.runs[accepted["run_id"]]
+    await new_run.task
+    assert new_run.message.startswith(HIRE) and new_run.context.amendment_of == run.run_id
+    assert new_run.plan is not None and new_run.plan.intent == "decision"
+    assert [i.type for i in new_run.plan.team] == [i.type for i in run.plan.team]
+    assert {i.id for i in new_run.plan.team}.isdisjoint({i.id for i in run.plan.team})
+    assert new_run.plan.frame is not None and new_run.plan.frame.hires == 2
+
+
+async def test_a_follow_up_with_no_decision_open_is_a_new_request(finance: Any) -> None:
+    manager, provider = lane(finance)
+    provider.release.set()
+    outcome = await manager.turn("s40b", "also, what is our churn?")
+    assert outcome.amendment_id is None and outcome.run_id is not None
+    await manager.orchestrator.runs[outcome.run_id].task
+
+
+async def test_the_same_question_is_queued_once(finance: Any) -> None:
+    """42: case, spacing and the end mark do not make it a second question."""
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    first = await manager.turn(session_id, "what is our runway?")
+    again = await manager.turn(session_id, "  What is our  RUNWAY?")
+    assert first.queue_id and again.queue_id == first.queue_id
+    assert again.reply == "That question is already queued."
+    assert len(manager.sessions[session_id].queue) == 1
+    provider.release.set()
+    await run.task
+
+
+def test_what_if_is_a_follow_up() -> None:
+    assert by_rules("what if we hired three instead?") == "amendment"

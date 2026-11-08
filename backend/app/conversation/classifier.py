@@ -46,7 +46,7 @@ _STATUS = re.compile(
 # Seen live: "also make it a two person team" was queued as a new question. A change to the running request may
 # start with "also", "add" or "only", and "make it a", "change it to" or "instead" may come anywhere in it.
 _AMENDMENT = re.compile(
-    r"^(actually|instead|wait|correction|sorry|no,|also|and also|plus|add|include|only|assume|"
+    r"^(actually|instead|wait|correction|sorry|no,|also|and also|plus|add|include|only|assume|what if|"
     r"make (it|that|this)|change (it|that|this|the))\b|"
     r"\b(i meant|assume|assuming|rather than|instead|make (it|that|this) (a|an|\d+|one|two|three|four|five)|"
     r"change (it|that|this|the \w+) to|use .{1,40} instead|not .{1,40} but|only (\d+|one|two|three|four|five))\b",

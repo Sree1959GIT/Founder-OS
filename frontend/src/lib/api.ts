@@ -424,7 +424,7 @@ export const postTurn = (text: string, sessionId: string | null) =>
 export const setQuiet = (sessionId: string, quiet: boolean) =>
   send<{ quiet: boolean }>(`/api/conversation/${sessionId}/quiet`, "POST", { quiet });
 export const answerAmendment = (sessionId: string, id: string, accept: boolean) =>
-  send<{ accepted: boolean; run_id: string | null }>(`/api/conversation/${sessionId}/amendments/${id}`, "POST", {
+  send<{ accepted: boolean; run_id: string | null; replaces?: string }>(`/api/conversation/${sessionId}/amendments/${id}`, "POST", {
     accept,
   });
 export const answerQueue = (sessionId: string, id: string, accept: boolean) =>

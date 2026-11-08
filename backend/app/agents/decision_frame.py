@@ -1253,12 +1253,25 @@ _HIRES_ASKED = re.compile(
 )
 
 
+_COUNT_WORDS = r"(one|two|three|four|five|six|seven|eight|nine|\d{1,3})"
+# A follow-up that sets the size: "make it a two person team", "a team of 3", "only 2 people".
+_HIRES_TEAM = re.compile(
+    rf"\b{_COUNT_WORDS}[\s-]+(?:person|people|persons|hires?)\b|\bteam\s+of\s+{_COUNT_WORDS}\b", re.I
+)
+
+
+def _hires_word(message: str) -> str | None:
+    """How many people, from the founder's words. A later statement (a follow-up) replaces an earlier one."""
+    found = [(m.start(), (m.group(1) or "one")) for m in _HIRES_ASKED.finditer(message)]
+    found += [(m.start(), m.group(1) or m.group(2)) for m in _HIRES_TEAM.finditer(message)]
+    return max(found)[1].lower() if found else None
+
+
 def _frame_hire(frame: DecisionFrame, finance: Any) -> None:
-    match = _HIRES_ASKED.search(frame.message)
-    if match is None:
+    word = _hires_word(frame.message)
+    if word is None:
         frame.questions = ["how many people you mean"]
         return
-    word = (match.group(1) or "one").lower()
     hires = int(word) if word.isdigit() else {"a": 1, "an": 1, **_NUMBER_WORDS}[word]
     frame.hires = hires
     frame.questions = []

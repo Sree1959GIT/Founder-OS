@@ -152,6 +152,15 @@ export function prefillAsk(text: string) {
  * A neutral title for an open decision: "Dubai office", not "A full Dubai office" while a pilot is proposed
  * (founder review 10). Falls back to the founder's own question.
  */
+export function runTitle(message: string, max = 90): string {
+  // Founder review 41: the question itself, never the amendments stacked on it. "· changed: …" names the last change.
+  const parts = message.split(/\s*(?:\n\s*The founder then added:|· changed:)\s*/i);
+  const root = (parts[0] ?? "").trim();
+  const change = parts.length > 1 ? (parts[parts.length - 1] ?? "").trim() : "";
+  const title = change ? `${root} · changed: ${change}` : root;
+  return title.length > max ? `${title.slice(0, max - 1).trimEnd()}…` : title;
+}
+
 export function decisionTitle(subject: string | null | undefined, message: string): string {
   const plain = (subject ?? "").replace(/^\s*(?:an?|the)\s+/i, "").replace(/^(?:full|whole|complete)\s+/i, "").trim();
   if (!plain) return message;

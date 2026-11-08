@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ErrorNote, EmptyNote, Pill, VerifiedBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { approveRun, cancelAgent, cancelRun, rerunAgent, type AgentInstance, type TeamEdit } from "@/lib/api";
-import { agentCode, agentKind, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
+import { agentCode, agentKind, runTitle, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
 import { slotsInUse, useCatalog, type AgentCatalog } from "@/hooks/useCatalog";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -359,7 +359,7 @@ export function AgentActivity() {
           Back to workspace
         </a>
         <h1 className="min-w-0 truncate text-[18px] font-semibold">
-          Agent Activity{run ? <span className="font-normal text-muted-foreground"> · {run.message}</span> : null}
+          Agent Activity{run ? <span className="font-normal text-muted-foreground"> · {runTitle(run.message)}</span> : null}
         </h1>
         <span className="flex-1" />
         <Pill>
