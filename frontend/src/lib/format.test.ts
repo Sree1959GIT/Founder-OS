@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decisionTitle, itemValue, money, runTitle, syncTitle } from "@/lib/format";
+import { decisionTitle, itemValue, money, periodLabel, runTitle, syncTitle, withPeriod } from "@/lib/format";
 
 const memo = "---\ntitle: Dubai office\nstatus: proposed\n---\n# Dubai office\n\nBody.\n";
 
@@ -63,5 +63,14 @@ describe("itemValue", () => {
     expect(itemValue(0, { cadence: "points" }, "USD")).toBe("0 pts");
     expect(itemValue(2, { cadence: "count", unit: "people" }, "USD")).toBe("2");
     expect(itemValue(3000, { cadence: "monthly", unit: "USD" }, "USD")).toBe(money(3000, "USD", 0));
+  });
+});
+
+describe("periodLabel", () => {
+  it("names the month or the window a figure is for (founder re-test 45)", () => {
+    expect(periodLabel("2026-10")).toBe("Oct 2026");
+    expect(periodLabel("2026-08..2026-10")).toBe("Aug–Oct 2026");
+    expect(periodLabel("2025-11..2026-10")).toBe("Nov 2025–Oct 2026");
+    expect(withPeriod("pnl.csv · rows 2–31", "2026-08..2026-10")).toBe("pnl.csv · rows 2–31 · Aug–Oct 2026");
   });
 });

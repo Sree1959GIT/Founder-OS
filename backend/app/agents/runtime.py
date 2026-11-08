@@ -1278,6 +1278,17 @@ def _month_label(iso: str) -> str:
     return f"{calendar.month_name[int(iso[5:])]} {iso[:4]}"
 
 
+def period_words(period: str | None, as_of: str) -> str:
+    """The period a metric figure is for, in words: "in October 2026", or "over the 3 months to October 2026" for
+    a figure computed over a window. Founder re-test 45: 0.90 % and 1.22 % were one metric over two periods."""
+    if period and ".." in period:
+        first, last = period.split("..", 1)
+        if re.fullmatch(r"\d{4}-\d{2}", first) and re.fullmatch(r"\d{4}-\d{2}", last):
+            count = (int(last[:4]) - int(first[:4])) * 12 + int(last[5:]) - int(first[5:]) + 1
+            return f"over the {count} months to {_month_label(last)}"
+    return f"in {_month_label(period or as_of)}"
+
+
 def metric_sentence(content: dict[str, Any], metric: str, currency: str = "USD") -> str:
     """The answer to a single-metric question, written by code from the routine's own result."""
     label, value, unit, as_of = content["label"], content["value"], content["unit"], content["as_of"]
@@ -1286,7 +1297,9 @@ def metric_sentence(content: dict[str, Any], metric: str, currency: str = "USD")
             f"{label} cannot be computed from the data as of {_month_label(as_of)}. {content.get('note') or ''}".strip()
         )
     written = format_money(float(value), unit) if re.fullmatch(r"[A-Z]{3}", unit) else _fmt(value, unit, metric)
-    sentence = f"{label} is {written} as of {_month_label(as_of)}"
+    period = (content.get("lineage") or {}).get("period")
+    when = period_words(period, as_of) if period and ".." in period else f"as of {_month_label(as_of)}"
+    sentence = f"{label} is {written} {when}"
     detail = content.get("detail") or {}
     if metric == "runway" and detail.get("closing_cash") is not None and detail.get("net_burn") is not None:
         cash, burn = format_money(detail["closing_cash"], currency), format_money(detail["net_burn"], currency)

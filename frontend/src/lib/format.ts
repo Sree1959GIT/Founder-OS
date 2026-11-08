@@ -241,3 +241,24 @@ export function itemValue(
   if (unit === "months") return `${plain(value)} mo`;
   return money(value, unit, 0);
 }
+
+/** "Oct 2026", or "Aug–Oct 2026" for a window: the period a metric figure is for. */
+export function periodLabel(period: string | null | undefined): string {
+  if (!period) return "";
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(iso);
+    return m ? { name: names[Number(m[2]) - 1] ?? "", year: m[1] ?? "" } : null;
+  };
+  const [first = "", last] = period.split("..");
+  const a = month(first);
+  const b = last ? month(last) : null;
+  if (!a) return period;
+  if (!b) return `${a.name} ${a.year}`;
+  return a.year === b.year ? `${a.name}–${b.name} ${b.year}` : `${a.name} ${a.year}–${b.name} ${b.year}`;
+}
+
+export function withPeriod(text: string, period: string | null | undefined): string {
+  const words = periodLabel(period);
+  return words && !text.includes(words) ? `${text} · ${words}` : text;
+}

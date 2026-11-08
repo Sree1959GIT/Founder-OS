@@ -560,3 +560,19 @@ async def test_a_question_inside_the_projection_is_answered_as_before(finance: A
     projection = Projection.of(finance.scenario.run(Adjustments(), horizon=12))
     assert beyond("What will MRR be in 3 months?", projection) is None
     assert beyond("What will MRR be in 2031?", projection) is not None
+
+
+def test_a_metric_answer_names_the_period_it_is_for() -> None:
+    """Founder re-test 45: 0.90 % and 1.22 % were one metric over two periods, with no period said."""
+    from app.agents.runtime import metric_sentence
+
+    content = {
+        "label": "Gross revenue churn (monthly)",
+        "value": 0.009,
+        "unit": "ratio",
+        "as_of": "2026-10",
+        "lineage": {"period": "2026-08..2026-10"},
+    }
+    assert "over the 3 months to October 2026" in metric_sentence(content, "gross_revenue_churn")
+    point = {**content, "lineage": {"period": "2026-10"}}
+    assert "as of October 2026" in metric_sentence(point, "gross_revenue_churn")

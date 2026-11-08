@@ -2,7 +2,7 @@ import { CheckCircle2, CircleAlert, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { Citation, Lineage, VerificationView } from "@/lib/api";
-import { lineageLabel, prefillAsk } from "@/lib/format";
+import { lineageLabel, prefillAsk, withPeriod } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Tone = "amber" | "ok" | "info" | "neutral" | "danger";
@@ -205,7 +205,8 @@ const chipClass =
 export function LineageChip({ lineage, label, align = "left" }: { lineage: Lineage; label?: string; align?: "left" | "right" }) {
   const { open, setOpen, ref } = usePopover();
   const id = useId();
-  const text = label ?? lineageLabel(lineage.source_rows, lineage.metric);
+  // Founder re-test 45: every figure's chip says the period it is for.
+  const text = label ?? withPeriod(lineageLabel(lineage.source_rows, lineage.metric), lineage.period);
   return (
     <span ref={ref} className="relative inline-flex max-w-full">
       <button
