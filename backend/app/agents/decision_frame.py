@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.agents.verifier import Fact, extract_figures, format_money, split_sentences
 from app.engine.scenario import Adjustments
@@ -125,6 +125,7 @@ def _place(message: str) -> str:
 
 # --- the cost components ---------------------------------------------------------------------------------------------
 Cadence = Literal["one_off", "monthly", "count", "percent", "points"]
+_UNITS = {"count": "people", "percent": "%", "points": "pts"}  # money items take the model's currency
 
 
 @dataclass(frozen=True)
@@ -326,6 +327,16 @@ class CostItem(BaseModel):
     base: float
     high: float
     basis: Literal["assumption", "founder", "data"] = "assumption"
+    unit: str = Field(
+        "", description="What low, base and high are in: a currency code, '%', 'pts', 'people' or 'months'"
+    )
+
+    @model_validator(mode="after")
+    def _own_unit(self) -> CostItem:
+        """Every row says what its numbers are (founder re-test 44: a 10 % price change showed as "$10")."""
+        if not self.unit:
+            self.unit = _UNITS.get(self.cadence, "")
+        return self
 
     @property
     def varies(self) -> bool:
@@ -360,6 +371,13 @@ class CostModel(BaseModel):
     @property
     def assumption_count(self) -> int:
         return sum(i.basis == "assumption" for i in self.items)
+
+    @model_validator(mode="after")
+    def _money_units(self) -> CostModel:
+        for item in self.items:
+            if not item.unit:
+                item.unit = self.currency
+        return self
 
     def money(self, value: float) -> str:
         return format_money(value, self.currency)
@@ -684,6 +702,18 @@ def _cost_model(kind: str, subject: str, items: list[CostItem], finance: Any) ->
     return model, result
 
 
+def _modelled_default(options: list[OptionCost], default: str) -> str:
+    """Never propose an option the routine could not cost over ones it could (founder re-test 43): the cheapest
+    costed option short of the full model is proposed instead."""
+    chosen = next((o for o in options if o.name == default), None)
+    if chosen is None or chosen.modelled:
+        return default
+    costed = [o for o in options if o.modelled and not o.is_full and o.runway_change_months is not None]
+    if not costed:
+        return default
+    return max(costed, key=lambda o: o.runway_change_months or 0.0).name
+
+
 def _option(
     finance: Any, name: str, note: str, one_off: float = 0, monthly: float = 0, hires: int = 0, **levers: float
 ) -> OptionCost:
@@ -769,11 +799,13 @@ def _options(
         half = price / 2
         return [
             _option(finance, "No price change", "Keep prices as they are."),
-            OptionCost(
-                name="New customers only",
-                note="Existing customers keep their price; the routine cannot model this split yet.",
-                one_off=notice,
-                modelled=False,
+            _option(
+                finance,
+                "New customers only",
+                "Existing customers keep their price, so their churn is assumed not to change.",
+                notice,
+                price_change_pct=price,
+                price_applies_to_existing=0.0,
             ),
             _option(
                 finance,
@@ -1238,6 +1270,7 @@ def build_frame(
         logger.info("No cost model for this decision: {}: {}", type(exc).__name__, exc)
         frame.cost_model = None
     frame.options = [o.model_copy(update={"trade_off": _trade_off(o.name)}) for o in frame.options]
+    frame.default_option = _modelled_default(frame.options, frame.default_option)
     frame.goals = [_check_goal(goal, frame, finance) for goal in _company_goals(ctx)]
     frame.predictions, frame.kill_criteria = _starter_outcomes(frame, today)
     frame.facts = _facts(frame)

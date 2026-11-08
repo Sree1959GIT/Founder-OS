@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decisionTitle, runTitle, syncTitle } from "@/lib/format";
+import { decisionTitle, itemValue, money, runTitle, syncTitle } from "@/lib/format";
 
 const memo = "---\ntitle: Dubai office\nstatus: proposed\n---\n# Dubai office\n\nBody.\n";
 
@@ -53,5 +53,15 @@ describe("runTitle", () => {
     expect(runTitle("Should we open Dubai? · changed: a\nThe founder then added: b")).toBe("Should we open Dubai? · changed: b");
     expect(runTitle("What is our runway?")).toBe("What is our runway?");
     expect(runTitle("x".repeat(200)).length).toBe(90);
+  });
+});
+
+describe("itemValue", () => {
+  it("shows each cost-model row in its own unit (founder re-test 44)", () => {
+    expect(itemValue(10, { cadence: "percent", unit: "%" }, "USD")).toBe("+10 %");
+    expect(itemValue(0.5, { cadence: "points", unit: "pts" }, "USD")).toBe("+0.5 pts");
+    expect(itemValue(0, { cadence: "points" }, "USD")).toBe("0 pts");
+    expect(itemValue(2, { cadence: "count", unit: "people" }, "USD")).toBe("2");
+    expect(itemValue(3000, { cadence: "monthly", unit: "USD" }, "USD")).toBe(money(3000, "USD", 0));
   });
 });

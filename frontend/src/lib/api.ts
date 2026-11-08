@@ -78,11 +78,13 @@ export interface Artifact {
 export interface CostItem {
   key: string;
   name: string;
-  cadence: "one_off" | "monthly" | "count";
+  cadence: "one_off" | "monthly" | "count" | "percent" | "points";
   low: number;
   base: number;
   high: number;
   basis: "assumption" | "founder" | "data";
+  /** A currency code, "%", "pts", "people" or "months": what low, base and high are in. */
+  unit?: string;
 }
 
 export interface CostCase {

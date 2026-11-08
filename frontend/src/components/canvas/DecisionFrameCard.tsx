@@ -1,6 +1,6 @@
 import { AssumptionTag, Pill, Section } from "@/components/common";
 import type { DecisionFrame, GoalCheck } from "@/lib/api";
-import { money, signedMonths } from "@/lib/format";
+import { itemValue, money, signedMonths } from "@/lib/format";
 
 const GOAL_WORDS: Record<string, string> = {
   moves_away: "Moves away from this goal",
@@ -80,7 +80,7 @@ export function DecisionFrameCard({ frame }: { frame: DecisionFrame }) {
                 </thead>
                 <tbody>
                   {model.items.map((item) => {
-                    const show = (v: number) => (item.cadence === "count" ? v.toLocaleString("en-US") : money(v, currency, 0));
+                    const show = (v: number) => itemValue(v, item, currency);
                     return (
                       <tr key={item.key} className="border-b border-border/60">
                         <td className="py-1.5 pr-3">

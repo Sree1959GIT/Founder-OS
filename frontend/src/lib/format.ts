@@ -222,3 +222,22 @@ export function lineageLabel(rows: { file: string; rows: string }[], fallback: s
     .map(([file, ranges]) => (ranges.length ? `${file} · rows ${ranges.join(", ").replace(/-/g, "–")}` : file))
     .join("; ");
 }
+
+/**
+ * A cost-model value in its own unit (founder re-test 44): a 10 % price change is "+10 %", not "$10", and a
+ * churn effect of half a point is "+0.5 pts", not "$1".
+ */
+export function itemValue(
+  value: number,
+  item: { cadence: string; unit?: string },
+  currency: string,
+): string {
+  const unit = item.unit || ({ count: "people", percent: "%", points: "pts" } as Record<string, string>)[item.cadence] || currency;
+  const plain = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const signed = (v: number) => `${v > 0 ? "+" : ""}${plain(v)}`;
+  if (unit === "%") return `${signed(value)} %`;
+  if (unit === "pts") return `${signed(value)} pts`;
+  if (unit === "people") return plain(value);
+  if (unit === "months") return `${plain(value)} mo`;
+  return money(value, unit, 0);
+}

@@ -1129,3 +1129,43 @@ def test_with_a_draft_on_record_no_question_about_meeting_its_target() -> None:
     assert gate._budgeted(text).strip() == "Hiring locally takes time."
     gate = _SentenceGate([], "Should we open Dubai?", None, [])
     assert "expected to meet" in gate._budgeted(text)
+
+
+def test_every_cost_model_row_carries_its_own_unit(ctx: ToolContext) -> None:
+    """Founder re-test 44: "Price change $10" was a 10 % change; "churn $0 / $1 / $1" was 0.2 / 0.5 / 1 points."""
+    frame = build_frame("Should we raise our prices by 10%?", ctx)
+    assert frame.cost_model is not None
+    items = {i.key: i for i in frame.cost_model.items}
+    assert items["price"].unit == "%" and items["price"].base == 10
+    churn = items["churn"]
+    assert churn.unit == "pts" and (churn.low, churn.base, churn.high) == (0.2, 0.5, 1.0)  # "$0" was 0.2, rounded
+    dubai = build_frame(DUBAI, ctx)
+    assert dubai.cost_model is not None
+    units = {i.key: i.unit for i in dubai.cost_model.items}
+    assert units["hires"] == "people" and {u for k, u in units.items() if k != "hires"} == {"USD"}
+
+
+def test_new_customers_only_is_modelled_and_never_proposed_unmodelled(ctx: ToolContext) -> None:
+    """Founder re-test 43: it was proposed as "cost not modelled" over options that were."""
+    frame = build_frame("Should we raise our prices by 10%?", ctx)
+    by_name = {o.name: o for o in frame.options}
+    only_new = by_name["New customers only"]
+    assert only_new.modelled and only_new.runway_change_months is not None
+    everyone = by_name["Change prices by +10 %"]
+    assert everyone.runway_change_months is not None
+    assert 0 < only_new.runway_change_months < everyone.runway_change_months  # new customers only: smaller gain
+    assert all(o.modelled for o in frame.options)
+    assert frame.default_option == "New customers only"
+
+
+def test_an_unmodelled_default_gives_way_to_a_costed_option() -> None:
+    from app.agents.decision_frame import OptionCost, _modelled_default
+
+    options = [
+        OptionCost(name="Guess", modelled=False),
+        OptionCost(name="Small step", runway_change_months=-0.2),
+        OptionCost(name="Bigger step", runway_change_months=-0.9),
+        OptionCost(name="Full", runway_change_months=-2.0, is_full=True),
+    ]
+    assert _modelled_default(options, "Guess") == "Small step"
+    assert _modelled_default(options, "Bigger step") == "Bigger step"
