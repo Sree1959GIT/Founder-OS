@@ -1,0 +1,275 @@
+// How numbers and agent text are shown. Figures are only ever formatted here, never computed.
+
+const SYMBOLS: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", INR: "₹" };
+
+export function money(value: number, currency = "USD", decimals = 2): string {
+  const symbol = SYMBOLS[currency];
+  const written = Math.abs(value).toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  const sign = value < 0 ? "-" : "";
+  return symbol ? `${sign}${symbol}${written}` : `${sign}${written} ${currency}`;
+}
+
+/** $1.84M for chart axes, where the exact value is one click away in the lineage. */
+export function moneyShort(value: number, currency = "USD"): string {
+  const symbol = SYMBOLS[currency] ?? "";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}${symbol}${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}${symbol}${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}${symbol}${abs.toFixed(0)}`;
+}
+
+export function metricValue(value: number | null, unit: string, metric = ""): string {
+  if (value === null) return "n/a";
+  if (unit === "months") return `${value.toFixed(2)} mo`;
+  if (unit === "ratio") return metric === "ltv_cac" ? `${value.toFixed(2)}x` : `${(value * 100).toFixed(2)}%`;
+  if (unit === "percent") return `${value.toFixed(2)}%`;
+  if (unit === "count") return value.toLocaleString("en-US");
+  if (/^[A-Z]{3}$/.test(unit)) return money(value, unit);
+  return `${value} ${unit}`;
+}
+
+export function signedMonths(value: number | null): string {
+  if (value === null) return "does not run out in the model";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)} mo`;
+}
+
+export function monthLabel(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const match = /^(\d{4})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${names[Number(match[2]) - 1] ?? ""} ${(match[1] ?? "").slice(2)}`;
+}
+
+export function seconds(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return "";
+  return ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`;
+}
+
+const FIGURE =
+  /[$€£₹]\s?\d[\d,.]*(?:\s?(?:thousand|million|billion|trillion|crore|lakh|bn|tn|k|m|b)\b)?|\d[\d,.]*\s?(?:%|percent\b|(?:thousand|million|billion|trillion|crore|lakh|bn|tn|k|m|b)\b)/gi;
+const PATH = /[\w./-]+\.(?:markdown|md|pdf|csv|xlsx|txt)\b/gi;
+
+/**
+ * `agent.step` is the audit trail: it can name a figure or a path the source check removed, and a tool call's
+ * arguments are the model's own words. On screen it says what the agent is doing, with neither in it.
+ */
+export function safeStep(step: string): string {
+  const tool = /^running (\w+)\(/.exec(step);
+  if (tool) return `running ${tool[1]}()`;
+  if (step.startsWith("sent back by the Verifier")) return "sent back by the Verifier";
+  return step.replace(FIGURE, "a figure").replace(PATH, "a source");
+}
+
+export function stepWords(step: string, status: string): string {
+  if (status === "done") return "finished";
+  if (status === "failed") return step ? `failed: ${safeStep(step)}` : "failed";
+  if (status === "cancelled") return "cancelled";
+  if (step) return safeStep(step);
+  if (status === "queued") return "waiting to start";
+  return status === "done" || status === "failed" || status === "cancelled" ? "finished" : "working";
+}
+
+export const STATUS_WORDS: Record<string, string> = {
+  queued: "Queued",
+  thinking: "Thinking",
+  querying_data: "Querying data",
+  searching_vault: "Searching vault",
+  searching_web: "Searching web",
+  waiting_cloud: "Waiting for cloud",
+  verifying: "Verifying",
+  done: "Done",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+/** How far along the steps of an agent's work it is. A position in its steps, not a measure of time left. */
+export const STATUS_PROGRESS: Record<string, number> = {
+  queued: 5,
+  thinking: 35,
+  querying_data: 55,
+  searching_vault: 55,
+  searching_web: 55,
+  waiting_cloud: 45,
+  verifying: 85,
+  done: 100,
+  failed: 100,
+  cancelled: 0,
+};
+
+const CODES: Record<string, string> = {
+  financial_analyst: "FA",
+  librarian: "LB",
+  market_scout: "MS",
+  devils_advocate: "DA",
+  revenue_customer: "RC",
+  people_ops: "PO",
+  regulatory_tax: "RT",
+  prioritiser: "PR",
+  memo_writer: "MW",
+  perspective_lens: "PL",
+};
+export const agentCode = (type: string): string => CODES[type] ?? type.slice(0, 2).toUpperCase();
+
+const CORE = new Set(["financial_analyst", "librarian", "planner", "advisor", "verifier"]);
+export const agentKind = (type: string): string =>
+  type === "financial_analyst" ? "Core · only agent with math" : CORE.has(type) ? "Core" : "Specialist";
+
+export const stripFrontmatter = (content: string): string =>
+  content.replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+
+/** `[[Note|alias]]` as plain words for the memo sheet. */
+export const withoutWikilinks = (text: string): string =>
+  text.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
+
+/** The first line of a CSV, split on commas outside quotes. Excel files are mapped after they have loaded once. */
+export function csvHeaders(text: string): string[] {
+  const line = text.replace(/^\s+/, "").split(/\r?\n/, 1)[0] ?? "";
+  const cells: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (const ch of line) {
+    if (ch === '"') quoted = !quoted;
+    else if (ch === "," && !quoted) {
+      cells.push(cell);
+      cell = "";
+    } else cell += ch;
+  }
+  cells.push(cell);
+  return cells.filter((c) => c.trim()); // spaces stay: a saved mapping is matched on the exact header
+}
+
+/** Ask the conversation panel to put text in its input box (for "Enter your figures"). */
+export function prefillAsk(text: string) {
+  window.dispatchEvent(new CustomEvent("founderos:prefill", { detail: text }));
+}
+
+/**
+ * A neutral title for an open decision: "Dubai office", not "A full Dubai office" while a pilot is proposed
+ * (founder review 10). Falls back to the founder's own question.
+ */
+export function runTitle(message: string, max = 90): string {
+  // Founder review 41: the question itself, never the amendments stacked on it. "· changed: …" names the last change.
+  const parts = message.split(/\s*(?:\n\s*The founder then added:|· changed:)\s*/i);
+  const root = (parts[0] ?? "").trim();
+  const change = parts.length > 1 ? (parts[parts.length - 1] ?? "").trim() : "";
+  const title = change ? `${root} · changed: ${change}` : root;
+  return title.length > max ? `${title.slice(0, max - 1).trimEnd()}…` : title;
+}
+
+export function decisionTitle(subject: string | null | undefined, message: string): string {
+  const plain = (subject ?? "").replace(/^\s*(?:an?|the)\s+/i, "").replace(/^(?:full|whole|complete)\s+/i, "").trim();
+  if (!plain) return message;
+  return plain.charAt(0).toUpperCase() + plain.slice(1);
+}
+
+const FRONT_TITLE = /^(---\r?\n[\s\S]*?^title:[ \t]*)(.*?)([ \t]*\r?\n[\s\S]*?^---[ \t]*\r?\n)/m;
+const H1 = /^#[ \t]+(.+?)[ \t]*$/m;
+
+function frontTitle(text: string): string | null {
+  const m = FRONT_TITLE.exec(text);
+  return m ? (m[2] ?? "").replace(/^["']|["']$/g, "") : null;
+}
+
+function headingOf(text: string): string | null {
+  const body = text.replace(/^---\r?\n[\s\S]*?^---[ \t]*\r?\n/m, "");
+  const m = H1.exec(body);
+  return m ? (m[1] ?? null) : null;
+}
+
+/**
+ * A memo has its title twice: frontmatter `title:` and the `#` heading. Whichever one the founder edited is copied to
+ * the other on save, so they never disagree (founder review 25).
+ */
+export function syncTitle(original: string, edited: string): string {
+  const [frontBefore, headBefore] = [frontTitle(original), headingOf(original)];
+  const [frontAfter, headAfter] = [frontTitle(edited), headingOf(edited)];
+  let wanted: string | null = null;
+  if (frontAfter !== null && frontAfter !== frontBefore) wanted = frontAfter;
+  else if (headAfter !== null && headAfter !== headBefore) wanted = headAfter;
+  if (!wanted) return edited;
+  let out = edited;
+  if (frontAfter !== null && frontAfter !== wanted) {
+    const quoted = /[:#]/.test(wanted) ? JSON.stringify(wanted) : wanted;
+    out = out.replace(FRONT_TITLE, (_m, a: string, _b: string, c: string) => `${a}${quoted}${c}`);
+  }
+  if (headAfter !== null && headAfter !== wanted) {
+    const fm = /^---\r?\n[\s\S]*?^---[ \t]*\r?\n/m.exec(out);
+    const head = fm ? out.slice(0, fm.index + fm[0].length) : "";
+    const body = fm ? out.slice(fm.index + fm[0].length) : out;
+    out = head + body.replace(H1, `# ${wanted}`);
+  }
+  return out;
+}
+
+/**
+ * A lineage chip's label: each file once, with all its row ranges (gross margin reads two ranges of pnl.csv), short
+ * enough not to need cutting (founder review 2 and 8).
+ */
+export function lineageLabel(rows: { file: string; rows: string }[], fallback: string): string {
+  if (!rows.length) return fallback;
+  const byFile = new Map<string, string[]>();
+  rows.forEach((r) => {
+    const list = byFile.get(r.file) ?? [];
+    if (r.rows && !list.includes(r.rows)) list.push(r.rows);
+    byFile.set(r.file, list);
+  });
+  return [...byFile.entries()]
+    .map(([file, ranges]) => (ranges.length ? `${file} · rows ${ranges.join(", ").replace(/-/g, "–")}` : file))
+    .join("; ");
+}
+
+/**
+ * A cost-model value in its own unit (founder re-test 44): a 10 % price change is "+10 %", not "$10", and a
+ * churn effect of half a point is "+0.5 pts", not "$1".
+ */
+export function itemValue(
+  value: number,
+  item: { cadence: string; unit?: string },
+  currency: string,
+): string {
+  const unit = item.unit || ({ count: "people", percent: "%", points: "pts" } as Record<string, string>)[item.cadence] || currency;
+  const plain = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const signed = (v: number) => `${v > 0 ? "+" : ""}${plain(v)}`;
+  if (unit === "%") return `${signed(value)} %`;
+  if (unit === "pts") return `${signed(value)} pts`;
+  if (unit === "people") return plain(value);
+  if (unit === "months") return `${plain(value)} mo`;
+  return money(value, unit, 0);
+}
+
+/** "Oct 2026", or "Aug–Oct 2026" for a window: the period a metric figure is for. */
+export function periodLabel(period: string | null | undefined): string {
+  if (!period) return "";
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(iso);
+    return m ? { name: names[Number(m[2]) - 1] ?? "", year: m[1] ?? "" } : null;
+  };
+  const [first = "", last] = period.split("..");
+  const a = month(first);
+  const b = last ? month(last) : null;
+  if (!a) return period;
+  if (!b) return `${a.name} ${a.year}`;
+  return a.year === b.year ? `${a.name}–${b.name} ${b.year}` : `${a.name} ${a.year}–${b.name} ${b.year}`;
+}
+
+export function withPeriod(text: string, period: string | null | undefined): string {
+  const words = periodLabel(period);
+  return words && !text.includes(words) ? `${text} · ${words}` : text;
+}
+
+/**
+ * Identical versions one after another (same table, rows and source) are listed once: the first, which is the newest
+ * (founder re-test 59: three uploads of one file showed three equal rows).
+ */
+export function collapseVersions<
+  T extends { table: string; rows: number; source_file?: string | null; clean_sample?: boolean },
+>(versions: T[]): T[] {
+  const key = (v: T) => [v.table, v.rows, v.source_file ?? "", Boolean(v.clean_sample)].join("|");
+  return versions.filter((v, i) => i === 0 || key(versions[i - 1] as T) !== key(v));
+}

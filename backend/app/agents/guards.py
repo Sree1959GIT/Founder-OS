@@ -48,13 +48,49 @@ def _to_adviser(match: re.Match[str]) -> str:
 
 # Seen live: "depends on one person: you, the founder" became "you, you".
 _YOU_TWICE = re.compile(r"\b(you),\s*you\b(?=\s*[.,;:!?]|\s*$)", re.I)
+# Seen live: "You are the founder." became "You are you."
+_OWNER_YOU_ARE_YOU = re.compile(r"(\bowner:\s*)you are you\b", re.I)
+_YOU_ARE_YOU = re.compile(r"\s*\byou are you\b[.!]?", re.I)
 
 
 def in_one_voice(text: str) -> str:
     """Spoken to the founder, not about them, with one way to write money and one word for outside advice."""
     spoken = _BARE_FOUNDERS.sub(lambda m: "Your" if m.group()[0] == "F" else "your", _THE_FOUNDER.sub(_to_you, text))
     spoken = _YOU_TWICE.sub(lambda m: m.group(1), spoken)
-    return _THE_DEPARTMENT.sub(_to_adviser, one_money_format(spoken))
+    spoken = _OWNER_YOU_ARE_YOU.sub(lambda m: f"{m.group(1)}you", spoken)
+    if _YOU_ARE_YOU.search(spoken):
+        spoken = _YOU_ARE_YOU.sub("", spoken).lstrip()
+    spoken = _THE_DEPARTMENT.sub(_to_adviser, one_money_format(spoken))
+    # Seen in the founder's review: "your adviser or your adviser", once two job titles became the same word.
+    spoken = _SAME_TWICE.sub(r"\1", spoken)
+    # "reducing runway by -2.07 months" says it twice: the verb already carries the sign.
+    spoken = _DOUBLE_NEGATIVE.sub(lambda m: f"{m.group(1)} by {m.group(2)}", spoken)
+    # "...assumptions to confirm (assumption, confirm)": the sentence already says it (founder re-test 50).
+    return _TAG_TWICE.sub(r"\1", spoken)
+
+
+_SAME_TWICE = re.compile(r"\b((?:your|an?|the)\s+advis[eo]rs?)(?:\s*(?:,|/|\bor\b|\band\b)\s*\1\b)+", re.I)
+_TAG_TWICE = re.compile(
+    r"(\bassumptions?\s+(?:to|you should|for you to)\s+confirm\b[^.(]*?)\s*\(assumption, confirm\)", re.I
+)
+_DOUBLE_NEGATIVE = re.compile(
+    r"\b((?:reduc|lower|cut|shorten|shrink|decreas)\w*\s+(?:your\s+|the\s+|projected\s+)*runway)\s+by\s+-\s?(\d)",
+    re.I,
+)
+
+
+def without_repeats(text: str) -> str:
+    """A sentence said twice in one text is said once (founder review 26: "Costs only: ..." twice in a finding)."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for piece in split_sentences(text):
+        key = re.sub(r"\W+", " ", piece).strip().lower()
+        if key and len(key) > 12 and key in seen:
+            continue
+        seen.add(key)
+        kept.append(piece)
+    out = "".join(kept)
+    return out if len(out) == len(text) else out.rstrip() + text[len(text.rstrip()) :]
 
 
 # --- a goal is not a decision ----------------------------------------------------------------------------------------
@@ -213,6 +249,93 @@ def _one_hire_claim(sentence: str, frame: DecisionFrame) -> bool:
     return each is not None and each in sentence and _NAMES_PEOPLE.search(sentence) is None
 
 
+# --- superlatives and comparisons must match the options table ------------------------------------------------------
+# Seen in the founder's review: the memo called the travel-led pilot "the least costly option", while the partner route
+# costs less runway in the same table (-0.10 against -0.21 months).
+_CHEAPEST = re.compile(
+    r"\b(?:the\s+)?(?:least[- ](?:costly|expensive)|cheapest|lowest[- ]cost|most affordable|least runway|"
+    r"costs? the least|smallest (?:cost|spend|outlay))\b",
+    re.I,
+)
+_CHEAPER_THAN = re.compile(
+    r"\b(?:cheaper|less (?:costly|expensive)|lower[- ]cost|costs? less|uses? less runway)\s+than\s+"
+    r"(?:a\s+|an\s+|the\s+)?(?P<other>[^.,;!?]{3,60})",
+    re.I,
+)
+_UNCHECKED = re.compile(
+    r"\b(?:the\s+)?(?:fastest|quickest|lowest[- ]risk|least risky|safest)(?:\s+(?:option|route|path|way|choice))?\b",
+    re.I,
+)
+UNCHECKED_NOTE = "one option (speed and risk are not compared in the options table)"
+
+
+def _option_words(name: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{4,}", name.lower()) if w not in {"with", "first", "then", "only"}}
+
+
+def _named_option(text: str, frame: DecisionFrame) -> str | None:
+    """The option a stretch of text is about, by its distinctive words ("partner", "travel-led", "full office")."""
+    lowered = text.lower()
+    best, score = None, 0
+    for option in frame.options:
+        if option.name.lower() in lowered:
+            return option.name
+        hits = sum(1 for w in _option_words(option.name) if re.search(rf"\b{re.escape(w)}", lowered))
+        if hits > score:
+            best, score = option.name, hits
+    return best
+
+
+def _runway_cost(frame: DecisionFrame, name: str) -> float | None:
+    """How much runway an option takes, from the table. Higher is costlier. None: not modelled."""
+    option = next((o for o in frame.options if o.name == name), None)
+    if option is None or not option.modelled:
+        return None
+    if option.runway_change_months is not None:
+        return -option.runway_change_months
+    return option.monthly * 12 + option.one_off
+
+
+def _cost_words(frame: DecisionFrame, name: str) -> str:
+    option = next(o for o in frame.options if o.name == name)
+    if option.runway_change_months is not None:
+        return f"{option.name}: runway {option.runway_change_months:+.2f} months"
+    return f"{option.name}: {one_money_format(f'${option.monthly:,.0f}')} a month"
+
+
+def false_comparison(sentence: str, frame: DecisionFrame | None, chosen: str = "") -> str | None:
+    """A code-written sentence in place of a cost superlative or comparison the table does not back, else None."""
+    if frame is None or len([o for o in frame.options if o.modelled]) < 2 or not sentence.strip():
+        return None
+    priced = [(o, _runway_cost(frame, o.name)) for o in frame.options]
+    costs = {o.name: c for o, c in priced if c is not None}
+    cheapest = min(costs, key=lambda n: costs[n])
+    match = _CHEAPEST.search(sentence)
+    if match is not None:
+        subject = _named_option(sentence[: match.start()], frame) or _named_option(sentence, frame) or chosen
+        if subject and subject in costs and costs[subject] > costs[cheapest]:
+            return (
+                f"{cheapest} costs the least runway in the options table ({_cost_words(frame, cheapest)}; "
+                f"{_cost_words(frame, subject)}; assumption, confirm)."
+            )
+        return None
+    match = _CHEAPER_THAN.search(sentence)
+    if match is not None:
+        other = _named_option(match.group("other"), frame)
+        subject = _named_option(sentence[: match.start()], frame) or chosen
+        if subject and other and subject != other and costs.get(subject, 0.0) > costs.get(other, float("inf")):
+            return (
+                f"In the options table, {other} costs less runway than {subject} ({_cost_words(frame, other)}; "
+                f"{_cost_words(frame, subject)}; assumption, confirm)."
+            )
+    return None
+
+
+def without_unchecked_superlatives(sentence: str) -> str:
+    """ "Fastest" and "lowest risk" are in no table, so they are not stated as facts."""
+    return _UNCHECKED.sub(UNCHECKED_NOTE, sentence)
+
+
 def guarded(
     text: str,
     frame: DecisionFrame | None,
@@ -221,7 +344,7 @@ def guarded(
     chosen: str = "",
 ) -> str:
     """The text with those sentences replaced by what is true. `used` stops a reply repeating a replacement."""
-    text = in_one_voice(text)
+    text = without_repeats(in_one_voice(text))
     used = set() if used is None else used
     records = list(records)
     parts: list[str] = []
@@ -234,6 +357,10 @@ def guarded(
             replacement = frame.cost_sentence()
         elif frame is not None and (goal := goal_contradiction(piece, frame, chosen)) is not None:
             replacement = next(g.sentence for g in frame.goals if g.goal == goal)
+        elif frame is not None and (fixed := false_comparison(piece, frame, chosen)) is not None:
+            replacement = fixed + piece[len(piece.rstrip()) :]
+        elif frame is not None and frame.options and _UNCHECKED.search(piece):
+            replacement = without_unchecked_superlatives(piece)
         if replacement is None:
             parts.append(piece)
             continue
@@ -311,7 +438,8 @@ def _stops_an_option(text: str, frame: DecisionFrame | None) -> bool:
     }
     if not words:
         return False
-    stops = re.compile(_STOP_VERB + rf"(?:{'|'.join(sorted(words))})\b", re.I)
+    # Seen live: "Stop traveling for the pilot" got past a match on the whole word "travel".
+    stops = re.compile(_STOP_VERB + rf"(?:{'|'.join(sorted(words))})(?:l?ing|l?ed|s)?\b", re.I)
     return any(stops.search(s) and not _ONLY_IF.search(s) for s in split_sentences(text))
 
 

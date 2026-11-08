@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M4: Canvas UI**, after the founder re-tests M3c (PR #8 open, branch `claude/m3c-decision-models`, re-test RF1–RF6) and merges. P1–P7 are decided (PRD §12). M0, M1, M2, M3a and M3b are ACCEPTED and merged.
+- **Next milestone:** **M4: Canvas UI** (built, awaiting the founder's Major gate, branch `claude/m4-canvas-ui`). Then M5. P1–P7 are decided (PRD §12). M0, M1, M2, M3a, M3b and M3c are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-06 (M3c fix after the founder's C4 review)
+- **Last updated:** 2026-11-06 (M4 session)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -17,8 +17,8 @@
 | M2 | Vault & hybrid RAG | DONE (merged, PR #5; Light gate ACCEPTED 2026-11-03) | |
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
-| M3c | Decision models (Laya / Jev) | DONE (PR #8 open, Light gate: founder re-test) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
-| M4 | Canvas UI (first demoable build) | NOT STARTED | |
+| M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
+| M4 | Canvas UI (first demoable build) | DONE, awaiting Major gate | All of PRD §8 for M4. Voice controls stay disabled until M5 |
 | M5 | Voice pipeline | NOT STARTED | |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
@@ -57,9 +57,47 @@
 | M2 Vault & search | [Sree1959GIT/Founder-OS#5](https://github.com/Sree1959GIT/Founder-OS/pull/5) | Light | ACCEPTED (SM, 2026-11-03), Light; items 1–8, 10–12 pass on Windows (Docker Ollama, GPU) |
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
-| M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | AWAITING FOUNDACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5ER (re-test) |
+| M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
+| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
 
 ## Current session
+- Started (UTC): 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate, time-box 60 minutes), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Plan:
+  - [x] Record the RX results first
+  - [x] 58 metric routing (and 45 periods), 51 no badge when nothing ran, 54 de-dup sentences, 54b amendment clause
+  - [x] 56 queued questions always offered, 57 why the proposal, 52 after cash runs out, 53 badge wraps, 59 collapse versions
+  - [x] Tests (backend 1074 passed, frontend 39 vitest, 2 Playwright, lint, tsc, build), RY re-test steps, PR #9 updated
+
+Previous session (2026-11-08, M4 fix round 2):
+- Started (UTC): 2026-11-08 01:33 (local Windows bug-fix session, round 2 for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Plan, in the founder's priority order:
+  - [x] Record the re-test results first
+  - [x] P1: 49 horizon, 40 follow-ups amend the open decision, 22 turns in every phase, 42 queue de-dup, 46 sample reset, 47 several backups, 48 backup labels
+  - [x] P2: 44 units, 43 unmodelled option, 45 metric periods, 39 cloud off, 41 titles, 37 popover, 38 chart label, 50 tag
+  - [x] Tests (backend full suite, frontend 37 vitest, 2 Playwright specs, lint, tsc, build), RX re-test steps, PR #9 updated
+
+Previous session (2026-11-07, M4 fix round 1):
+- Started (UTC): 2026-11-07 09:50 (local Windows bug-fix session for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Plan, in the founder's priority order (P1, then P2, then P3):
+  - [x] Record the founder feedback first
+  - [x] P1: 14 badge states, 20 memo-on-record figures, 17 reload, 32 upload warning, 24 superlatives, 21 amendments, 22 early turns
+  - [x] P2: 16, 18, 19, 23, 25, 26, 27, 9, 10
+  - [x] P3 and 36 (Settings Save/Discard); 7 is M5, left
+  - [x] Tests (backend 1013 passed, frontend 34 vitest, lint, tsc, build), RW re-test steps, PR #9 updated
+
+Previous session (2026-11-06, M4):
+- Started (UTC): 2026-11-06 11:53 (local Windows session, time-box 2 hours), branch `claude/m4-canvas-ui`, target **M4** (gate tier: **Major**). An "M4 (partial)" PR is fine if time runs out.
+- Plan, in the founder's priority order:
+  - [x] Gate log and stale lines tidied
+  - [x] (1) People & Ops wording; "traveling" guard
+  - [x] (added, 40 min) Why a metric question is slow or unverified; fix over-strict checks; fast path; live loop 10/10 under 8 s
+  - [x] (2) Conversation panel and lane; Agent Activity panel
+  - [x] (3) Canvas cards: Runway with lineage popover, decision frame, memo with MD/PDF export
+  - [x] (4) Scenario Simulator and Monte Carlo fan; Prioritisation Matrix; data and vault panels; Settings
+  - [x] (5) Playwright smoke test against the backend with fakes, in CI
+  - [x] Windows checklist, self-review, PR, CI green
+
+Previous session (2026-11-06, M3c gate fix):
 - 2026-11-06 (local Windows bug-fix session for the M3c gate, time-box 1 hour), branch `claude/m3c-decision-models`, PR #8. It ran a little over the hour, because the live runs found two more faults worth fixing.
 - Plan:
   - [x] Record the founder feedback first
@@ -137,6 +175,38 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Canvas UI (M4)
+**What you can do now**
+- Open `http://127.0.0.1:3000` and run the whole product in the browser: ask, watch the team, approve or edit it, read the answer with its sources, try scenarios, read and export the memo.
+- **Workspace:** the Advisor and conversation lane on the left, the numbers in the middle, a live agent list on the right. Every KPI has a dashed chip that opens its formula, rows and file.
+- **Activity:** the proposed team to approve, edit, add to, remove from or run locally; live cards with Cancel and Re-run per agent; a timeline.
+- **Decisions:** the Prioritisation Matrix and the memo sheet, with Edit, Export .md and Export PDF.
+- **Data, Vault, Settings:** load files and fix column mappings; read, search, edit and add notes; set cloud, provider per agent, cost cap, approval and slots.
+- A single-metric question is written by code in about 2 s and verified (measured below).
+
+**How it keeps the safety rules on screen**
+- "Verified" appears only where the backend returned `true`. Otherwise it says "Not verified" with a count, and while an answer is still being written it says nothing.
+- `issues` and `agent.step` are the audit trail and can name a removed figure. The UI shows `issues` only as a count, and every step goes through `safeStep` first, which strips tool arguments, what the Verifier found, figures and file paths. Removed figures are therefore on the API but never on the screen. The smoke test checks this with a model that invents "$150 billion" and a made-up citation.
+- Source chips come only from the `citations` field, never from text in an answer.
+- A decision answer leads with the proposed option, then the full model, labelled "assumption, confirm". The model's own text below may still open differently: the card, not the text, sets the order.
+- The UI formats numbers and never calculates them. The one position it works out is the "Under 3 months of cash" band: the three months before the zero-cash month on the chart, counted in months, not money.
+
+**Measured here on 2026-11-06 (PowerShell, scratch backend on port 8011, your vault untouched)**
+- `scripts/metric_loop.py` on the final code: `METRIC LOOP: verified 10/10 | median 1.7 s | slowest 3.1 s | target under 8 s`; net burn 3/3 (median 1.6 s); gross margin 3/3 (median 1.6 s). Before the fix: 7.5 to 8.4 s and verified 4/5. Cause: three LLM calls with about 4,775 input tokens, and the Verifier rejected a correct burn answer that mentioned months as a wrong meaning.
+- In the browser with the real model: "What is our runway?" 2.1 s and 4.9 s, Verified, both runs. A Dubai decision after approval: 59 s and 63 s, **Not verified** both runs (see below). No removed figure on any screen, and no page errors. W9 ran live too: status reply, amendment with Keep going, queued question offered at the end of the run, Ask it now answered and Verified. Quiet mode was not in that run.
+- The Ollama move to a named volume is done (your request): warm responses are about 0.5 s.
+
+**Not done, and limits**
+- **The Dubai answer currently comes out Not verified.** All three live runs today did (13 issues in each of the two I read). The scratch vault already held a Dubai memo, and the Librarian and the Advisor quote its starter targets ($27,000.00, $36,000.00, 10.44 months) and its 50% forecasts. These have no lineage in this run, so the Verifier flags them; the Librarian also got one "wrong meaning". The figures are the memo's own labelled starters, not inventions, and the badge is telling the truth. I did not change it, since the brief was no backend behaviour change. A next step is to let a figure quoted from a decision on record carry that record as its source.
+- A memo is written only when the Memo Writer is on the team, or you ask for one. The Planner did not add it on the Dubai runs here, so W6 asks you to add it.
+- Voice is M5: the microphone button is present but disabled.
+- A page reload starts an empty conversation in the browser. The backend still has the runs and the memo is in the vault, but the UI does not reload past turns (run state is in memory, last 100 runs).
+- Column mapping for a file that fails to load works from a CSV's header line. An Excel file that fails shows the error; once loaded its mapping can be edited.
+- Dragging a bubble in the matrix sets every criterion on that axis to one score. To vary them separately, edit `notes/priorities.md` in Obsidian.
+- The base and scenario lines use one colour pair from the mock-ups. The palette validator passes colour-blind separation and contrast, and fails only its lightness band for dark surfaces; the line style (solid against dashed) and the legend also separate them. I kept your mock-up colours.
+- With nothing running, small talk such as "how is it going?" starts a run, and the Advisor answers with a chatty reply that can carry a Verified badge, since it has no figures to fail. It is backend behaviour, so I left it.
+- The conversation lane's question offers and amendments are unit-tested on the state and covered by the backend tests, but the Playwright smoke test does not drive them: with a scripted model a run finishes too quickly to interrupt. I ran them live once with a browser script; W9 is the check on your PC.
+
 ### Source check (fix after the founder's M3c review, 2026-11-06)
 **What you can do now**
 - A figure with a made-up source can no longer reach you. Live, during this fix, the Market Scout wrote "$160 billion" and "$166 billion" unprompted; code removed them before any later agent saw them.
@@ -531,14 +601,123 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M4 session)
-0. **Gate check:** M3c is a **Light** gate. The founder runs RF1–RF6 and merges PR #8. Act on any "Founder feedback" first.
-1. **M4's first task:** People & Ops opening with "You are you.", if v2 did not fix it. It was seen on v1, and not in the three Dubai runs on v2 whose text I read, though People & Ops is not on every team: check several runs. In one v2 run it also wrote "Stop traveling for the pilot": `guards._stops_an_option` matches "travel" as a whole word, so it misses "traveling".
-2. M4 (PRD §8): the canvas UI, including the conversation lane's text UI on `/api/conversation/*`, approve-with-edits (`POST /api/runs/{id}/approve` takes `edit`), and agent cancel and re-run. M5 builds the voice and must test GPU sharing.
-3. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
-4. Smaller ideas: count Jev in the cost ledger; a cash metric; a smarter `LLM_PROVIDER=fake` for an offline demo; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
+## Next steps (for the M5 session)
+0. **Gate check:** M4 is a **Major** gate. The founder runs W0 to W15 below and merges the PR. Act on any "Founder feedback" first.
+1. M5 (PRD §8): the voice pipeline. The microphone and voice controls in the Advisor panel are the hook. It must test GPU sharing.
+2. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
+3. Dubai verification: let a figure quoted from a decision on record carry that record as its source (Current state, M4 limits).
+4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
+**M4 re-test after round 3 (Major gate, about 15 minutes). Run this one first: RY1 to RY7.** It covers 58, 51, 54, 56 and 57 of "[M4] Re-test RX1–RX12", plus the RX12 popover check. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **RY1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
+  On **Data**, press **Load sample data** once. Set **Ask before a team runs** to **Never** for RY2.
+- **RY2. Every metric question gets its own metric (58, 45).** One loop (about a minute):
+  `foreach ($q in 'What is our gross revenue churn?','What is our net revenue churn?','What is our logo churn?','What is our gross burn?','What is our net burn?','What is our gross margin?','What is our MRR?','What is our ARR?','What is our CAC?','What is our LTV/CAC?') { $r = Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body (@{message=$q; stream=$false} | ConvertTo-Json); $m = $r.metrics[0]; '{0} | {1} | {2} | {3} | {4}' -f $q, $m.metric, $m.value, $m.lineage.period, $r.verification.state }`
+  **Expect:** in order, `revenue_churn`, `nrr`, `logo_churn`, `gross_burn`, `net_burn`, `gross_margin`, `mrr`, `arr`, `cac`, `ltv_cac`, each with a period. Every state is `verified`, except net revenue churn: `assumptions` (it is shown as net revenue retention, and says so).
+  In the browser, ask **What is our gross revenue churn?** **See:** "Gross revenue churn (monthly) is … for August to October 2026" (the months follow your data), nothing about burn, and a chip ending "· Aug–Oct 2026".
+- **RY3. Nothing ran, no green badge (51).** Gear > **Ask before a team runs** > **Always** > **Save**. Ask **Should we open a Dubai office?** and press **Hold the team back**. **See:** "I held the team back because it was not approved…" with a grey **Not run** pill, not "Verified". Say **Hello**: also **Not run**. Set approval back and **Save**.
+- **RY4. No sentence twice (54, 54b).** Ask **Should we open a Dubai office?** **See:** the goal is named once, and "what has changed since you drafted it?" is asked once. Then type **also make it a two person team** and press **Restart with my change**. **See:** the new answer says "with two local hires, as you asked".
+- **RY5. Queued questions are always offered (56).** With approval **Always**, ask **Should we open a Dubai office?**, then at once type **What is our runway?** and **What is our churn?**. Press **Approve and run**. **See:** when the answer is in, the runway question shows **Ask it now** / **Drop it**; the churn one still says "Queued". Press **Drop it**: the churn question now shows **Ask it now** / **Drop it**. Nothing is asked by itself. Set approval back.
+- **RY6. Why this option (57).** Ask **Should we raise our prices by 10%?** **See:** the first sentence reads "Proposed: New customers only, … ; proposed over Change prices by +10 % (runway +1.12 months) because Change prices by +10 % moves you away from your goal "Bring logo churn under 1.5 % a month"" (figures follow your data). The goal is not repeated in the next sentence.
+- **RY7. Small ones (53, 52, 59, RX12 popover).**
+  - On an amber answer (RY6), the badge text wraps inside the panel; nothing is cut off.
+  - Ask **What will our MRR be in 2031?** If cash runs out inside the projection, the answer adds "and that you stay funded after cash runs out in …".
+  - Upload `one_row.csv` (from RX6) to `pnl` with **Replace** three times: "Earlier versions you can restore" lists the identical one-row version once.
+  - On the runway answer, open the badge: the popover stays fully on screen.
+
+**M4 re-test after round 2 (done: results under "Founder feedback"; reference). RX1 to RX12.** It covers 49, 40, 22, 42, 46, 47, 48, 44, 43 and 45 of "[M4] Re-test RW1–RW12, round 2". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. RW1 to RW12 below still apply. Then merge, or write what you saw under "Founder feedback".
+
+- **RX1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
+  On **Data**, press **Load sample data** once.
+- **RX2. Beyond the projection (49).** Ask **What will our MRR be in 2031?** **See:** the answer starts "The model's projection runs to Oct 2027, so it has no figure for 2031." (the month is later if the team projected further) Its last month's MRR follows, labelled "(assumption, confirm)". No other figure is given for 2031. The badge is amber, never green; click it and "2031 is beyond the projection, which ends Oct 2027" is listed. Repeat with **next year** and **in 5 years** in place of "in 2031". One line:
+  `$s = Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/conversation/turn -ContentType 'application/json' -Body '{"text":"What will our MRR be in 2031?"}'; Start-Sleep 60; (Invoke-RestMethod "http://127.0.0.1:8000/api/runs/$($s.run_id)").result.verification.state`
+  **Expect:** `assumptions` (or `not_verified`), never `verified`. If **Ask before a team runs** is **Always**, approve in the browser first.
+- **RX3. A follow-up changes the open decision (40).** Ask **Should we open a Dubai office?** and wait for the answer. Then type **also make it a two person team**. **See:** "That changes the decision. Restart with your change?" with **Restart with my change**; no new run yet. Press it. **See:**
+  - The new run has the same team as before, with the Financial Analyst.
+  - Its title reads "Should we open a Dubai office? · changed: also make it a two person team" (41).
+  - Its cost model shows **Local hires 2** as "your figure".
+- **RX4. Turns while planning and awaiting approval (22).** Gear > **Ask before a team runs** > **Always** > **Save**. Ask **Should we open a Dubai office?** and at once type **What is our runway?** and press Enter. **See:** a "Queued for when this run finishes" card straight away, and only one Advisor answer card (no second run). While "The team is waiting for your approval." shows, type **What is our churn?**: a second queued card appears. Set approval back and **Save**.
+- **RX5. Asked twice, queued once (42).** During RX4, type **what is our  RUNWAY?** **See:** "That question is already queued." and still one card for it.
+- **RX6. One press resets the data (46).** On **Data**, upload a one-row file to `pnl` and press **Replace**:
+  `"month,account,category,amount`n2026-10,Rent,opex,1000" | Set-Content -Encoding UTF8 $env:TEMP\one_row.csv`
+  Then press **Load sample data** once. **See:** every table, pnl included, shows `northwind_financials.xlsx`, and pnl has 360 rows. One line:
+  `(Invoke-RestMethod http://127.0.0.1:8000/api/data/tables).loaded | Where-Object table -eq pnl | Select-Object rows, source_file`
+  **Expect:** `360 northwind_financials.xlsx`.
+- **RX7. Several versions, any restorable (47).** Upload `one_row.csv` to `pnl` with **Replace** three times. **See:** "Earlier versions you can restore". The 360-row version is still listed, marked "(the sample data)", with its source, row count and time. Press **Restore this pnl** on it: pnl has 360 rows again. One line:
+  `Invoke-RestMethod http://127.0.0.1:8000/api/data/backups | Select-Object table, rows, source_file, label, clean_sample | Format-Table`
+- **RX8. Only meaningful versions (48).** Press **Load sample data** twice. **See:** the second press adds no version. Every listed version says what replaced it ("before uploading one_row.csv", "before the sample data was reloaded"). No "Undo the last upload" button remains.
+- **RX9. Units (44).** Ask **Should we raise our prices by 10%?** **See:** in the cost model, Price change reads **+10 %** (not $10), and the extra churn reads **+0.2 / +0.5 / +1 pts** (not $0 / $1 / $1). Money rows still show $.
+- **RX10. New customers only is costed (43).** In the same answer's options, **New customers only** shows a cost and a runway change, not "cost not modelled". If it is the proposal, its figures are in the options table.
+- **RX11. Periods (45).** Ask **What is our gross revenue churn?** **See:** the sentence says the period ("for August to October 2026", or "in October 2026"). Its lineage chip ends with the period, e.g. "· Aug–Oct 2026".
+- **RX12. Small ones (39, 37, 38, 50).**
+  - With cloud off, Activity shows "Cloud off" and the rail shows "cloud off" (no "0/6").
+  - On the runway answer, open the badge: the popover stays fully on screen.
+  - With the sliders reset, "The scenario matches the base." sits above the cash chart, clear of the "Under 3 months of cash" label.
+  - The Dubai lead ends "…all of these are assumptions to confirm." with no "(assumption, confirm)" after it.
+  Optional smoke tests: `Set-Location frontend; npx playwright test; Set-Location ..` **Expect:** `2 passed`.
+
+**M4 re-test after the founder-review fixes (done: results under "Founder feedback"; reference). RW1 to RW12.** It covers P1 and P2 of "[M4] Founder review W0–W15". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. W0 to W15 below still apply; run them again only if something here looks off. Then merge, or write what you saw under "Founder feedback".
+
+- **RW1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; Set-Location frontend; npm install; Set-Location ..; .\run.bat`
+  **Expect:** the browser opens `http://127.0.0.1:3000`. Press **Load sample data** on **Data** once, so the numbers are the demo set (one workbook, `northwind_financials.xlsx`).
+- **RW2. Green badge (14).** Ask **What is our runway?** **See:** a green **Verified** badge. Click it: a popover lists the sources (the data file). No assumption narration under the answer (9).
+- **RW3. Dubai end to end, amber badge (14, 16, 18, 19, 23, 24, 26, 27).** Keep the proposed Dubai memo from W11 in the vault. Gear > **Ask before a team runs** > **Always**; ask **Should we open a Dubai office?** and approve. **See:**
+  - The answer starts with "Proposed: <option>, $… a month, runway ±… months.", then "The full model, …", then at most about three more sentences, none said twice. No "your adviser or your adviser", no "by -2.07".
+  - It asks "what has changed since you drafted it?" about the memo from its date, and never about meeting its kill criteria or targets.
+  - The badge is amber, "Figures verified · N assumptions to confirm". Click it: the assumptions are listed, with **Enter your figures**; that button puts "My figures: " in the input box.
+  - No "(removed: unsupported source)" in the text. If something was taken out, a small "N claims removed" chip sits by the badge.
+  - Any "cheapest / least costly" sentence names the option that is cheapest in the options table, or says speed and risk are not compared there.
+  - Figures from the memo on record show its path in brackets and are not counted as unsupported (20).
+  - The time shows the work time, plus "· Ns waiting for you" for the approval.
+- **RW4. Red badge (14).** Ask **What will our MRR be in 2031?** (no data for it). If the badge is red **Not verified**, click it: the reasons are in words and name no removed figure. (If it is amber or green, that is fine too; note which.)
+- **RW5. Amendment (21).** While the Dubai answer is on screen, type **also make it a two person team**. **See:** "That changes the request. Restart with your change?" (not a new queued question). Press **Restart with my change**. **See:** the rerun's options show 2 local hires.
+- **RW6. Early turns (22).** Ask a new question and, in the first two seconds, type a second one and press Enter. **See:** it is accepted at once (sent, or queued with a note), never ignored.
+- **RW7. Reload (17).** Press F5. **See:** the conversation and the open decision come back. Press F5 during a run: the run finishes, or shows as finished, on its own.
+- **RW8. Upload warning, backup and undo (32).** On **Data**, make a one-row file and upload it, choosing table `pnl`:
+  `"month,account,category,amount`n2026-10,Rent,opex,1000" | Set-Content -Encoding UTF8 $env:TEMP\one_row.csv`
+  **See:** "one_row.csv would change data you already have. Nothing is written yet.", "pnl has 360 rows …; this file has 1", with **Append**, **Replace** and **Cancel**. Press **Replace**. **See:** pnl has 1 row and a backup line with **Undo**. Press **Undo**: pnl has 360 rows again. Check from PowerShell:
+  `Invoke-RestMethod http://127.0.0.1:8000/api/data/backups | ConvertTo-Json -Depth 4`
+  **Expect:** a list (empty after the undo is fine).
+- **RW9. Memo title (25).** On **Decisions**, edit the memo's title and save. **See:** the H1 and the file's `title:` line both change (open it in **Vault**).
+- **RW10. Neutral title (10).** **See:** the decision card's title is the question as a neutral topic ("Dubai office"), not a verdict.
+- **RW11. Settings Save and Discard (36).** Gear: change **Allow cloud agents**. **See:** "You have unsaved changes" with **Save** and **Discard**; nothing applies yet (the top bar still says "Local only"). Click **Workspace**: a "Save your changes?" dialog with Save, Discard and Stay. Press **Discard**: the old value is back. Change it again and press **Save**: "Saved.", and the badge in the top bar changes. Set it back and **Save**.
+- **RW12. Smoke test (optional).** `Set-Location frontend; npx playwright install chromium; npx playwright test; Set-Location ..` **Expect:** `1 passed`.
+
+**M4 Canvas UI, first review (done: the findings are under "Founder feedback"; reference). W0 to W15.** I ran the same flow in a browser here against a test backend with the real model. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **W0. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; Set-Location frontend; npm install; Set-Location ..; .\run.bat`
+  **Expect:** the browser opens `http://127.0.0.1:3000`. Wait until the backend window says the Ollama model is loaded.
+- **W1. First look.** **See:** a top bar with Workspace, Activity, Decisions, Data, Vault and a gear; "Local only"; health dots. The Advisor on the left with three starter chips. Four KPI cards: Runway `10.65 mo`, Net burn `$172,280.47`, MRR `$255,344.27`, Gross margin `72.13%`. Below them the cash chart and Monte Carlo. Colours and layout should match `docs/design/` mock-ups.
+- **W2. Lineage.** Click the dashed blue chip on the Runway card. **See:** a popover with Formula, Period, Rows, File, Inputs, and a SQL fold. Press Esc: it closes.
+- **W3. Simulator.** Drag **New hires** to 5. **See:** within a second the dashed amber line separates from the solid blue one, "Scenario, with growth" falls, the amber "Under 3 months of cash" band and "Zero cash" line move left, and the Monte Carlo fan changes a moment later. An "assumption, confirm" tag sits under each chart. Click **Reset levers**. Open **Show as a table**.
+- **W4. A metric question.** Click the chip **What is our runway?** **See:** in a few seconds an answer with a green **Verified**, "written by code", the figure 10.65 months, and a chip you can click for its lineage.
+- **W5. The metric loop.** In PowerShell:
+  `.\.venv\Scripts\python.exe scripts\metric_loop.py --base http://127.0.0.1:8000 --question "What is our runway?" --count 10 | Select-Object -Last 1`
+  **Expect:** `METRIC LOOP: verified 10/10 | median ... | slowest ... | target under 8 s`, every time under 8 s once warm. If it seems to hang, **Ask before a team runs** is on **Always**, and each run is waiting for an approval that this script does not give: set it back in Settings first. (It caught me out too.)
+- **W6. Dubai: the team.** Gear > **Ask before a team runs** > **Always**. Back on Workspace, ask **Should we open a Dubai office?** **See:** under your question a card leading with **Proposed: Travel-led pilot** and its monthly cost, then **Full model: Full office**, tagged "assumption, confirm". In the middle, the title "Dubai office" (or your words), a pill "One-way door · full analysis", and the **Decision frame**: options, a low/base/high cost table, Goal check. Click **Review the team**. **See:** the amber approval panel with a card per agent. Change one brief, remove one agent, choose **Memo Writer** in the list and press **Add agent** (W11 needs its memo). If an agent on the team is Cloud, you also see **Run all locally instead**. Click **Approve and run**.
+- **W7. Dubai: the run.** **See:** cards appear, each with Local or Cloud, its brief (your edit on that one), a step line, a thin progress bar, and a status in words. Slots show `n/2`. Flip **Timeline** and back. Press **Cancel** on one running agent: it says Cancelled, the run goes on. When the run ends, press **Re-run** on an agent, change its brief, **Run again**: a new run starts. (While the team is still working, re-running an agent that has finished is refused with a message: that is the backend rule.)
+- **W8. Dubai: the answer.** Back on Workspace (it takes about a minute or two). **See:** the same lead card, then the text, then source chips, one per file. Click a chip: that note opens in the Vault. Under the frame, a card per agent with its findings; Devil's Advocate shows High and Med risk badges if it wrote risks. The badge says **Verified** or **Not verified · n**. **Expect Not verified here, for now, if a Dubai memo is already in your vault: see Current state > Not done, and limits.**
+- **W9. Talking during a run.** Ask the Dubai question again, and while it runs type each of these and send:
+  (a) `how far along are you?`: a short status line appears in the lane.
+  (b) `also make it a two person team`: an amber card, "That changes the request. Restart with your change?", with **Restart with my change** and **Keep going**. Press **Keep going**.
+  (c) `what about our churn?`: a card "Queued for when this run finishes". When the run ends it changes to **Ask it now** and **Drop it**. Press **Ask it now**: it runs.
+  (d) Press **Quiet off** so it says **Quiet on**: narration stops on the next run; questions it needs answered still come.
+- **W10. No removed figure, no fake source.** On each of Workspace, Activity and Decisions, press Ctrl+F and search `billion`. **Expect:** no match (the Market Scout tends to invent one). Search `removed: ` : if it appears, it shows only "(removed: unsupported source)" or similar, with no figure in it. Click every source chip: each opens a real note. If one says the note cannot be read, tell me.
+  To compare with the audit trail: `$r = Invoke-RestMethod http://127.0.0.1:8000/api/runs/<run id>; $r.result.issues` can name a removed figure; that is on purpose, and that figure must not be on any screen. The run id is in the Network tab of the browser (F12), on the `stream` request.
+- **W11. Memo.** Click **Decisions**. **See:** on the right a paper sheet with the Dubai memo, with a status chip, "Review ..." and, for the memo of this run, key-number tiles. Click **Export .md**: a file downloads and opens as the same text. Click **Export PDF**: the print dialog shows only the sheet, on white; save it. Click **Edit**, change a word, **Save to the vault**: the sheet shows it, and Obsidian shows it too.
+- **W12. Matrix.** On the left of Decisions, add `Hire a second SDR` and `Partner channel`. **See:** numbered bubbles and a ranking. Drag a bubble to the top right: its label in the ranking changes to "Do now" and the numbers change. Focus a bubble with Tab and press arrow keys: it moves. Change a weight: the ranking recomputes. `notes/priorities.md` is now in your vault.
+- **W13. Data.** Click **Data**. **See:** the tables with file, rows and time. Create a messy file and upload it with **Upload CSV or Excel**:
+  `"Kol A,Kol B,Kol C,Kol D`n2026-10,Rent,opex,1000" | Set-Content -Encoding UTF8 $env:TEMP\messy.csv`
+  **See:** "did not load", and a form. Choose the table `pnl`, set the columns to month, account, category, amount, then **Save the mapping and load the file**. **See:** "messy.csv is loaded." **Afterwards press Load sample data**, so your numbers return to the demo set.
+- **W14. Vault.** Click **Vault**. Search `runway`, open a result, press **Edit**, change a word, **Save**. Use **Add a file to the vault**. **See:** the note appears in its folder, with "Linked from" where it has backlinks.
+- **W15. Settings.** Click the gear. **See:** the green privacy note; providers with "key set" or "no key", and never a key; a provider list per agent, with "Local only" on those that must stay local; the cost cap and spend. Turn **Allow cloud agents** on, close and restart `run.bat`, reopen: your choice is kept. Set it back. Optional smoke test: `Set-Location frontend; npx playwright install chromium; npx playwright test; Set-Location ..` **Expect:** `1 passed`.
+
 **M3c re-test after the C4 fix (Light gate, about 10 minutes). Run this one first: RF1 to RF6.** RF2 to RF5 ran in Windows PowerShell 5.1 here, RF5 against a test backend on port 8011 with scratch data, so your vault was not touched by that run. From `D:\Founder-OS`. Each prints one summary line to compare with **Expected**. Then merge, or write the issues under "Founder feedback".
 
 - **RF1. Get the code.** `git fetch origin; git checkout claude/m3c-decision-models; git pull origin claude/m3c-decision-models; $env:PYTHONIOENCODING = 'utf-8'`, close the backend window, then start `run.bat`. No new dependencies. Wait for `Ollama model qwen3:8b is loaded`.
@@ -812,6 +991,116 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M4 → M5, first task] Carried from the M4 review (not blocking)
+- 60: Check that "Hold the team back" really stops the agents. In held-back runs the narration still said "Librarian, Market Scout and Financial Analyst are done…" with about 5.7 s of work. Add a test that no agent runs before approval; fix if they do.
+- 61: The near-duplicate pass cut a sentence in half: "The main trade-off is runway reduction vs. Your goal 'Decide whether…'".
+- 62: "with price change of +10 %, as you asked" appeared when no change was asked. Acknowledge only real amendments.
+- 63: Gross and net revenue churn still go to a team, so they wait for approval when "Ask before a team runs" is Always. Give them the same instant path as the other metrics.
+- 55: The Devil's Advocate often writes unsupported figures that the Verifier removes. Tune its prompt.
+- 7: The Advisor should speak up when the chance of running out of cash within 12 months is high.
+- Priority: medium
+### [M4] Re-test RX1–RX12: RESOLVED, awaiting re-test (fix session 2026-11-08, round 3)
+**Resolved (2026-11-08, PR #9):** 58, 51, 54, 54b, 56, 57, 52, 53, 59, with tests. Re-test: RY1 to RY7. Causes:
+- 58: "gross revenue churn" was not a known name ("gross" was a word the fast path did not expect), so the question
+  went to the model, which fetched gross burn. Now a table of names and synonyms (`METRIC_KEYWORDS` in
+  `app/agents/runtime.py`, longest first) routes them all, with a table-driven test. And a finance answer that does not
+  give each metric the question names is never verified ("The answer does not give …, which was asked"). Net revenue
+  churn has no routine of its own: it is shown as net revenue retention, says so, and counts as an assumption.
+- 51: a held-back run (or a greeting) got the "verified" state because no check had failed. New state `not_run`: a
+  grey "Not run" pill.
+- 54: a near-duplicate pass (`app/agents/dedupe.py`) in the Advisor's sentence gate and over the final answer: the same
+  question, the same goal, or mostly the same words (with the same figures) goes after its first time.
+- 56: a queued question was offered only when the session's current run ended; after a restart it could wait forever.
+  It is now offered whenever nothing is running, one at a time.
+What remains: 7 is M5. The local model's own sentences after code's lead still vary run to run.
+
+**Results (founder, 2026-11-08):** PASS RX2, RX3, RX4, RX5, RX6, RX7, RX8, RX9, RX10, RX12 (visible parts). FAIL RX11.
+To fix:
+- 58 (important): "What is our gross revenue churn?" was answered "Your gross burn is $428,612.47 as of 2026-10, but that's not the same as gross revenue churn…" with a green Verified badge. Route every metric name and synonym to the right metric; a reply that does not answer the question is never Verified; the answer and chip state the period (45).
+- 51: "I held the team back because it was not approved…" shows a green Verified badge. No badge, or a neutral "not run", when nothing ran.
+- 54: duplicate sentences in decision answers (the goal line twice; "what has changed since you drafted it? What has changed since you drafted the proposal?"). 54b: after an amendment, acknowledge the change in one clause.
+- 56: queued questions: always offer each one, one at a time, with Ask it now / Drop it.
+- 57: when the proposed option is not the best for runway, say why in one clause.
+- 52: when the projection's last month lies after the zero-cash month, say so in one clause.
+- 53: the amber badge text is truncated at the panel edge.
+- 59: collapse identical consecutive versions in "Earlier versions you can restore".
+
+### [M4] Re-test RW1–RW12, round 2: RESOLVED, awaiting re-test (fix session 2026-11-08)
+**Resolved (2026-11-08, PR #9):** 49, 40, 22, 42, 46, 47, 48 (P1) and 44, 43, 45, 39, 41, 37, 38, 50 (P2), with tests.
+Re-test: RX1 to RX12. Causes worth knowing:
+- 22: a turn sent while the first was still being planned opened a second session, and with it a second run awaiting
+  approval (the frontend read the session id before React had stored it). A Playwright test now covers it.
+- 40: "also make it a two person team" carries a figure, so it was taken as an answer to the lane's question and
+  re-run at once: planned afresh (so a new team, and the briefs lost Dubai), and the browser titled it with the
+  follow-up alone. Now a follow-up to an open decision is offered first, then re-runs that decision with the same
+  team (fresh agents) and a frame rebuilt in code from the edited request (2 local hires); the title is the question
+  plus "· changed: …".
+- 49: a new `app/agents/horizon.py`. The answer's first sentence is code's: what the projection covers and its last
+  month's figure, labelled. The prose may add no figure, an agent's sentence stating one for the uncovered date is
+  taken out (counted on the "claims removed" chip), and the badge lists it as an assumption, so it is never green.
+- 46: the reset could be steered by a saved mapping for a sheet of the workbook. Load sample data now ignores saved
+  mappings. The first-press failure itself did not reproduce here (one press restored pnl in every sequence tried).
+What remains: 7 is M5. The local model's own sentences after code's lead still vary run to run.
+
+**Results:** PASS RW1, RW2, RW3, RW7, RW9, RW11 (the three-state badge, reload, Settings Save/Discard, memo title sync,
+superlatives and the short decision answer all pass). FAIL RW4, RW5, RW6. RW8 partly: the warning works; see 46–48.
+
+**P1 Trust and data safety:**
+- 49 (RW4). "What will our MRR be in 2031?" answered "projected to be $300,334.87 ... runway 11.23", green Verified. The scenario engine projects 12 months (to Oct 2027), so a month-12 figure was stated for 2031. The Verifier must check a claim's period against the tool output's period: a figure may only be stated for a date or period the tool covers. Beyond the horizon: say the model projects 12 months, give the month-12 figure labelled with its month and "assumption, confirm", and never mark a claim about an uncovered date Verified. Tests for 2031, "next year", "in 5 years".
+- 40 (RW5). After the Dubai answer, "also make it a two person team" started a NEW run titled with that text (Librarian + Market Scout, generic "target region" briefs, no Dubai, no Financial Analyst). While a decision is open on screen, follow-ups ("also…", "make it…", "what if…", "instead…", "change … to …") apply to that decision: show "Restart with your change?" and re-run the same decision with the change (local hires = 2), keeping its team, context and frame. Never a context-free run from a follow-up.
+- 22 (RW6, still open). The input box does not accept a second message while the first question is planning or awaiting team approval. Accept and classify turns at once in every phase (planning, awaiting approval, running) and queue them with a visible note.
+- 42. The same question was queued twice ("what is our runway?" / "What is our runway?"): de-duplicate queued questions (case and spacing insensitive).
+- 46. "Load sample data" did not restore pnl on the first press (pnl stayed one_row.csv, 1 row); a second press did. A reset always reloads every table from northwind_financials.xlsx, whatever pending uploads or saved mappings exist. Test: upload to pnl, one press restores 360 rows.
+- 47. Undo keeps one step only: after two uploads to pnl the 360-row version was gone from /api/data/backups. Keep several versions per table (at least the last 3 plus the last clean sample version), list them with source and row count, allow restoring any.
+- 48. After Load sample data every table shows "Undo the last upload to …" though nothing was uploaded: label backups by what made them (sample reload, upload, mapping) and show only meaningful undo buttons.
+
+**P2 Quality:**
+- 44 IMPORTANT. The price-rise cost model shows wrong units: "Price change $10 / $10 / $10" (should be 10 %), "Extra monthly churn it causes $0 / $1 / $1" (should be 0 / 0.5 / 1 pts). Every cost-model row carries its own unit (USD, %, pts, people, months). Tests.
+- 43. The price rise proposed "New customers only · cost not modelled" over modelled options, with no reason. Never propose an unmodelled option over modelled ones unless the answer says why; prefer modelling it (new_customer_arpa).
+- 45. Gross revenue churn (monthly) was 0.90 % in one answer and 1.22 % in another: every metric figure in answers and chips states its period (e.g. "Oct 2026" or "trailing 12 months").
+- 39. "0/6 cloud" and "Cloud slots 0/6" still show while cloud is off (agents panel, Activity): hide, or say "cloud off".
+- 41. Run titles concatenate amendments ("also make it a two person team The founder then added: …"): keep titles short.
+- 37. The badge popover on the runway answer is cut off at the left edge: keep popovers inside the viewport.
+- 38. "The scenario matches the base." overlaps the "Under 3 months of cash" label on the cash chart.
+- 50. "all of these are assumptions to confirm (assumption, confirm)": drop the redundant tag where the sentence says it.
+- (7 is M5; left.)
+
+### [M4] Founder review W0–W15: RESOLVED, awaiting re-test (fix session 2026-11-07)
+**Resolved (2026-11-07, PR #9):** P1 (14, 20, 17, 32, 24, 21, 22), P2 (16, 18, 19, 23, 25, 26, 27, 9, 10) and P3
+(1–6, 8, 11–13, 15, 28–31, 33–35, 36) are fixed, with tests. Re-test: RW1 to RW12 in the checklist. What remains:
+- 7 is M5 (left, as agreed).
+- **Load sample data** now loads the one workbook, but a fresh start still seeds from the demo CSVs: the same numbers, a different file name in lineage.
+- The "leave the page" prompt for unsaved Settings is the browser's own dialog when closing the tab (the in-app dialog covers the app's own links).
+- A memo's "Open numbers to confirm" section may still list a line whose figure was masked as unsupported.
+- The live Dubai answer still depends on the local model: code drops repeats, extra sentences and questions about a draft's targets, but the remaining one to three sentences are the model's.
+
+W0–W15 otherwise pass: metric loop 10/10 (median 1.7 s); no fabricated figures or sources on any screen; exports, matrix, upload mapping and settings work.
+
+**P1 Trust and safety (must fix):**
+- 14. Verification badge with three clickable states: Verified (shows sources), amber "Figures verified · N assumptions to confirm" (lists them, offers "enter your figures"), red Not verified (lists reasons). Placeholder assumptions alone give amber, not "Not verified".
+- 20. With a proposed Dubai memo in the vault, Dubai went from 1 issue to 7: figures quoted from an existing vault memo (targets, kill criteria, costs) must be cited to that memo and count as supported.
+- 17. A reload (F5) wipes the conversation and the open decision: persist the session and restore it on load.
+- 32. Uploading a file mapped to an existing table replaced all 360 pnl rows with 1 row, with no warning: warn with row counts, offer append or replace, keep a backup and an undo.
+- 24. The memo called the travel-led pilot "the least costly option", but partner/distributor is cheaper (-0.10 vs -0.21): superlatives and comparisons in prose must match the options table, or be rewritten.
+- 21. "also make it a two person team" was queued as a new question: widen amendment detection (add/also/make it/change to/instead/only/assume); when accepted, change the run's inputs (local hires = 2).
+- 22. The input box does not accept turns during the first seconds (planning): accept and classify turns at once.
+
+**P2 Answer and memo quality:**
+- 16. The decision answer text must lead with the proposed option, then the full model (as the lead card does).
+- 18. The answer is a repetitive wall of text: at most about 5 sentences, no repeated goal/proposed lines; for a PROPOSED memo on record ask "what has changed since you drafted this on <date>?", never about meeting its kill criteria; no "reducing runway by -2.07" double negatives.
+- 19. Never show "(removed: unsupported source)" inline: drop the sentence and show an "N claims removed" chip by the badge.
+- 23. "What about our churn?" answers revenue churn 1.22 % while the goal is logo churn 1.67 %: include the goal's metric.
+- 25. Editing a memo's title must update both frontmatter `title:` and the `#` heading.
+- 26. Duplicate "Costs only: no new revenue..." sentence in the Financial Analyst finding.
+- 27. "your adviser or your adviser" duplicate in Regulatory & Tax.
+- 9. Skip the "which assumption would change your mind" narration for metric lookups.
+- 10. Neutral page title for a decision (the question or "Dubai office"), not "A full Dubai office" when a pilot is proposed.
+
+**P3 UI polish:**
+- 1. KPI card "Runway · actual burn". 2. Gross-margin chip lists both row ranges. 3. "Chance of running out of cash within 12 months: N%". 4. Hide the cloud slot count when cloud is off. 5. Base line visible when it overlaps the scenario. 6. Cash chart y-axis fits the data. 8. Shorter lineage chip labels that do not truncate. 11. Finished agent cards show "finished", not stale step lines. 12. "Finished · 6 of 6" when done. 13. Hide or disable Cancel on finished agents. 15. Work time separate from time waiting for approval. 28. PDF export without the browser header/footer. 29. PDF includes the status and review-date chips. 30. Matrix weights rescaled to sum to 1 (or say so). 31. New matrix items start unscored in the middle, not in "Do now". 33. "Load sample data" keeps one consistent source (northwind_financials.xlsx). 34. Settings shows Ollama as "local", not "key set". 35. Badge and health strip agree when cloud is allowed without keys.
+- 36. Settings: no auto-save. Save and Discard appear on any change with "You have unsaved changes"; save only on Save. Leaving Settings (another tab, closing, reloading) with unsaved changes asks "Save your changes?" (Save / Discard / Stay). Privacy-relevant changes apply only after Save.
+- (7 is for M5; left.)
+
 ### [M3c] Fabricated figure with a fabricated citation reached the answer: RESOLVED (founder re-test RF1–RF6 pending)
 **Fixed 2026-11-06;** see "Source check" under Current state.
 - **Did:** checklist C4 (Dubai memo, cloud off).
@@ -926,7 +1215,7 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
-1. **Ollama model storage (performance, optional).** Your `ollama` container mounts its models from `C:/Dev_Tools/LLM Models/ollama` (a Windows bind mount). Every Ollama request spends ~3.7 s before inference (`/api/tags` alone ~1.2 s), and a cold load of qwen3:8b takes ~3.5 min. A Docker named volume (or a folder inside WSL) usually cuts both to seconds, which would make answers 2–3x faster (runway: ~15–20 s now, likely ~5 s). It is your n8n stack, so I changed nothing. FounderOS works either way: it preloads the model at startup and loads it before a call when needed. Your call whether to move it.
+1. ~~Ollama model storage~~: **resolved 2026-11-06**: moved to a Docker named volume at your request; the Windows folder was kept. Old text: **Ollama model storage (performance, optional).** Your `ollama` container mounts its models from `C:/Dev_Tools/LLM Models/ollama` (a Windows bind mount). Every Ollama request spends ~3.7 s before inference (`/api/tags` alone ~1.2 s), and a cold load of qwen3:8b takes ~3.5 min. A Docker named volume (or a folder inside WSL) usually cuts both to seconds, which would make answers 2–3x faster (runway: ~15–20 s now, likely ~5 s). It is your n8n stack, so I changed nothing. FounderOS works either way: it preloads the model at startup and loads it before a call when needed. Your call whether to move it.
 
 Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
@@ -948,6 +1237,26 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M4 fix session, round 3 (2026-11-08)
+- Recorded the RX1–RX12 results, then fixed 58, 51, 54/54b, 56, 57, 52, 53, 59 (see the feedback item). New: `app/agents/dedupe.py`, `tests/test_m4_round3.py`; `Verification.state` gains `not_run`; `Projection.zero_cash_month`.
+
+### M4 fix session, round 2 (2026-11-08)
+- Recorded the RW1–RW12 results, then fixed P1 and P2 in order (see the feedback item). New: `app/agents/horizon.py`; versioned backups (`_versions` table; the old one-step `_backups` is migrated on first read); `price_applies_to_existing` in the scenario engine (new-customers-only pricing); `frontend/e2e/turns.spec.ts`.
+- Live against a scratch backend with the real local model: 49 found the Analyst projecting 36 months, and the lead's "36" was flagged as unsourced: the lead now names the end month only. 40 found the follow-up taken as figures and re-run without an offer: fixed.
+
+### M4 fix session (2026-11-07)
+- Recorded the founder review W0–W15, then fixed P1, P2 and P3 in order (see the feedback item). New: `app/agents/verification.py` (three badge states), upload conflicts/backup/undo (`/api/data/backups`, `/api/data/undo`), `frontend/src/lib/persist.ts` (reload keeps the session), Settings draft with Save/Discard and a leave guard.
+- Verified live against a scratch backend with the real local model and a proposed Dubai memo in the vault: issues went from 13 to the removed Scout figure; the answer leads with the proposal and the full model.
+- Last fixes from the live runs: a memo's figures quoted by the Memo Writer count as cited; with a draft on record, questions about meeting its targets are dropped.
+
+### M4 session (2026-11-06)
+- Item (1): "You are you." and "traveling" guards, with tests. The metric question: cause found, Verifier fixed ("months at this burn" is a claim about runway), code-written fast path. Live 10/10 verified, median 1.7 s.
+- Backend for the UI: `/api/settings`, `/api/priorities`, `GET /api/runs/{id}/stream`, `PUT /api/data/mappings`, the frame on `team.proposed`, `local_only` on approve, run detail with message and frame.
+- Frontend: all views, Recharts, Markdown, hash routes, one state store fed by `/api/events`.
+- Playwright smoke test with a scripted model that invents a figure and a citation, in CI.
+- Self-review (`/code-review`, medium, full diff): 10 findings, all fixed: see the PR. One is a change you should know about: the fast path now takes a question only if every other word is one a plain lookup uses, so "MRR for January" goes to the model.
+- Found by driving it live: events arriving before the POST returned were lost (now held); a small question cleared the open decision off the canvas (the latest decision now stays); the same file showed one chip per heading (now one per file); `safeStep` left "illion" behind after masking "$160 b" (fixed, with a test).
+
 ### M3c fix session (2026-11-06)
 - Root cause: the Verifier flagged the figure but only `verified: false` changed. The text went on, and the `[UNVERIFIED: number without lineage: $150 billion]` flag itself carried the figure to the Advisor. A figure was checked against every passage in the run, never against the file it was cited to.
 - The first live run on the fix showed the fix itself removed your real 1.5 % churn goal, and left the Scout's recollections in Open numbers. Both fixed.
@@ -1008,6 +1317,26 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M4 fix round 3, 2026-11-08)
+- A finance answer that does not give every metric the question names is "not verified", whatever else checks out.
+- "Net revenue churn" (and net MRR / dollar churn) is answered with net revenue retention, labelled, as an assumption.
+- Nothing ran (held back, or a greeting): the badge is a neutral "Not run".
+- A decision lead says in one clause why its proposal beats an option with more runway: that option moves away from a goal, else this one is easier to undo.
+
+## Decisions made (M4 fix round 2, 2026-11-08)
+- A question beyond the projection gets code's sentence about the last projected month, as an assumption: amber, never green.
+- Restoring a version keeps the current one as a version too, so an undo can be undone. Up to 3 versions per table, plus the last clean sample one.
+- "Load sample data" is a reset: it ignores saved mappings, and keeps no version when a table already is the sample.
+- New-customers-only pricing is modelled with `price_applies_to_existing = 0` (existing customers' churn assumed unchanged).
+
+## Decisions made (M4 session, 2026-11-06)
+- **Fast path for one metric:** a question of up to 22 words naming one metric gets a sentence written by code, plus at most one short LLM question under a 4 s timeout. It skips the Planner and the team. **Why:** your target; code cannot get the number wrong. **Tell me** if you would rather never have the optional question.
+- UI choices are saved in `<data>/<workspace>/ui_settings.json` and win over `.env` until changed. Keys stay in `.env`, and the API only says whether one is set.
+- The matrix's initiatives and weights live in the vault (`notes/priorities.md`), so Obsidian can read and edit them. Ranking stays code (`weighted_scoring`).
+- A run's Advisor text has one reader (`GET /api/runs/{id}/stream`, 409 for a second). A second window, or a reload, gets the finished result from `GET /api/runs/{id}`.
+- No client-side arithmetic on money. The fan chart uses the backend's P10 and P90 directly.
+- Hash routes (`#/activity` and so on) instead of a router library: six views do not need one.
 
 ## Decisions made (M3c fix session, 2026-11-06)
 - `Open numbers to confirm` keeps what to confirm but never the figure (your new rule replaces the M3b one).

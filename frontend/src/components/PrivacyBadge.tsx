@@ -11,11 +11,13 @@ export function PrivacyBadge({ health }: { health: HealthState }) {
   }
   const cloud = health.data.dependencies.find((d) => d.name === "cloud");
   const cloudAllowed = cloud?.info["cloud_allowed"] === true;
-  if (!cloudAllowed) {
+  // Allowed but with no key, nothing can leave this PC: the badge says so, as the health strip does.
+  const usable = cloud?.info["cloud_usable"] !== false;
+  if (!cloudAllowed || !usable) {
     return (
       <Badge variant="ok">
         <Lock aria-hidden="true" className="h-3 w-3" />
-        Local only
+        {cloudAllowed ? "Local only · no cloud key" : "Local only"}
       </Badge>
     );
   }

@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.agents.decision_frame import parse_inputs
 from app.agents.events import EventBus
 from app.agents.graph import AgentOrchestrator
 from app.agents.tools import ToolContext
@@ -96,10 +97,27 @@ def client(settings: Settings) -> Iterator[TestClient]:
         ("Can we make it to December?", "new_question"),
         ("Cancel the Acme contract", None),
         ("Stop hiring contractors", None),
+        # Founder review 21: a change to the running request, worded as an addition, was queued as a question.
+        ("also make it a two person team", "amendment"),
+        ("Add a travel budget of 2000 a month", "amendment"),
+        ("only two hires", "amendment"),
+        ("change the rent to 3000", "amendment"),
+        ("Use a partner instead", "amendment"),
+        ("assume 4k rent", "amendment"),
+        ("what about our churn?", "new_question"),
+        ("What does adding a hire do to runway?", "new_question"),
     ],
 )
 def test_clear_turns_need_no_model(text: str, kind: str | None) -> None:
     assert by_rules(text) == kind
+
+
+@pytest.mark.parametrize(
+    "text", ["also make it a two person team", "a two-person team", "make it two people", "only 2 local hires"]
+)
+def test_an_amendment_changes_the_runs_inputs(text: str) -> None:
+    """Accepted, the amendment re-runs with the founder's own count: local hires = 2, not the placeholder."""
+    assert parse_inputs(text, "new_office") == {"hires": 2.0}
 
 
 class Unsure(FakeDecisionProvider):
@@ -368,3 +386,100 @@ def test_the_api(client: TestClient) -> None:
     assert client.post("/api/conversation/turn", json={"text": ""}).status_code == 422
     assert client.get(f"/api/runs/{turn.json()['run_id']}").json()["snapshot"]["session_id"] == session_id
     assert json.dumps(state)
+
+
+# --- founder re-test round 2 ------------------------------------------------------------------------------------------
+HIRE = "Should we hire SDRs?"
+
+
+async def test_a_follow_up_after_a_decision_changes_that_decision_not_a_new_run(finance: Any) -> None:
+    """40: "also make it a two person team" after the answer re-runs the same decision, same team, with the change."""
+    manager, provider = lane(finance)
+    provider.release.set()
+    first = await manager.turn("s40", HIRE)
+    run = manager.orchestrator.runs[first.run_id or ""]
+    await run.task
+    assert run.plan is not None and run.plan.intent == "decision"
+    offer = await manager.turn("s40", "also make it a two person team")
+    assert offer.kind == "amendment" and offer.amendment_id and offer.run_id == run.run_id
+    assert offer.reply == "That changes the decision. Restart with your change?"
+    assert len(manager.orchestrator.runs) == 1  # nothing started before the founder says yes
+    accepted = manager.answer_amendment("s40", offer.amendment_id or "", True)
+    new_run = manager.orchestrator.runs[accepted["run_id"]]
+    await new_run.task
+    assert new_run.message.startswith(HIRE) and new_run.context.amendment_of == run.run_id
+    assert new_run.plan is not None and new_run.plan.intent == "decision"
+    assert [i.type for i in new_run.plan.team] == [i.type for i in run.plan.team]
+    assert {i.id for i in new_run.plan.team}.isdisjoint({i.id for i in run.plan.team})
+    assert new_run.plan.frame is not None and new_run.plan.frame.hires == 2
+
+
+async def test_a_follow_up_with_no_decision_open_is_a_new_request(finance: Any) -> None:
+    manager, provider = lane(finance)
+    provider.release.set()
+    outcome = await manager.turn("s40b", "also, what is our churn?")
+    assert outcome.amendment_id is None and outcome.run_id is not None
+    await manager.orchestrator.runs[outcome.run_id].task
+
+
+async def test_the_same_question_is_queued_once(finance: Any) -> None:
+    """42: case, spacing and the end mark do not make it a second question."""
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    first = await manager.turn(session_id, "what is our runway?")
+    again = await manager.turn(session_id, "  What is our  RUNWAY?")
+    assert first.queue_id and again.queue_id == first.queue_id
+    assert again.reply == "That question is already queued."
+    assert len(manager.sessions[session_id].queue) == 1
+    provider.release.set()
+    await run.task
+
+
+def test_what_if_is_a_follow_up() -> None:
+    assert by_rules("what if we hired three instead?") == "amendment"
+
+
+async def test_a_follow_up_to_the_dubai_answer_is_offered_not_run_at_once(finance: Any) -> None:
+    """40, seen live: the Dubai frame asks for inputs, so "make it a two person team" re-ran with no offer."""
+    manager, provider = lane(finance)
+    provider.release.set()
+    first = await manager.turn("s40d", "Should we open a Dubai office?")
+    run = manager.orchestrator.runs[first.run_id or ""]
+    await run.task
+    offer = await manager.turn("s40d", "also make it a two person team")
+    assert offer.amendment_id and offer.reply == "That changes the decision. Restart with your change?"
+    accepted = manager.answer_amendment("s40d", offer.amendment_id or "", True)
+    new_run = manager.orchestrator.runs[accepted["run_id"]]
+    await new_run.task
+    assert new_run.plan is not None and new_run.plan.frame is not None and new_run.plan.frame.cost_model is not None
+    hires = next(i for i in new_run.plan.frame.cost_model.items if i.key == "hires")
+    assert hires.base == 2 and hires.basis == "founder"
+    assert [i.type for i in new_run.plan.team] == [i.type for i in run.plan.team]  # type: ignore[union-attr]
+
+
+async def test_every_queued_question_is_offered_one_at_a_time(finance: Any) -> None:
+    """56: never asked by itself; each is offered with Ask it now / Drop it, in order."""
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    first = await manager.turn(session_id, "What is our runway?")
+    second = await manager.turn(session_id, "What is our churn?")
+    provider.release.set()
+    await run.task
+    await _until(lambda: manager.sessions[session_id].queue[0].status == "offered")
+    queue = manager.sessions[session_id].queue
+    assert [(q.id, q.status) for q in queue] == [(first.queue_id, "offered"), (second.queue_id, "queued")]
+    assert manager.answer_queue(session_id, first.queue_id or "", False) == {"accepted": False, "run_id": None}
+    assert [(q.id, q.status) for q in manager.sessions[session_id].queue] == [(second.queue_id, "offered")]
+
+
+async def test_a_queued_question_is_offered_when_an_older_run_ends_and_nothing_runs(finance: Any) -> None:
+    """56: the session had moved on to another run, already finished: the queue is still offered."""
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    queued = await manager.turn(session_id, "What is our runway?")
+    session = manager.sessions[session_id]
+    session.run_id = "run_other"  # a restarted run that has already ended
+    provider.release.set()
+    await run.task
+    await _until(lambda: session.queue[0].status == "offered")
+    assert session.queue[0].id == queued.queue_id

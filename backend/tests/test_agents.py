@@ -21,7 +21,7 @@ from app.engine.duckdb_engine import FinanceDB
 from app.engine.embeddings import FakeEmbedder
 from app.engine.hybrid_rag import HybridIndex
 from app.engine.metrics import MetricsEngine
-from app.engine.scenario import ScenarioEngine
+from app.engine.scenario import Adjustments, ScenarioEngine
 from app.engine.vector_store import InMemoryVectorStore
 from app.llm.base import Completion, LLMUnavailable, Message, ToolCall
 from app.llm.fake import FakeProvider
@@ -337,7 +337,7 @@ async def test_graph_runs_runway_end_to_end(finance: Any) -> None:
         ]
     )
     orch = orchestrator(provider, finance, None)
-    run = orch.start("What's our runway?")
+    run = orch.start("Walk me through our runway.")
     result = await run.task  # type: ignore[misc]
     assert result.answer.startswith("Your runway is 10.65 months") and result.verified and result.intent == "finance"
     assert result.metrics[0].value == 10.65 and result.metrics[0].lineage["metric"] == "runway"
@@ -356,7 +356,7 @@ async def test_advisor_invented_number_is_flagged(finance: Any) -> None:
     provider = FakeProvider(
         [[ToolCall(name="get_metric", arguments={"name": "runway"})], RUNWAY_ANSWER, "You have 24 months of runway."]
     )
-    result = await orchestrator(provider, finance, None).start("What's our runway?").task  # type: ignore[misc]
+    result = await orchestrator(provider, finance, None).start("Walk me through our runway.").task  # type: ignore[misc]
     assert not result.verified and result.issues == ["advisor: removed: unsupported source (1)"]
     assert "24 months" not in result.answer and "10.65" in result.answer
 
@@ -401,6 +401,7 @@ async def test_team_approval_policy(finance: Any) -> None:
     assert orch.approve(run.run_id, approved=False) and not orch.approve(run.run_id)
     result = await run.task  # type: ignore[misc]
     assert result.status == "rejected" and result.agents == [] and "not approved" in result.answer
+    assert result.verification.state == "not_run"  # 51: held back, so no "Verified" badge
     assert any(e.type == "team.rejected" for e in orch.bus.history(run.run_id))
 
 
@@ -479,3 +480,100 @@ async def test_event_bus_replays_and_filters() -> None:
     await asyncio.wait_for(task, 1)
     assert got == ["1:run.started", "4:run.finished"]
     assert [e.seq for e in bus.history(since=2)] == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["What's our MRR for January?", "What's our burn this quarter?", "How much runway do we need?"],
+)
+def test_a_question_about_another_period_or_a_target_is_not_a_lookup(question: str) -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric(question) is None
+
+
+@pytest.mark.parametrize(
+    ("question", "metric"),
+    [
+        ("What is our runway?", "runway"),
+        ("What's our net burn?", "net_burn"),
+        ("Tell me our MRR", "mrr"),
+        ("How long is our runway?", "runway"),
+    ],
+)
+def test_a_plain_lookup_still_takes_the_fast_path(question: str, metric: str) -> None:
+    from app.agents.runtime import single_metric
+
+    assert single_metric(question) == metric
+
+
+# --- founder review 49: a figure only for a period the projection covers -----------------------------------
+
+
+def test_the_asked_period_is_read_from_the_question() -> None:
+    from app.agents.horizon import asked_period
+
+    assert asked_period("What will our MRR be in 2031?", "2026-10").end == "2031-12"  # type: ignore[union-attr]
+    assert asked_period("What will MRR be next year?", "2026-10").end == "2027-12"  # type: ignore[union-attr]
+    assert asked_period("Where is cash in 5 years?", "2026-10").end == "2031-10"  # type: ignore[union-attr]
+    assert asked_period("MRR in March 2027?", "2026-10").end == "2027-03"  # type: ignore[union-attr]
+    assert asked_period("What is our runway?", "2026-10") is None
+
+
+@pytest.mark.parametrize(
+    ("question", "label"),
+    [
+        ("What will our MRR be in 2031?", "2031"),
+        ("What will our MRR be next year?", "next year"),
+        ("What will our MRR be in 5 years?", "in 5 years"),
+    ],
+)
+async def test_a_question_beyond_the_projection_never_gets_a_figure_for_that_date(
+    finance: Any, question: str, label: str
+) -> None:
+    from app.agents.horizon import Projection
+
+    scenario = finance.scenario.run(Adjustments(), horizon=12)
+    projection = Projection.of(scenario)
+    assert projection is not None and projection.months == 12
+    last = f"${projection.mrr:,.2f}"
+    provider = FakeProvider(
+        [
+            [ToolCall(name="run_scenario", arguments={})],
+            f"Projected MRR {label} is {last}, with runway of 11.23 months.",
+            f"Your MRR {label} is projected to be {last}. Growth could slow. What would change your plan?",
+        ]
+    )
+    result = await orchestrator(provider, finance, None).start(question).task  # type: ignore[misc]
+    assert result.answer.startswith("The model's projection runs to ")
+    assert f"so it has no figure for {label}" in result.answer
+    assert f"{last}, which assumes today's trend holds (assumption, confirm)" in result.answer
+    assert result.answer.count(last) == 1  # only code's labelled month-12 figure, never "for 2031"
+    analyst = next(r for r in result.agents if r.type == "financial_analyst")
+    assert label not in analyst.text.lower() or last not in analyst.text
+    assert result.verification.state != "verified"
+    assert any(label in a for a in result.verification.assumptions)
+
+
+async def test_a_question_inside_the_projection_is_answered_as_before(finance: Any) -> None:
+    from app.agents.horizon import Projection, beyond
+
+    projection = Projection.of(finance.scenario.run(Adjustments(), horizon=12))
+    assert beyond("What will MRR be in 3 months?", projection) is None
+    assert beyond("What will MRR be in 2031?", projection) is not None
+
+
+def test_a_metric_answer_names_the_period_it_is_for() -> None:
+    """Founder re-test 45: 0.90 % and 1.22 % were one metric over two periods, with no period said."""
+    from app.agents.runtime import metric_sentence
+
+    content = {
+        "label": "Gross revenue churn (monthly)",
+        "value": 0.009,
+        "unit": "ratio",
+        "as_of": "2026-10",
+        "lineage": {"period": "2026-08..2026-10"},
+    }
+    assert "for August to October 2026" in metric_sentence(content, "gross_revenue_churn")
+    point = {**content, "lineage": {"period": "2026-10"}}
+    assert "as of October 2026" in metric_sentence(point, "gross_revenue_churn")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app import __version__
@@ -43,9 +43,24 @@ def overall_status(dependencies: list[DependencyStatus]) -> OverallStatus:
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health(settings: SettingsDep, probes: ProbesDep) -> HealthResponse:
+async def health(request: Request, settings: SettingsDep, probes: ProbesDep) -> HealthResponse:
     """Always answers 200 while the backend is up; problems are reported per dependency (PRD R3)."""
     dependencies = await run_probes(probes, timeout_s=settings.health_probe_timeout_s + 1.0)
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    for dependency in dependencies:  # Settings can change this while the app runs: the badge must show what is true
+        if dependency.name == "cloud" and orchestrator is not None:
+            allowed = bool(orchestrator.router.cloud_allowed)
+            dependency.info["cloud_allowed"] = allowed
+            keys = any(bool(v) for v in dict(dependency.info.get("configured") or {}).values())
+            dependency.info["cloud_usable"] = allowed and keys
+            # The strip and the privacy badge read the same facts (founder review 35).
+            if not allowed:
+                dependency.state = DependencyState.NOT_CONFIGURED
+                dependency.detail = "Cloud is off; all agents run locally"
+            elif not keys:
+                dependency.state = DependencyState.DEGRADED
+                dependency.detail = "Cloud is allowed, but no provider has a key: every agent runs locally"
+
     return HealthResponse(
         status=overall_status(dependencies),
         version=__version__,

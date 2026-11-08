@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.agents.verifier import Fact, extract_figures, format_money, split_sentences
 from app.engine.scenario import Adjustments
@@ -125,6 +125,7 @@ def _place(message: str) -> str:
 
 # --- the cost components ---------------------------------------------------------------------------------------------
 Cadence = Literal["one_off", "monthly", "count", "percent", "points"]
+_UNITS = {"count": "people", "percent": "%", "points": "pts"}  # money items take the model's currency
 
 
 @dataclass(frozen=True)
@@ -171,7 +172,7 @@ _TEMPLATES: dict[str, list[ItemTemplate]] = {
             1,
             2,
             3,
-            r"(?:local )?(?:hires?|people|reps?|staff)",
+            r"(?:local )?(?:hires?|people|persons?|reps?|staff|team)",
             "how many local hires",
         ),
         ItemTemplate("travel", "Travel", "monthly", 1000, 3000, 6000, r"travel"),
@@ -289,7 +290,8 @@ def _value_in_clause(item: ItemTemplate, clause: str) -> float | None:
     if not re.search(rf"\b(?:{item.keywords})\b", clause, re.I):
         return None
     if item.cadence == "count":
-        match = re.search(rf"\b{_COUNT}\s+(?:\w+ )?(?:{item.keywords})\b", clause, re.I)
+        # "a two-person team" and "a two person team" are a count of two
+        match = re.search(rf"\b{_COUNT}[\s-]+(?:\w+ )?(?:{item.keywords})\b", clause, re.I)
         if match is None:
             return None
         word = match.group(1).lower()
@@ -325,6 +327,16 @@ class CostItem(BaseModel):
     base: float
     high: float
     basis: Literal["assumption", "founder", "data"] = "assumption"
+    unit: str = Field(
+        "", description="What low, base and high are in: a currency code, '%', 'pts', 'people' or 'months'"
+    )
+
+    @model_validator(mode="after")
+    def _own_unit(self) -> CostItem:
+        """Every row says what its numbers are (founder re-test 44: a 10 % price change showed as "$10")."""
+        if not self.unit:
+            self.unit = _UNITS.get(self.cadence, "")
+        return self
 
     @property
     def varies(self) -> bool:
@@ -359,6 +371,13 @@ class CostModel(BaseModel):
     @property
     def assumption_count(self) -> int:
         return sum(i.basis == "assumption" for i in self.items)
+
+    @model_validator(mode="after")
+    def _money_units(self) -> CostModel:
+        for item in self.items:
+            if not item.unit:
+                item.unit = self.currency
+        return self
 
     def money(self, value: float) -> str:
         return format_money(value, self.currency)
@@ -683,6 +702,18 @@ def _cost_model(kind: str, subject: str, items: list[CostItem], finance: Any) ->
     return model, result
 
 
+def _modelled_default(options: list[OptionCost], default: str) -> str:
+    """Never propose an option the routine could not cost over ones it could (founder re-test 43): the cheapest
+    costed option short of the full model is proposed instead."""
+    chosen = next((o for o in options if o.name == default), None)
+    if chosen is None or chosen.modelled:
+        return default
+    costed = [o for o in options if o.modelled and not o.is_full and o.runway_change_months is not None]
+    if not costed:
+        return default
+    return max(costed, key=lambda o: o.runway_change_months or 0.0).name
+
+
 def _option(
     finance: Any, name: str, note: str, one_off: float = 0, monthly: float = 0, hires: int = 0, **levers: float
 ) -> OptionCost:
@@ -768,11 +799,13 @@ def _options(
         half = price / 2
         return [
             _option(finance, "No price change", "Keep prices as they are."),
-            OptionCost(
-                name="New customers only",
-                note="Existing customers keep their price; the routine cannot model this split yet.",
-                one_off=notice,
-                modelled=False,
+            _option(
+                finance,
+                "New customers only",
+                "Existing customers keep their price, so their churn is assumed not to change.",
+                notice,
+                price_change_pct=price,
+                price_applies_to_existing=0.0,
             ),
             _option(
                 finance,
@@ -1237,6 +1270,7 @@ def build_frame(
         logger.info("No cost model for this decision: {}: {}", type(exc).__name__, exc)
         frame.cost_model = None
     frame.options = [o.model_copy(update={"trade_off": _trade_off(o.name)}) for o in frame.options]
+    frame.default_option = _modelled_default(frame.options, frame.default_option)
     frame.goals = [_check_goal(goal, frame, finance) for goal in _company_goals(ctx)]
     frame.predictions, frame.kill_criteria = _starter_outcomes(frame, today)
     frame.facts = _facts(frame)
@@ -1252,12 +1286,25 @@ _HIRES_ASKED = re.compile(
 )
 
 
+_COUNT_WORDS = r"(one|two|three|four|five|six|seven|eight|nine|\d{1,3})"
+# A follow-up that sets the size: "make it a two person team", "a team of 3", "only 2 people".
+_HIRES_TEAM = re.compile(
+    rf"\b{_COUNT_WORDS}[\s-]+(?:person|people|persons|hires?)\b|\bteam\s+of\s+{_COUNT_WORDS}\b", re.I
+)
+
+
+def _hires_word(message: str) -> str | None:
+    """How many people, from the founder's words. A later statement (a follow-up) replaces an earlier one."""
+    found = [(m.start(), (m.group(1) or "one")) for m in _HIRES_ASKED.finditer(message)]
+    found += [(m.start(), m.group(1) or m.group(2)) for m in _HIRES_TEAM.finditer(message)]
+    return max(found)[1].lower() if found else None
+
+
 def _frame_hire(frame: DecisionFrame, finance: Any) -> None:
-    match = _HIRES_ASKED.search(frame.message)
-    if match is None:
+    word = _hires_word(frame.message)
+    if word is None:
         frame.questions = ["how many people you mean"]
         return
-    word = (match.group(1) or "one").lower()
     hires = int(word) if word.isdigit() else {"a": 1, "an": 1, **_NUMBER_WORDS}[word]
     frame.hires = hires
     frame.questions = []

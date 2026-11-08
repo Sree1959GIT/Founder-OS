@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -20,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.events import Artifact, ArtifactKind, Citation
+from app.agents.horizon import Projection
 from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields, format_money
 from app.engine.decision_science import EVOption, ScoringRequest, expected_values, weighted_scoring
 from app.engine.duckdb_engine import NoDataError
@@ -43,6 +45,10 @@ class ToolOutcome:
     citations: list[Citation] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
     passages: dict[str, list[str]] = field(default_factory=dict, repr=False)  # source -> the text retrieved from it
+    # A proposed memo on record: its figures back a sentence only when it is cited (`cited_to_record`).
+    record_passages: dict[str, list[str]] = field(default_factory=dict, repr=False)
+    record_facts: list[Fact] = field(default_factory=list, repr=False)
+    projection: Projection | None = None  # run_scenario: the months it covers, for the horizon check
     error: str | None = None
 
     @property
@@ -70,6 +76,28 @@ def _is_a_written_memo(ctx: ToolContext, path: str) -> bool:
         return _is_unconfirmed_memo(ctx.vault.vault.read_note(path).get("frontmatter") or {})
     except (VaultError, OSError):
         return False
+
+
+_OPEN_NUMBERS = re.compile(r"(?ims)^#+\s*open numbers to confirm.*?(?=^#+\s|\Z)")
+
+
+def memo_on_record(ctx: ToolContext, paths: Iterable[str]) -> dict[str, list[str]]:
+    """The text of each proposed memo among `paths`, without its "Open numbers to confirm": those are placeholders.
+
+    Its targets, kill criteria and modelled costs are the memo's own, so a sentence citing the memo may quote them.
+    """
+    found: dict[str, list[str]] = {}
+    if ctx.vault is None:
+        return found
+    for path in dict.fromkeys(paths):
+        if not _is_a_written_memo(ctx, path):
+            continue
+        try:
+            body = str(ctx.vault.vault.read_note(path).get("body") or "")
+        except (VaultError, OSError):
+            continue
+        found[path] = [_OPEN_NUMBERS.sub("", body)]
+    return found
 
 
 def quoted_facts(text: str) -> list[Fact]:
@@ -264,7 +292,9 @@ def _run_scenario(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     if impact is not None:
         content["impact"] = impact.model_dump()
     card = _artifact(ctx, "scenario", "What-if scenario", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], facts=facts_from_fields(content, unit=""))
+    return ToolOutcome(
+        content, artifacts=[card], facts=facts_from_fields(content, unit=""), projection=Projection.of(result)
+    )
 
 
 def _run_monte_carlo(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -394,7 +424,16 @@ def _search_vault(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     for h, r in zip(hits, result["results"], strict=True):
         if not _is_a_written_memo(ctx, str(h.get("path", ""))):
             passages.setdefault(str(h["path"]), []).extend([json.dumps(h, ensure_ascii=False), str(r["snippet"])])
-    return ToolOutcome(content, artifacts=cards, citations=citations, facts=quoted, passages=passages)
+    records = memo_on_record(ctx, [str(h.get("path", "")) for h in hits])
+    return ToolOutcome(
+        content,
+        artifacts=cards,
+        citations=citations,
+        facts=quoted,
+        passages=passages,
+        record_passages=records,
+        record_facts=[f for texts in records.values() for t in texts for f in quoted_facts(t)],
+    )
 
 
 def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
@@ -417,7 +456,16 @@ def _past_decisions(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
         for r, row in zip(records, rows, strict=True)
         if not _is_a_written_memo(ctx, r.path)
     }
-    return ToolOutcome({"decisions": rows}, artifacts=cards, citations=citations, facts=quoted, passages=passages)
+    on_record = memo_on_record(ctx, [r.path for r in records])
+    return ToolOutcome(
+        {"decisions": rows},
+        artifacts=cards,
+        citations=citations,
+        facts=quoted,
+        passages=passages,
+        record_passages=on_record,
+        record_facts=[f for texts in on_record.values() for t in texts for f in quoted_facts(t)],
+    )
 
 
 def _read_note(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:

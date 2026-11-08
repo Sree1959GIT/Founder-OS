@@ -79,6 +79,9 @@ class Adjustments(BaseModel):
     """What-if inputs. Every field defaults to "no change"."""
 
     price_change_pct: float = Field(0.0, ge=-90, le=500, description="Price change for all customers, in %")
+    price_applies_to_existing: float = Field(
+        1.0, ge=0, le=1, description="Share of existing customers the price change reaches (0: new customers only)"
+    )
     churn_change_pts: float = Field(0.0, ge=-100, le=100, description="Change in monthly logo churn, in % points")
     cac_change_pct: float = Field(0.0, ge=-90, le=500, description="Change in paid CAC, in %")
     acquisition_change_pct: float = Field(0.0, ge=-100, le=500, description="Change in new customers (win rate), %")
@@ -269,6 +272,7 @@ def _effective(
     hire_cost = d.cost_per_hire if cost_per_hire is None else cost_per_hire
     return {
         "price": price,
+        "existing_step": 1 + adj["price_change_pct"] / 100 * adj["price_applies_to_existing"],
         "churn": np.maximum(0.0, base_churn + adj["churn_change_pts"] / 100),
         "marketing": marketing,
         "new": new,
@@ -296,7 +300,7 @@ def project(
     balance = np.full(n, d.cash)
     for k in range(1, months + 1):
         e = scenario if k >= start_month else base
-        step = scenario["price"] if k == start_month else 1.0
+        step = scenario["existing_step"] if k == start_month else 1.0
         mrr = mrr * (1 - e["churn"]) * step + e["new"] * d.new_customer_arpa * e["price"]
         costs = variable * mrr + d.fixed_costs + e["marketing"] + e["extra"]
         if k == start_month:

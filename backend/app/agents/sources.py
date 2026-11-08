@@ -94,6 +94,7 @@ class Evidence:
     quoted: list[float] = field(default_factory=list)  # from a retrieved passage: fine uncited, but not as another's
     passages: dict[str, list[float]] = field(default_factory=dict)  # per source, the figures retrieved from it
     data_files: set[str] = field(default_factory=set)  # files a routine computed from: real, though not in the vault
+    records: list[str] = field(default_factory=list)  # decisions on record, whose figures back a sentence citing them
     exists: Callable[[str], bool] | None = None
 
     def resolves(self, source: str) -> bool:
@@ -130,9 +131,27 @@ class Evidence:
         return True
 
 
+def cited_to_record(sentence: str, evidence: Evidence) -> str | None:
+    """The sentence with the decision on record its figures come from cited, if one backs every figure in it.
+
+    Seen live: agents quote a proposed Dubai memo's targets and kill criteria without naming it. They are the memo's,
+    so they are cited to it (and checked against it) rather than removed as unsourced.
+    """
+    if cited_sources(sentence, evidence.passages) or not extract_figures(sentence):
+        return None
+    for path in evidence.records:
+        stop = re.search(r"[.!?]?\s*$", sentence)
+        at = stop.start() if stop else len(sentence)
+        candidate = f"{sentence[:at].rstrip()} [{path}]{sentence[at:]}"
+        if evidence.supports(candidate):
+            return candidate
+    return None
+
+
 def without_unsupported(text: str, evidence: Evidence) -> tuple[str, list[str]]:
     """The text without what `evidence` cannot back, and what went. A list line goes whole: half a line makes no sense.
 
+    A sentence whose figures all come from a decision on record is kept, cited to it (`cited_to_record`).
     Text that passes comes back unchanged.
     """
     if not text.strip():
@@ -144,12 +163,19 @@ def without_unsupported(text: str, evidence: Evidence) -> tuple[str, list[str]]:
         if evidence.supports(line):
             lines.append(line)
         elif _LIST_MARK.match(line):
-            removed.append(line.strip())
+            fixed = cited_to_record(line, evidence)
+            if fixed is not None:
+                lines.append(fixed)
+            else:
+                removed.append(line.strip())
         else:
             kept: list[str] = []
             for piece in split_sentences(line):
+                fixed = cited_to_record(piece, evidence) if piece.strip() else None
                 if not piece.strip() or evidence.supports(piece):
                     kept.append(piece)
+                elif fixed is not None:
+                    kept.append(fixed)
                 else:
                     removed.append(piece.strip())
             kept_line = "".join(kept).strip()
@@ -227,6 +253,10 @@ def gather(
             lines.extend([*r.memo.predictions, *r.memo.kill_criteria])
         for path, texts in r.passages.items():
             evidence.passages.setdefault(path, []).extend(f.value for text in texts for f in extract_figures(text))
+        for path, texts in getattr(r, "record_passages", {}).items():
+            evidence.passages.setdefault(path, []).extend(f.value for text in texts for f in extract_figures(text))
+            if path not in evidence.records:
+                evidence.records.append(path)
         for citation in [*r.retrieved, *r.citations]:
             evidence.passages.setdefault(citation.path, [])
         for lineage in r.lineage:

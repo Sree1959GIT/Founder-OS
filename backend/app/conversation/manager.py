@@ -24,6 +24,7 @@ from app.agents.decision_frame import inputs_question, parse_inputs
 from app.agents.events import AgentEvent, EventBus, EventType
 from app.agents.graph import AgentOrchestrator, RunContext
 from app.agents.registry import REGISTRY
+from app.agents.runtime import Plan
 from app.agents.verifier import extract_figures
 from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
@@ -76,6 +77,15 @@ class Session:
 
 
 _LEFT_IN_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
+
+
+def _same(a: str, b: str) -> bool:
+    """The same question, whatever its case, spacing or end mark."""
+
+    def key(t: str) -> str:
+        return re.sub(r"[\s?.!]+", " ", t).strip().lower()
+
+    return key(a) == key(b)
 
 
 def _in_words(count: int) -> str:
@@ -165,7 +175,20 @@ class ConversationManager:
         self._emit(session, type_, text=text)
 
     # --- runs ------------------------------------------------------------------------------------------------------
-    def _start_run(self, session: Session, message: str, amendment_of: str | None = None) -> RunContext:
+    def _same_decision(self, run_id: str) -> Plan | None:
+        """A change to a decision re-runs that decision: the same type and team, with fresh agents. The frame is
+        rebuilt from the edited request in code, so "make it a two person team" sets local hires to 2."""
+        run = self.orchestrator.runs.get(run_id)
+        old = run.plan if run is not None else None
+        if old is None or not self._is_decision(run_id):
+            return None
+        team = [i.model_copy(update={"id": f"agt_{uuid.uuid4().hex[:8]}"}) for i in old.team]
+        frame = None if old.intent == "decision" else old.frame
+        return old.model_copy(update={"team": team, "frame": frame})
+
+    def _start_run(
+        self, session: Session, message: str, amendment_of: str | None = None, plan_override: Plan | None = None
+    ) -> RunContext:
         snapshot = RunSnapshot(
             session_id=session.id,
             message=message,
@@ -173,7 +196,7 @@ class ConversationManager:
             recent_turns=session.local.recent(),
             amendment_of=amendment_of,
         )
-        run = self.orchestrator.start(message, context=snapshot)
+        run = self.orchestrator.start(message, context=snapshot, plan_override=plan_override)
         session.run_id = run.run_id
         task = asyncio.create_task(self._narrate(session, run.run_id))
         session.narrators.add(task)
@@ -190,7 +213,9 @@ class ConversationManager:
                     return
                 if event.type == "team.approved" and not asked:
                     asked = True
-                    self._say(session, await self._assumption_question(session, run_id))
+                    # A metric lookup rests on no assumption to question (founder review 9): only a decision is asked.
+                    if self._is_decision(run_id):
+                        self._say(session, await self._assumption_question(session, run_id))
                 text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
                 if text.strip():
                     self._say(session, text)
@@ -257,7 +282,9 @@ class ConversationManager:
             _ready_line(event.data),
         )
         self._say(session, recap, "recap")
-        if session.run_id == run_id:
+        # Founder re-test 56: every queued question is offered, one at a time, once nothing is running, whichever run
+        # ended (the session may have moved on to a restarted run that has already finished).
+        if session.run_id == run_id or not self._active(session):
             self._offer_next(session)
         self._close_offers(session, keep=session.run_id if session.run_id != run_id else None)
 
@@ -288,6 +315,11 @@ class ConversationManager:
             return fallback
         text = (completion.text or "").strip()
         return text if text and not extract_figures(text) else fallback
+
+    def _is_decision(self, run_id: str) -> bool:
+        run = self.orchestrator.runs.get(run_id)
+        plan = run.plan if run is not None else None
+        return plan is not None and (plan.intent == "decision" or plan.frame is not None)
 
     async def _assumption_question(self, session: Session, run_id: str) -> str:
         run = self.orchestrator.runs.get(run_id)
@@ -364,9 +396,16 @@ class ConversationManager:
     async def _turn_when_idle(self, session: Session, text: str) -> TurnOutcome:
         """Rules only. With nothing to protect, an unclear turn is simply a request: no model call before the run."""
         last = self.orchestrator.runs.get(session.run_id) if session.run_id else None
+        kind = by_rules(text)
+        # A decision is still open on screen: a follow-up ("also…", "make it…", "what if…") changes that decision,
+        # once the founder says yes (founder re-test 40). Plain figures in reply to the lane's question re-run at once.
+        if kind == "amendment" and last is not None and self._is_decision(last.run_id):
+            return self._offer_amendment(session, Classified(kind=kind, by="rules"), last, text)
         if self._gives_inputs(last, text) and last is not None:
             edited = f"{last.message}\nThe founder then added: {text}"
-            run = self._start_run(session, edited, amendment_of=last.run_id)
+            run = self._start_run(
+                session, edited, amendment_of=last.run_id, plan_override=self._same_decision(last.run_id)
+            )
             return TurnOutcome(
                 session_id=session.id,
                 kind="amendment",
@@ -374,7 +413,6 @@ class ConversationManager:
                 reply="Running it again with your figures.",
                 run_id=run.run_id,
             )
-        kind = by_rules(text)
         if kind == "backchannel":
             return self._reply(session, Classified(kind=kind, by="rules"), "", session.run_id)
         if kind == "stop":
@@ -397,12 +435,21 @@ class ConversationManager:
             edited_message=f"{running.message}\nThe founder then added: {text}",
         )
         session.amendments[amendment.id] = amendment
-        reply = "That changes the request. Cancel this run and start again with your change?"
+        finished = running.task is not None and running.task.done()
+        reply = (
+            "That changes the decision. Restart with your change?"
+            if finished
+            else "That changes the request. Cancel this run and start again with your change?"
+        )
         self._emit(session, "amendment.offered", amendment_id=amendment.id, text=text, reply=reply)
         outcome = self._reply(session, classified, reply, running.run_id)
         return outcome.model_copy(update={"amendment_id": amendment.id})
 
     def _enqueue(self, session: Session, classified: Classified, running: RunContext, text: str) -> TurnOutcome:
+        same = next((q for q in session.queue if q.status in ("queued", "offered") and _same(q.text, text)), None)
+        if same is not None:  # asked twice while waiting: one card, kept where it was
+            outcome = self._reply(session, classified, "That question is already queued.", running.run_id)
+            return outcome.model_copy(update={"queue_id": same.id})
         item = QueuedQuestion(id=f"que_{uuid.uuid4().hex[:8]}", text=text)
         session.queue.append(item)
         waiting = sum(q.status in ("queued", "offered") for q in session.queue)
@@ -427,7 +474,12 @@ class ConversationManager:
             return {"accepted": False, "run_id": session.run_id}
         self.orchestrator.cancel(amendment.run_id)
         self._close_offers(session)
-        run = self._start_run(session, amendment.edited_message, amendment_of=amendment.run_id)
+        run = self._start_run(
+            session,
+            amendment.edited_message,
+            amendment_of=amendment.run_id,
+            plan_override=self._same_decision(amendment.run_id),
+        )
         return {"accepted": True, "run_id": run.run_id, "replaces": amendment.run_id}
 
     def answer_queue(self, session_id: str, queue_id: str, accept: bool) -> dict[str, Any]:
