@@ -31,8 +31,19 @@ from pydantic import BaseModel, Field
 
 from app.agents.decision_frame import DecisionFrame, build_frame
 from app.agents.events import Artifact, Citation, EventBus
+from app.agents.horizon import beyond, beyond_issue
 from app.agents.registry import REGISTRY
-from app.agents.runtime import AgentInstance, AgentResult, AgentRunner, Plan, _team, advise, plan, team_impact
+from app.agents.runtime import (
+    AgentInstance,
+    AgentResult,
+    AgentRunner,
+    Plan,
+    _team,
+    advise,
+    plan,
+    team_impact,
+    team_projection,
+)
 from app.agents.sources import vault_checker
 from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
@@ -444,12 +455,17 @@ class AgentOrchestrator:
         )
         # Placeholder inputs are never "verified", however well the prose checks out.
         assumptions = frame.assumption_count if frame is not None and results else 0
+        # Beyond the projection: code gave the last projected month instead, an assumption the founder confirms.
+        asked = beyond(run.message, team_projection(results)) if results else None
+        assumptions += 1 if asked else 0
         if assumptions:
             issues.append(f"this rests on {assumptions} assumptions to confirm")
         usage = sum((r.usage for r in results), Usage()) + advisor.get("usage", Usage())
         all_done = all(r.status == "done" for r in results)
         model = frame.cost_model if frame is not None and results else None
         to_confirm = [model.item_line(i) for i in model.items if i.basis == "assumption"] if model else []
+        if asked:
+            to_confirm.append(beyond_issue(asked, team_projection(results)))
         sources = list(
             dict.fromkeys(
                 [*(c.path for c in citations), *(f for r in results for lin in r.lineage for f in lin.source_files)]

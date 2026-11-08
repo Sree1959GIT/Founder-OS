@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.agents.decision_frame import ASSUMPTION_LABEL, DecisionFrame, OptionCost, build_frame, names_goal
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
+from app.agents.horizon import Projection, beyond, horizon_lead, without_uncovered
 from app.agents.registry import PROMPTS_DIR, REGISTRY, AgentType, spawnable_types
 from app.agents.sources import (
     REMOVED_NOTE,
@@ -219,6 +220,7 @@ class AgentResult(BaseModel):
         default_factory=list, exclude=True, description="Figures of a proposed memo on record: backed once it is cited"
     )
     inherited_impact: DecisionImpact | None = Field(default=None, exclude=True)
+    projection: Projection | None = Field(default=None, exclude=True, description="The first run_scenario")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     verified: bool | None = None
@@ -891,6 +893,12 @@ class AgentRunner:
         )
         result.verified = report.ok
         result.issues = report.issues
+        # A figure stated for a period no tool covered ("MRR in 2031" from a 12-month projection) is taken out.
+        asked = beyond(user_message, result.projection, result.projection.as_of if result.projection else None)
+        if asked is not None:
+            result.text, gone = without_uncovered(result.text, asked)
+            if gone:
+                result.issues.append(f"removed: beyond the projection ({gone})")
 
     async def _call_tool(
         self, spec: AgentType, inst: AgentInstance, call: ToolCall, result: AgentResult
@@ -917,6 +925,8 @@ class AgentRunner:
         for source, texts in outcome.record_passages.items():
             result.record_passages.setdefault(source, []).extend(texts)
         result.record_facts.extend(outcome.record_facts)
+        if outcome.projection is not None and result.projection is None:
+            result.projection = outcome.projection
         self._emit("agent.tool_call", inst.id, tool=call.name, arguments=call.arguments, error=outcome.error)
         for artifact in outcome.artifacts:
             result.artifacts.append(artifact)
@@ -1365,6 +1375,11 @@ def advisor_decision_note(answer: str, results: list[AgentResult]) -> str:
     return "".join(parts)
 
 
+def team_projection(results: list[AgentResult]) -> Projection | None:
+    """The first projection the team ran: the months a forward-looking answer may speak about."""
+    return next((r.projection for r in results if r.projection is not None), None)
+
+
 def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "") -> str:
     """A decision answer opens with the proposed option, then the full model: the same order as the lead card.
 
@@ -1460,6 +1475,7 @@ class _SentenceGate:
         self.said: list[str] = []  # what went out, to drop a sentence said twice
         self.lead_figures: list[float] = []  # code's lead already gave these: a sentence of only these repeats it
         self.draft_on_record = False  # a proposed memo is on record: no question about its kill criteria
+        self.no_figures = False  # the question is beyond the projection: the model may add no figure
 
     def _budgeted(self, text: str) -> str:
         """No sentence twice, and no more than the budget."""
@@ -1472,6 +1488,8 @@ class _SentenceGate:
             if key in self.said or (self.max_sentences is not None and len(self.said) >= self.max_sentences):
                 continue
             figures = extract_figures(piece)
+            if figures and self.no_figures:
+                continue
             if figures and self.lead_figures and all(number_supported(f, self.lead_figures) for f in figures):
                 continue  # the proposal and the full model, said again in the model's words
             if self.draft_on_record and (_KILL_QUESTION.search(piece) or _TARGET_QUESTION.search(piece)):
@@ -1660,11 +1678,15 @@ async def advise(
     if frame is not None and frame.non_hire and frame.cost_model is not None:
         system += (PROMPTS_DIR / "advisor_cost_model.md").read_text(encoding="utf-8")
     records = _team_decisions(results)
-    lead = decision_lead(frame, records, _chosen_in(results))
+    projection = team_projection(results)
+    asked = beyond(user_message, projection)
+    chosen = _chosen_in(results)
+    lead = horizon_lead(user_message, asked, projection) if asked else decision_lead(frame, records, chosen)
     if lead:
         context += (
             f"\n\nAlready said to the founder, first, by code: {lead}\nDo not repeat it, the goal or the proposal. "
             f"Add at most {DECISION_PROSE_SENTENCES} short sentences: the main trade-off, and one question."
+            + (" Add no figures: the question is beyond what the projection covers." if asked else "")
         )
     messages = [Message.system(system), Message.user(context)]
     sent: list[str] = []
@@ -1680,6 +1702,7 @@ async def advise(
         gate.max_sentences += len(gate.said)
         gate.lead_figures = [f.value for f in extract_figures(lead)]
         gate.draft_on_record = any(not r.is_decided for r in records)
+        gate.no_figures = asked is not None  # beyond the projection: the only figure is code's, labelled
         sent.append(f"{lead} ")
         yield StreamChunk(delta=f"{lead} ")
     try:

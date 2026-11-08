@@ -21,7 +21,7 @@ from app.engine.duckdb_engine import FinanceDB
 from app.engine.embeddings import FakeEmbedder
 from app.engine.hybrid_rag import HybridIndex
 from app.engine.metrics import MetricsEngine
-from app.engine.scenario import ScenarioEngine
+from app.engine.scenario import Adjustments, ScenarioEngine
 from app.engine.vector_store import InMemoryVectorStore
 from app.llm.base import Completion, LLMUnavailable, Message, ToolCall
 from app.llm.fake import FakeProvider
@@ -504,3 +504,59 @@ def test_a_plain_lookup_still_takes_the_fast_path(question: str, metric: str) ->
     from app.agents.runtime import single_metric
 
     assert single_metric(question) == metric
+
+
+# --- founder review 49: a figure only for a period the projection covers -----------------------------------
+
+
+def test_the_asked_period_is_read_from_the_question() -> None:
+    from app.agents.horizon import asked_period
+
+    assert asked_period("What will our MRR be in 2031?", "2026-10").end == "2031-12"  # type: ignore[union-attr]
+    assert asked_period("What will MRR be next year?", "2026-10").end == "2027-12"  # type: ignore[union-attr]
+    assert asked_period("Where is cash in 5 years?", "2026-10").end == "2031-10"  # type: ignore[union-attr]
+    assert asked_period("MRR in March 2027?", "2026-10").end == "2027-03"  # type: ignore[union-attr]
+    assert asked_period("What is our runway?", "2026-10") is None
+
+
+@pytest.mark.parametrize(
+    ("question", "label"),
+    [
+        ("What will our MRR be in 2031?", "2031"),
+        ("What will our MRR be next year?", "next year"),
+        ("What will our MRR be in 5 years?", "in 5 years"),
+    ],
+)
+async def test_a_question_beyond_the_projection_never_gets_a_figure_for_that_date(
+    finance: Any, question: str, label: str
+) -> None:
+    from app.agents.horizon import Projection
+
+    scenario = finance.scenario.run(Adjustments(), horizon=12)
+    projection = Projection.of(scenario)
+    assert projection is not None and projection.months == 12
+    last = f"${projection.mrr:,.2f}"
+    provider = FakeProvider(
+        [
+            [ToolCall(name="run_scenario", arguments={})],
+            f"Projected MRR {label} is {last}, with runway of 11.23 months.",
+            f"Your MRR {label} is projected to be {last}. Growth could slow. What would change your plan?",
+        ]
+    )
+    result = await orchestrator(provider, finance, None).start(question).task  # type: ignore[misc]
+    assert result.answer.startswith("The model projects 12 months, to ")
+    assert f"so it has no figure for {label}" in result.answer
+    assert f"{last}, which assumes today's trend holds (assumption, confirm)" in result.answer
+    assert result.answer.count(last) == 1  # only code's labelled month-12 figure, never "for 2031"
+    analyst = next(r for r in result.agents if r.type == "financial_analyst")
+    assert label not in analyst.text.lower() or last not in analyst.text
+    assert result.verification.state != "verified"
+    assert any(label in a for a in result.verification.assumptions)
+
+
+async def test_a_question_inside_the_projection_is_answered_as_before(finance: Any) -> None:
+    from app.agents.horizon import Projection, beyond
+
+    projection = Projection.of(finance.scenario.run(Adjustments(), horizon=12))
+    assert beyond("What will MRR be in 3 months?", projection) is None
+    assert beyond("What will MRR be in 2031?", projection) is not None

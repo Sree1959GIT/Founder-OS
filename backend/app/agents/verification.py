@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from app.agents.verifier import extract_figures
 
 ASSUMPTION_ISSUE = re.compile(r"^this rests on \d+ assumptions? to confirm$")
-_REMOVED = re.compile(r"removed: unsupported source(?: \((\d+)\))?")
+_REMOVED = re.compile(r"removed: (?:unsupported source|beyond the projection)(?: \((\d+)\))?")
 
 _KINDS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"number without lineage"), "A figure had no source in your data, so it was checked as unsupported."),

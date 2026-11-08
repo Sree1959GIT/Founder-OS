@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.events import Artifact, ArtifactKind, Citation
+from app.agents.horizon import Projection
 from app.agents.verifier import Fact, column_fact, extract_figures, fact_for, facts_from_fields, format_money
 from app.engine.decision_science import EVOption, ScoringRequest, expected_values, weighted_scoring
 from app.engine.duckdb_engine import NoDataError
@@ -47,6 +48,7 @@ class ToolOutcome:
     # A proposed memo on record: its figures back a sentence only when it is cited (`cited_to_record`).
     record_passages: dict[str, list[str]] = field(default_factory=dict, repr=False)
     record_facts: list[Fact] = field(default_factory=list, repr=False)
+    projection: Projection | None = None  # run_scenario: the months it covers, for the horizon check
     error: str | None = None
 
     @property
@@ -290,7 +292,9 @@ def _run_scenario(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
     if impact is not None:
         content["impact"] = impact.model_dump()
     card = _artifact(ctx, "scenario", "What-if scenario", data, lineage=[result.lineage])
-    return ToolOutcome(content, artifacts=[card], facts=facts_from_fields(content, unit=""))
+    return ToolOutcome(
+        content, artifacts=[card], facts=facts_from_fields(content, unit=""), projection=Projection.of(result)
+    )
 
 
 def _run_monte_carlo(ctx: ToolContext, args: dict[str, Any]) -> ToolOutcome:
