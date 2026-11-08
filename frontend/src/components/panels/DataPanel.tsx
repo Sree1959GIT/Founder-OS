@@ -119,7 +119,12 @@ export function DataPanel() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<{ file: File; table?: string; conflicts: UploadConflict[] } | null>(null);
+  const [pending, setPending] = useState<{
+    file: File;
+    table?: string;
+    conflicts: UploadConflict[];
+    via: "upload" | "mapping";
+  } | null>(null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
 
   const refresh = useCallback(() => {
@@ -152,16 +157,16 @@ export function DataPanel() {
     }
   };
 
-  const tryUpload = async (file: File, table?: string, mode: UploadMode = "check") => {
+  const tryUpload = async (file: File, table?: string, mode: UploadMode = "check", via: "upload" | "mapping" = "upload") => {
     setBusy(true);
     setError(null);
     setNote(null);
     try {
-      const outcome = await uploadDataFile(file, table, mode);
+      const outcome = await uploadDataFile(file, table, mode, via);
       setFailed(null);
       if (outcome.conflicts?.length) {
         // Nothing was written: the founder chooses replace or append, with both row counts in view.
-        setPending({ file, table, conflicts: outcome.conflicts });
+        setPending({ file, table, conflicts: outcome.conflicts, via });
         return;
       }
       setPending(null);
@@ -192,7 +197,7 @@ export function DataPanel() {
     if (!failed) return;
     try {
       await putMapping(failed.file.name, mapping);
-      await tryUpload(failed.file, mapping.table);
+      await tryUpload(failed.file, mapping.table, "check", "mapping");
     } catch (err) {
       setError(err instanceof Error ? err.message : "The mapping was not saved");
     }
@@ -217,7 +222,16 @@ export function DataPanel() {
               Upload CSV or Excel
               <input type="file" accept=".csv,.xlsx" className="sr-only" disabled={busy} onChange={onFile} />
             </label>
-            <Button variant="outline" disabled={busy} onClick={() => void run(loadSample)}>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                // A reset: whatever upload was waiting for a choice is dropped (founder re-test 46).
+                setPending(null);
+                setFailed(null);
+                void run(loadSample);
+              }}
+            >
               Load sample data
             </Button>
           </span>
@@ -260,10 +274,10 @@ export function DataPanel() {
             </ul>
             <p className="text-xs text-muted-foreground">Either way, the current version is kept as a backup you can undo.</p>
             <div className="flex flex-wrap gap-2">
-              <Button disabled={busy} onClick={() => void tryUpload(pending.file, pending.table, "append")}>
+              <Button disabled={busy} onClick={() => void tryUpload(pending.file, pending.table, "append", pending.via)}>
                 Append the rows
               </Button>
-              <Button variant="outline" disabled={busy} onClick={() => void tryUpload(pending.file, pending.table, "replace")}>
+              <Button variant="outline" disabled={busy} onClick={() => void tryUpload(pending.file, pending.table, "replace", pending.via)}>
                 Replace the table
               </Button>
               <Button variant="ghost" disabled={busy} onClick={() => setPending(null)}>
@@ -273,29 +287,34 @@ export function DataPanel() {
           </div>
         ) : null}
         {backups.length ? (
-          <ul className="mb-3 flex flex-col gap-1.5" aria-label="Earlier versions" data-testid="backups">
-            {backups.map((b) => (
-              <li key={b.table} className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
-                <span>
-                  Earlier <span className="num">{b.table}</span> kept: <span className="num">{b.rows.toLocaleString("en-US")}</span> rows
-                  {b.source_file ? <> from <span className="num">{b.source_file}</span></> : null}.
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      const r = await undoUpload(b.table);
-                      setNote(`Undone: ${r.restored.table} is back to ${r.restored.rows.toLocaleString("en-US")} rows.`);
-                    })
-                  }
-                >
-                  Undo the last upload to {b.table}
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <div className="mb-3 flex flex-col gap-1.5" data-testid="backups">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Earlier versions you can restore</p>
+            <ul className="flex flex-col gap-1.5" aria-label="Earlier versions">
+              {backups.map((b) => (
+                <li key={b.id || b.table} className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground" data-testid="version">
+                  <span>
+                    <span className="num text-foreground">{b.table}</span>: <span className="num">{b.rows.toLocaleString("en-US")}</span> rows
+                    {b.source_file ? <> from <span className="num">{b.source_file}</span></> : null}
+                    {b.clean_sample ? <span className="text-ok"> (the sample data)</span> : null}, kept {b.label}
+                    {b.saved_at ? <>, {new Date(`${b.saved_at}Z`).toLocaleString()}</> : null}.
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const r = await undoUpload(b.table, b.id);
+                        setNote(`Restored: ${r.restored.table} is back to ${r.restored.rows.toLocaleString("en-US")} rows.`);
+                      })
+                    }
+                  >
+                    Restore this {b.table}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
         {failed ? (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3.5">

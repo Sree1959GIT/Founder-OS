@@ -484,10 +484,15 @@ export interface UploadConflict {
   incoming_source: string;
 }
 export interface BackupInfo {
+  id: string;
   table: string;
   rows: number;
   source_file: string | null;
   saved_at: string;
+  made_by: "upload" | "append" | "mapping" | "sample" | "restore";
+  /** What replaced this version, e.g. "before uploading one_row.csv". */
+  label: string;
+  clean_sample: boolean;
 }
 export type UploadMode = "check" | "replace" | "append";
 export interface UploadOutcome {
@@ -496,10 +501,11 @@ export interface UploadOutcome {
   backups: BackupInfo[];
 }
 /** "check" writes nothing when a table already holds rows: it returns the conflicts for the founder to choose. */
-export const uploadDataFile = (file: File, table?: string, mode: UploadMode = "check") =>
-  upload<UploadOutcome>("/api/data/upload", file, { ...(table ? { table } : {}), mode });
+export const uploadDataFile = (file: File, table?: string, mode: UploadMode = "check", via: "upload" | "mapping" = "upload") =>
+  upload<UploadOutcome>("/api/data/upload", file, { ...(table ? { table } : {}), mode, via });
 export const fetchBackups = () => request<BackupInfo[]>("/api/data/backups");
-export const undoUpload = (table: string) => send<{ restored: BackupInfo }>("/api/data/undo", "POST", { table });
+export const undoUpload = (table: string, versionId?: string) =>
+  send<{ restored: BackupInfo }>("/api/data/undo", "POST", { table, ...(versionId ? { version_id: versionId } : {}) });
 
 export interface CanonicalTable {
   table: string;

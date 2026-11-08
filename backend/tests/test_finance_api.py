@@ -254,7 +254,9 @@ def test_replace_keeps_a_backup_and_undo_restores_it(client: TestClient) -> None
     loaded = {t["table"]: t for t in client.get("/api/data/tables").json()["loaded"]}
     assert loaded["pnl"]["source_file"] == "pnl.csv" and loaded["pnl"]["rows"] == 360
     assert client.get("/api/metrics/runway").json()["value"] == 10.65
-    assert client.post("/api/data/undo", json={"table": "pnl"}).status_code == 404  # the backup is used up
+    # The version it replaced is kept in turn, so an undo can itself be undone.
+    again = client.post("/api/data/undo", json={"table": "pnl"})
+    assert again.status_code == 200 and _pnl_rows(client) == 1
 
 
 def test_append_adds_rows_and_can_be_undone(client: TestClient) -> None:
@@ -272,3 +274,46 @@ def test_a_first_upload_into_an_empty_table_needs_no_choice(empty_client: TestCl
     assert body["conflicts"] == [] and body["tables"][0]["rows"] == 1
     assert empty_client.post("/api/data/undo", json={"table": "pnl"}).status_code == 404
     assert empty_client.post("/api/data/undo", json={"table": "nope"}).status_code == 422
+
+
+# --- founder re-test 46-48: the sample reset, several versions, and labels -------------------------------------------
+def test_one_press_of_load_sample_restores_every_table_whatever_mapping_was_saved(client: TestClient) -> None:
+    """46: pnl stayed one_row.csv after the first press. A saved mapping must not steer the reset."""
+    files = {"file": ("one_row.csv", ONE_ROW, "text/csv")}
+    client.post("/api/data/upload", files=files, data={"mode": "replace", "table": "pnl"})
+    stale = {"key": "northwind_financials.xlsx#pnl", "table": "marketing_spend", "columns": {"amount": "spend"}}
+    assert client.put("/api/data/mappings", json=stale).status_code == 200
+    assert _pnl_rows(client) == 1
+    body = client.post("/api/data/load-sample").json()
+    assert {t["table"]: t["source_file"] for t in body["tables"]}["pnl"] == "northwind_financials.xlsx"
+    assert _pnl_rows(client) == 360
+    loaded = {t["table"]: t for t in client.get("/api/data/tables").json()["loaded"]}
+    assert {t["source_file"] for t in loaded.values()} == {"northwind_financials.xlsx"}
+
+
+def test_several_versions_are_kept_and_any_can_be_restored(client: TestClient) -> None:
+    """47: after two uploads the 360-row version must still be there, with its source and row count."""
+    files = {"file": ("one_row.csv", ONE_ROW, "text/csv")}
+    for _ in range(5):
+        client.post("/api/data/upload", files=files, data={"mode": "replace"})
+    kept = client.get("/api/data/backups").json()
+    assert 3 <= len(kept) <= 4 and all(v["table"] == "pnl" for v in kept)
+    clean = [v for v in kept if v["clean_sample"]]
+    assert len(clean) == 1 and clean[0]["rows"] == 360 and clean[0]["source_file"] == "pnl.csv"
+    assert clean[0]["label"] == "before uploading one_row.csv"
+    restored = client.post("/api/data/undo", json={"table": "pnl", "version_id": clean[0]["id"]})
+    assert restored.status_code == 200 and _pnl_rows(client) == 360
+    assert client.post("/api/data/undo", json={"table": "pnl", "version_id": "vnope"}).status_code == 404
+
+
+def test_reloading_the_sample_over_the_sample_keeps_no_undo(client: TestClient) -> None:
+    """48: nothing was uploaded, so there is nothing to undo."""
+    client.post("/api/data/load-sample")
+    assert client.get("/api/data/backups").json() == []
+    files = {"file": ("one_row.csv", ONE_ROW, "text/csv")}
+    client.post("/api/data/upload", files=files, data={"mode": "replace"})
+    client.post("/api/data/load-sample")
+    (before_upload, before_reset) = sorted(client.get("/api/data/backups").json(), key=lambda v: v["saved_at"])
+    assert before_upload["made_by"] == "upload" and before_upload["clean_sample"]
+    assert before_reset["made_by"] == "sample" and before_reset["source_file"] == "one_row.csv"
+    assert before_reset["label"] == "before the sample data was reloaded"
