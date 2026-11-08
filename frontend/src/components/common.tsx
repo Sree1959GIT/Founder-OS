@@ -59,6 +59,14 @@ export function VerificationBadge({ verification }: { verification: Verification
   const id = useId();
   const { state, reasons, assumptions, sources, removed_claims: removed } = verification;
   const n = assumptions.length;
+  // Nothing ran (the team was held back, or a greeting): there is nothing to vouch for (founder re-test 51).
+  if (state === "not_run") {
+    return (
+      <span data-testid="verification-badge" data-state={state} title="No team ran, so there is nothing to check">
+        <Pill tone="neutral">Not run</Pill>
+      </span>
+    );
+  }
   const tone: Tone = state === "verified" ? "ok" : state === "assumptions" ? "amber" : "danger";
   const label =
     state === "verified"
@@ -68,7 +76,7 @@ export function VerificationBadge({ verification }: { verification: Verification
         : "Not verified";
   const Icon = state === "verified" ? CheckCircle2 : CircleAlert;
   return (
-    <span ref={ref} className="relative inline-flex items-center gap-1.5">
+    <span ref={ref} className="relative inline-flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
       {removed > 0 ? (
         <span data-testid="removed-chip">
           <Pill tone="neutral" title="Sentences the source check took out because nothing backed them">
@@ -84,11 +92,12 @@ export function VerificationBadge({ verification }: { verification: Verification
         data-testid="verification-badge"
         data-state={state}
         className={cn(
-          "inline-flex min-h-6 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium",
+          // Wraps rather than running past the panel edge (founder re-test 53).
+          "inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-left text-xs font-medium",
           TONES[tone],
         )}
       >
-        <Icon aria-hidden="true" className="h-3 w-3" />
+        <Icon aria-hidden="true" className="h-3 w-3 shrink-0" />
         {label}
       </button>
       {open ? (

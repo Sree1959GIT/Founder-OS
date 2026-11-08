@@ -1169,3 +1169,29 @@ def test_an_unmodelled_default_gives_way_to_a_costed_option() -> None:
     ]
     assert _modelled_default(options, "Guess") == "Small step"
     assert _modelled_default(options, "Bigger step") == "Bigger step"
+
+
+# ---- M4 re-test round 3 (2026-11-08)
+def test_the_lead_says_why_a_lesser_runway_option_is_proposed(ctx: ToolContext) -> None:
+    """57: New customers only (+0.18) was proposed over the full +10 % (+1.12) with no reason given."""
+    from app.agents.runtime import decision_lead
+
+    frame = build_frame("Should we raise our prices by 10%?", ctx)
+    proposed = next(o for o in frame.options if o.name == frame.default_option)
+    full = next(o for o in frame.options if o.is_full)
+    assert full.runway_change_months is not None and proposed.runway_change_months is not None
+    assert full.runway_change_months > proposed.runway_change_months
+    lead = decision_lead(frame, [])
+    first = lead.split(". ")[0]
+    assert f"proposed over {full.name}" in first and "because" in first
+    assert 'your goal "Bring logo churn under 1.5 % a month"' in first
+    assert lead.count("Bring logo churn under 1.5 % a month") == 1  # 54: the goal is named once
+
+
+def test_the_lead_acknowledges_the_founders_change(ctx: ToolContext) -> None:
+    """54b: after "also make it a two person team", the answer says so in one clause."""
+    from app.agents.runtime import decision_lead
+
+    frame = build_frame(f"{DUBAI} The founder then added: also make it a two person team", ctx)
+    lead = decision_lead(frame, [])
+    assert "with two local hires, as you asked" in lead

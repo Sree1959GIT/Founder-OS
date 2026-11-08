@@ -58,15 +58,15 @@
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
-| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RX1 to RX12; RW round 2 fixes in this PR) |
+| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RY1 to RY7; RX round 3 fixes in this PR) |
 
 ## Current session
 - Started (UTC): 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate, time-box 60 minutes), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
 - Plan:
   - [x] Record the RX results first
-  - [ ] 58 metric routing (and 45 periods), 51 no badge when nothing ran, 54 de-dup sentences, 54b amendment clause
-  - [ ] 56 queued questions always offered, 57 why the proposal, 52 after cash runs out, 53 badge wraps, 59 collapse versions
-  - [ ] Tests, RY re-test steps, PR #9 updated, CI green
+  - [x] 58 metric routing (and 45 periods), 51 no badge when nothing ran, 54 de-dup sentences, 54b amendment clause
+  - [x] 56 queued questions always offered, 57 why the proposal, 52 after cash runs out, 53 badge wraps, 59 collapse versions
+  - [x] Tests (backend 1074 passed, frontend 39 vitest, 2 Playwright, lint, tsc, build), RY re-test steps, PR #9 updated
 
 Previous session (2026-11-08, M4 fix round 2):
 - Started (UTC): 2026-11-08 01:33 (local Windows bug-fix session, round 2 for the M4 Major gate, time-box 2 hours), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
@@ -609,7 +609,26 @@ Known issues / notes:
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M4 re-test after round 2 (Major gate, about 25 minutes). Run this one first: RX1 to RX12.** It covers 49, 40, 22, 42, 46, 47, 48, 44, 43 and 45 of "[M4] Re-test RW1–RW12, round 2". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. RW1 to RW12 below still apply. Then merge, or write what you saw under "Founder feedback".
+**M4 re-test after round 3 (Major gate, about 15 minutes). Run this one first: RY1 to RY7.** It covers 58, 51, 54, 56 and 57 of "[M4] Re-test RX1–RX12", plus the RX12 popover check. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **RY1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
+  On **Data**, press **Load sample data** once. Set **Ask before a team runs** to **Never** for RY2.
+- **RY2. Every metric question gets its own metric (58, 45).** One loop (about a minute):
+  `foreach ($q in 'What is our gross revenue churn?','What is our net revenue churn?','What is our logo churn?','What is our gross burn?','What is our net burn?','What is our gross margin?','What is our MRR?','What is our ARR?','What is our CAC?','What is our LTV/CAC?') { $r = Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/chat -ContentType 'application/json' -Body (@{message=$q; stream=$false} | ConvertTo-Json); $m = $r.metrics[0]; '{0} | {1} | {2} | {3} | {4}' -f $q, $m.metric, $m.value, $m.lineage.period, $r.verification.state }`
+  **Expect:** in order, `revenue_churn`, `nrr`, `logo_churn`, `gross_burn`, `net_burn`, `gross_margin`, `mrr`, `arr`, `cac`, `ltv_cac`, each with a period. Every state is `verified`, except net revenue churn: `assumptions` (it is shown as net revenue retention, and says so).
+  In the browser, ask **What is our gross revenue churn?** **See:** "Gross revenue churn (monthly) is … for August to October 2026" (the months follow your data), nothing about burn, and a chip ending "· Aug–Oct 2026".
+- **RY3. Nothing ran, no green badge (51).** Gear > **Ask before a team runs** > **Always** > **Save**. Ask **Should we open a Dubai office?** and press **Hold the team back**. **See:** "I held the team back because it was not approved…" with a grey **Not run** pill, not "Verified". Say **Hello**: also **Not run**. Set approval back and **Save**.
+- **RY4. No sentence twice (54, 54b).** Ask **Should we open a Dubai office?** **See:** the goal is named once, and "what has changed since you drafted it?" is asked once. Then type **also make it a two person team** and press **Restart with my change**. **See:** the new answer says "with two local hires, as you asked".
+- **RY5. Queued questions are always offered (56).** With approval **Always**, ask **Should we open a Dubai office?**, then at once type **What is our runway?** and **What is our churn?**. Press **Approve and run**. **See:** when the answer is in, the runway question shows **Ask it now** / **Drop it**; the churn one still says "Queued". Press **Drop it**: the churn question now shows **Ask it now** / **Drop it**. Nothing is asked by itself. Set approval back.
+- **RY6. Why this option (57).** Ask **Should we raise our prices by 10%?** **See:** the first sentence reads "Proposed: New customers only, … ; proposed over Change prices by +10 % (runway +1.12 months) because Change prices by +10 % moves you away from your goal "Bring logo churn under 1.5 % a month"" (figures follow your data). The goal is not repeated in the next sentence.
+- **RY7. Small ones (53, 52, 59, RX12 popover).**
+  - On an amber answer (RY6), the badge text wraps inside the panel; nothing is cut off.
+  - Ask **What will our MRR be in 2031?** If cash runs out inside the projection, the answer adds "and that you stay funded after cash runs out in …".
+  - Upload `one_row.csv` (from RX6) to `pnl` with **Replace** three times: "Earlier versions you can restore" lists the identical one-row version once.
+  - On the runway answer, open the badge: the popover stays fully on screen.
+
+**M4 re-test after round 2 (done: results under "Founder feedback"; reference). RX1 to RX12.** It covers 49, 40, 22, 42, 46, 47, 48, 44, 43 and 45 of "[M4] Re-test RW1–RW12, round 2". Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. RW1 to RW12 below still apply. Then merge, or write what you saw under "Founder feedback".
 
 - **RX1. Get the code.** Close the backend and frontend windows, then:
   `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
@@ -972,7 +991,21 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M4] Re-test RX1–RX12: OPEN (fix session 2026-11-08, round 3)
+### [M4] Re-test RX1–RX12: RESOLVED, awaiting re-test (fix session 2026-11-08, round 3)
+**Resolved (2026-11-08, PR #9):** 58, 51, 54, 54b, 56, 57, 52, 53, 59, with tests. Re-test: RY1 to RY7. Causes:
+- 58: "gross revenue churn" was not a known name ("gross" was a word the fast path did not expect), so the question
+  went to the model, which fetched gross burn. Now a table of names and synonyms (`METRIC_KEYWORDS` in
+  `app/agents/runtime.py`, longest first) routes them all, with a table-driven test. And a finance answer that does not
+  give each metric the question names is never verified ("The answer does not give …, which was asked"). Net revenue
+  churn has no routine of its own: it is shown as net revenue retention, says so, and counts as an assumption.
+- 51: a held-back run (or a greeting) got the "verified" state because no check had failed. New state `not_run`: a
+  grey "Not run" pill.
+- 54: a near-duplicate pass (`app/agents/dedupe.py`) in the Advisor's sentence gate and over the final answer: the same
+  question, the same goal, or mostly the same words (with the same figures) goes after its first time.
+- 56: a queued question was offered only when the session's current run ended; after a restart it could wait forever.
+  It is now offered whenever nothing is running, one at a time.
+What remains: 7 is M5. The local model's own sentences after code's lead still vary run to run.
+
 **Results (founder, 2026-11-08):** PASS RX2, RX3, RX4, RX5, RX6, RX7, RX8, RX9, RX10, RX12 (visible parts). FAIL RX11.
 To fix:
 - 58 (important): "What is our gross revenue churn?" was answered "Your gross burn is $428,612.47 as of 2026-10, but that's not the same as gross revenue churn…" with a green Verified badge. Route every metric name and synonym to the right metric; a reply that does not answer the question is never Verified; the answer and chip state the period (45).
@@ -1196,6 +1229,9 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M4 fix session, round 3 (2026-11-08)
+- Recorded the RX1–RX12 results, then fixed 58, 51, 54/54b, 56, 57, 52, 53, 59 (see the feedback item). New: `app/agents/dedupe.py`, `tests/test_m4_round3.py`; `Verification.state` gains `not_run`; `Projection.zero_cash_month`.
+
 ### M4 fix session, round 2 (2026-11-08)
 - Recorded the RW1–RW12 results, then fixed P1 and P2 in order (see the feedback item). New: `app/agents/horizon.py`; versioned backups (`_versions` table; the old one-step `_backups` is migrated on first read); `price_applies_to_existing` in the scenario engine (new-customers-only pricing); `frontend/e2e/turns.spec.ts`.
 - Live against a scratch backend with the real local model: 49 found the Analyst projecting 36 months, and the lead's "36" was flagged as unsourced: the lead now names the end month only. 40 found the follow-up taken as figures and re-run without an offer: fixed.
@@ -1273,6 +1309,12 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M4 fix round 3, 2026-11-08)
+- A finance answer that does not give every metric the question names is "not verified", whatever else checks out.
+- "Net revenue churn" (and net MRR / dollar churn) is answered with net revenue retention, labelled, as an assumption.
+- Nothing ran (held back, or a greeting): the badge is a neutral "Not run".
+- A decision lead says in one clause why its proposal beats an option with more runway: that option moves away from a goal, else this one is easier to undo.
 
 ## Decisions made (M4 fix round 2, 2026-11-08)
 - A question beyond the projection gets code's sentence about the last projected month, as an assumption: amber, never green.

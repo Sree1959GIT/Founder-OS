@@ -140,7 +140,7 @@ export interface DecisionFrame {
 }
 
 export interface VerificationView {
-  state: "verified" | "assumptions" | "not_verified";
+  state: "verified" | "assumptions" | "not_verified" | "not_run";
   reasons: string[];
   assumptions: string[];
   removed_claims: number;

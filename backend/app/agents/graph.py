@@ -40,16 +40,19 @@ from app.agents.runtime import (
     Plan,
     _team,
     advise,
+    metrics_named,
     plan,
+    stand_in_note,
     team_impact,
     team_projection,
 )
 from app.agents.sources import vault_checker
 from app.agents.specialists import MemoRef
 from app.agents.tools import DecisionImpact, ToolContext
-from app.agents.verification import Verification, verification
+from app.agents.verification import Verification, not_run, verification
 from app.agents.verifier import extract_figures, number_supported, verify_numbers
 from app.decision.base import DecisionService
+from app.engine.metrics import METRICS
 from app.llm.base import Usage
 from app.llm.router import LLMRouter
 from app.vault.decisions import DecisionRecord
@@ -458,6 +461,17 @@ class AgentOrchestrator:
         # Beyond the projection: code gave the last projected month instead, an assumption the founder confirms.
         asked = beyond(run.message, team_projection(results)) if results else None
         assumptions += 1 if asked else 0
+        # A metric answered by its closest routine (net revenue churn as net revenue retention): code says so.
+        stand_in = stand_in_note(run.message) if the_plan.intent == "finance" and results else None
+        assumptions += 1 if stand_in else 0
+        # A metric question whose answer does not give that metric is never verified (founder re-test 58: gross
+        # revenue churn was answered with gross burn, under a green badge).
+        if the_plan.intent == "finance" and results:
+            asked_for = list(dict.fromkeys(m for _, m in metrics_named(run.message)))
+            missing = [m for m in asked_for if m not in {x.metric for x in metrics}]
+            if missing:
+                names = ", ".join(METRICS[m].label if m in METRICS else m for m in missing)
+                issues.append(f"the answer does not give {names}, which was asked")
         if assumptions:
             issues.append(f"this rests on {assumptions} assumptions to confirm")
         usage = sum((r.usage for r in results), Usage()) + advisor.get("usage", Usage())
@@ -466,6 +480,8 @@ class AgentOrchestrator:
         to_confirm = [model.item_line(i) for i in model.items if i.basis == "assumption"] if model else []
         if asked:
             to_confirm.append(beyond_issue(asked, team_projection(results)))
+        if stand_in:
+            to_confirm.append(stand_in.replace(" (assumption, confirm)", ""))
         sources = list(
             dict.fromkeys(
                 [*(c.path for c in citations), *(f for r in results for lin in r.lineage for f in lin.source_files)]
@@ -494,7 +510,10 @@ class AgentOrchestrator:
             memo=next((r.memo for r in results if r.memo is not None), None),
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             verified=not issues and all_done,
-            verification=verification(issues, all_done, to_confirm, sources, resolved=_removed_before_shown(results)),
+            # Nothing ran (held back, or a greeting): no check to report, so the badge is a neutral "not run".
+            verification=not_run()
+            if not approved or not results
+            else verification(issues, all_done, to_confirm, sources, resolved=_removed_before_shown(results)),
             issues=issues,
             advisor_provider=str(advisor.get("provider", "")),
             advisor_model=str(advisor.get("model", "")),

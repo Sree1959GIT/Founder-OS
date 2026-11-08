@@ -40,6 +40,7 @@ class Projection(BaseModel):
     cash: float
     adjusted: bool
     currency: str = "USD"
+    zero_cash_month: str | None = None  # within the projection: the months after it assume new funding
 
     @classmethod
     def of(cls, result: ScenarioResult) -> Projection | None:
@@ -56,7 +57,12 @@ class Projection(BaseModel):
             cash=float(last.scenario_cash if adjusted else last.base_cash),
             adjusted=adjusted,
             currency=result.currency,
+            zero_cash_month=result.scenario_zero_cash_month if adjusted else result.base_zero_cash_month,
         )
+
+    @property
+    def past_zero_cash(self) -> bool:
+        return self.zero_cash_month is not None and self.zero_cash_month[:7] < self.last_month[:7]
 
 
 class AskedPeriod(BaseModel):
@@ -134,8 +140,17 @@ def horizon_lead(message: str, asked: AskedPeriod, projection: Projection | None
         parts.append(f"cash of {_money(projection.cash)}")
     return (
         f"The model's projection runs to {last}, so it has no figure for {asked.label}. "
-        f"Its last month, {last}, shows {' and '.join(parts)}, which assumes today's trend holds ({ASSUMPTION})."
+        f"Its last month, {last}, shows {' and '.join(parts)}, which assumes today's trend holds"
+        f"{funded_clause(projection)} ({ASSUMPTION})."
     )
+
+
+def funded_clause(projection: Projection | None) -> str:
+    """Founder re-test 52: a last month after the zero-cash month is a figure for a company that has run out of cash,
+    unless it raises. Said in one clause."""
+    if projection is None or not projection.past_zero_cash or projection.zero_cash_month is None:
+        return ""
+    return f" and that you stay funded after cash runs out in {month_words(projection.zero_cash_month)}"
 
 
 def beyond_issue(asked: AskedPeriod, projection: Projection | None) -> str:

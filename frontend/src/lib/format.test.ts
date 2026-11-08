@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decisionTitle, itemValue, money, periodLabel, runTitle, syncTitle, withPeriod } from "@/lib/format";
+import { collapseVersions, decisionTitle, itemValue, money, periodLabel, runTitle, syncTitle, withPeriod } from "@/lib/format";
 
 const memo = "---\ntitle: Dubai office\nstatus: proposed\n---\n# Dubai office\n\nBody.\n";
 
@@ -72,5 +72,13 @@ describe("periodLabel", () => {
     expect(periodLabel("2026-08..2026-10")).toBe("Aug–Oct 2026");
     expect(periodLabel("2025-11..2026-10")).toBe("Nov 2025–Oct 2026");
     expect(withPeriod("pnl.csv · rows 2–31", "2026-08..2026-10")).toBe("pnl.csv · rows 2–31 · Aug–Oct 2026");
+  });
+});
+
+describe("collapseVersions (59)", () => {
+  it("lists identical consecutive versions once, keeping the newest", () => {
+    const v = (id: string, rows: number, source_file: string, clean_sample = false) => ({ id, table: "pnl", rows, source_file, clean_sample });
+    const list = [v("a", 1, "one_row.csv"), v("b", 1, "one_row.csv"), v("c", 360, "northwind_financials.xlsx", true), v("d", 1, "one_row.csv")];
+    expect(collapseVersions(list).map((x) => x.id)).toEqual(["a", "c", "d"]);
   });
 });

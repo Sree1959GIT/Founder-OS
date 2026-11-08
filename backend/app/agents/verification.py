@@ -3,6 +3,7 @@
 - `verified`: every check passed and nothing rests on a placeholder.
 - `assumptions`: every figure checked out, and the answer rests on labelled placeholder inputs only. Placeholders are
   never "verified", but they are not a failure either: the founder confirms them.
+- `not_run`: nothing ran (the team was held back, or a greeting), so there is nothing to vouch for.
 - `not_verified`: some check failed. `reasons` say which kind, in words that never name a removed figure or source.
 
 The issues themselves are the audit trail (they may name a removed figure), so the founder sees only these reasons.
@@ -30,7 +31,7 @@ _KINDS: list[tuple[re.Pattern[str], str]] = [
 
 
 class Verification(BaseModel):
-    state: Literal["verified", "assumptions", "not_verified"]
+    state: Literal["verified", "assumptions", "not_verified", "not_run"]
     reasons: list[str] = Field(default_factory=list, description="Why not verified, naming no removed figure")
     assumptions: list[str] = Field(default_factory=list, description="The placeholder inputs to confirm")
     removed_claims: int = Field(0, description="Sentences taken out because nothing backed them")
@@ -55,6 +56,10 @@ def _reason(issue: str) -> str | None:
     if extract_figures(text) or "/" in text or "[" in text:
         return "Another check did not pass."
     return text[:1].upper() + text[1:].rstrip(".") + "."
+
+
+def not_run() -> Verification:
+    return Verification(state="not_run")
 
 
 def verification(

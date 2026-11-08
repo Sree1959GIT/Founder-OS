@@ -22,6 +22,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.agents.decision_frame import DecisionFrame, OptionCost, build_frame, names_goal
+from app.agents.dedupe import near_duplicate, without_repeats
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
 from app.agents.horizon import Projection, beyond, horizon_lead, without_uncovered
@@ -146,29 +147,103 @@ _SPELLED_NUMBERS = frozenset(
     }
 )
 
-# Keyword -> metric routine, for the rule-based Financial Analyst (first match wins).
+# Name or synonym -> metric routine (first match wins, so a longer form always comes before any part of it:
+# "gross revenue churn" before "gross" anything, "ltv:cac" before "ltv" and "cac"). Founder re-test 58: "gross revenue
+# churn" was not a known name, so the question went to the model, which answered with gross burn.
 METRIC_KEYWORDS: list[tuple[str, str]] = [
     ("runway", "runway"),
+    ("months of cash", "runway"),
+    ("cash runway", "runway"),
+    ("gross revenue churn", "revenue_churn"),
+    ("gross mrr churn", "revenue_churn"),
+    ("gross dollar churn", "revenue_churn"),
+    ("net revenue churn", "nrr"),  # shown as its counterpart, net revenue retention (see STAND_INS)
+    ("net mrr churn", "nrr"),
+    ("net dollar churn", "nrr"),
+    ("net churn", "nrr"),
+    ("net revenue retention", "nrr"),
+    ("net dollar retention", "nrr"),
+    ("revenue retention", "nrr"),
+    ("revenue churn", "revenue_churn"),
+    ("mrr churn", "revenue_churn"),
+    ("dollar churn", "revenue_churn"),
+    ("logo churn", "logo_churn"),
+    ("customer churn", "logo_churn"),
+    ("churn rate", "logo_churn"),
+    ("net burn rate", "net_burn"),
     ("net burn", "net_burn"),
+    ("gross burn rate", "gross_burn"),
     ("gross burn", "gross_burn"),
+    ("burn rate", "net_burn"),
     ("burn", "net_burn"),
+    ("gross margin", "gross_margin"),
+    ("gross profit margin", "gross_margin"),
+    ("margin", "gross_margin"),
+    ("mrr growth", "mrr_growth"),
+    ("annual recurring revenue", "arr"),
+    ("annual run rate", "arr"),
+    ("run rate", "arr"),
+    ("monthly recurring revenue", "mrr"),
     ("arr", "arr"),
     ("mrr", "mrr"),
-    ("gross margin", "gross_margin"),
-    ("margin", "gross_margin"),
     ("ltv:cac", "ltv_cac"),
+    ("ltv/cac", "ltv_cac"),
+    ("ltv to cac", "ltv_cac"),
+    ("ltv-to-cac", "ltv_cac"),
+    ("ltv cac", "ltv_cac"),
+    ("customer lifetime value", "ltv"),
+    ("lifetime value", "ltv"),
     ("ltv", "ltv"),
+    ("cac payback", "cac_payback"),
+    ("payback period", "cac_payback"),
     ("payback", "cac_payback"),
+    ("customer acquisition cost", "cac"),
+    ("acquisition cost", "cac"),
+    ("cost per acquisition", "cac"),
     ("cac", "cac"),
     ("nrr", "nrr"),
+    ("ndr", "nrr"),
     ("retention", "nrr"),
-    ("revenue churn", "revenue_churn"),
     ("churn", "logo_churn"),
+    ("average revenue per account", "arpa"),
     ("arpa", "arpa"),
+    ("arpu", "arpa"),
+    ("revenue growth", "revenue_growth"),
+    ("growth rate", "revenue_growth"),
     ("growth", "revenue_growth"),
+    ("headcount cost", "headcount_cost"),
     ("headcount", "headcount_cost"),
     ("payroll", "headcount_cost"),
 ]
+# A name with no routine of its own, answered by its closest one: code says so, and it counts as an assumption.
+STAND_INS: dict[str, str] = {
+    "net revenue churn": "Net revenue churn is shown as its counterpart, net revenue retention (assumption, confirm).",
+    "net mrr churn": "Net MRR churn is shown as its counterpart, net revenue retention (assumption, confirm).",
+    "net dollar churn": "Net dollar churn is shown as its counterpart, net revenue retention (assumption, confirm).",
+    "net churn": "Net churn is shown as its counterpart, net revenue retention (assumption, confirm).",
+}
+
+
+def _keyword(keyword: str) -> str:
+    return rf"(?<![\w:/-]){re.escape(keyword)}(?![\w:/-])"
+
+
+def metrics_named(text: str) -> list[tuple[str, str]]:
+    """Every (name, metric) a text names, in table order, each part of the text read once: "gross revenue churn" is
+    revenue churn only, never gross anything as well."""
+    left = text.lower().replace("\u2019", "'")
+    found: list[tuple[str, str]] = []
+    for keyword, metric in METRIC_KEYWORDS:
+        pattern = _keyword(keyword)
+        if re.search(pattern, left):
+            found.append((keyword, metric))
+            left = re.sub(pattern, " ", left)
+    return found
+
+
+def stand_in_note(text: str) -> str | None:
+    """Code's sentence when the metric asked for is answered by its closest routine, else None."""
+    return next((STAND_INS[k] for k, _ in metrics_named(text) if k in STAND_INS), None)
 
 
 class AgentInstance(BaseModel):
@@ -266,11 +341,8 @@ def rule_intent(message: str) -> Intent | None:
 
 
 def rule_metric(text: str) -> str | None:
-    lowered = text.lower()
-    for keyword, metric in METRIC_KEYWORDS:
-        if re.search(rf"(?<![\w:]){re.escape(keyword)}(?![\w:])", lowered):
-            return metric
-    return None
+    found = metrics_named(text)
+    return found[0][1] if found else None
 
 
 _LOOKUP_WORDS = frozenset(
@@ -328,17 +400,20 @@ def single_metric(message: str) -> str | None:
 
     "What's our runway?" is a lookup. "Why is burn up?", "runway in March" and "burn and churn" need the model.
     """
-    if not _ASKS_FOR_A_NUMBER.match(message) or _MORE_THAN_A_NUMBER.search(message) or re.search(r"\d", message):
+    if not _ASKS_FOR_A_NUMBER.match(message) or re.search(r"\d", message):
         return None
     if len(message.split()) > MAX_LOOKUP_WORDS:
         return None
-    left = message.lower()
+    left = message.lower().replace("\u2019", "'")
     found: set[str] = set()
     for keyword, metric in METRIC_KEYWORDS:  # longer forms come first, so "net burn" is not read as "burn" as well
-        pattern = rf"(?<![\w:]){re.escape(keyword)}(?![\w:])"
+        pattern = _keyword(keyword)
         if re.search(pattern, left):
             found.add(metric)
             left = re.sub(pattern, " ", left)
+    # Checked once the names are out: "customer churn" is a name, "churn by customer" is another question.
+    if _MORE_THAN_A_NUMBER.search(left):
+        return None
     # Every other word must be one a plain lookup uses: "MRR for January" and "runway we need" are other questions.
     if set(re.findall(r"[a-z]+", left)) - _LOOKUP_WORDS:
         return None
@@ -598,6 +673,9 @@ class AgentRunner:
         result.text = metric_sentence(
             outcome.content, inst.fast_metric, self.ctx_factory(inst.id).finance.metrics.currency
         )
+        note = stand_in_note(user_message)
+        if note:
+            result.text = f"{note} {result.text}"
         result.written_by_code = True
         return True
 
@@ -1411,17 +1489,21 @@ def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], ch
     full = next((o for o in frame.options if o.is_full), None)
     model = frame.cost_model
     parts: list[str] = []
+    asked = _as_you_asked(model)
+    why = _why_proposed(frame, proposed) if proposed is not None else ""
     if proposed is not None:
-        parts.append(f"Proposed: {_option_words(proposed, frame.currency)}.")
+        mine = asked if proposed.is_full or model is None else ""
+        parts.append(f"Proposed: {_option_words(proposed, frame.currency)}{mine}{why}.")
     if model is not None and (proposed is None or not proposed.is_full):
         base = model.case("base")
         name = full.name if full is not None else model.subject
         runway = _runway_words(base.base_runway_months, base.scenario_runway_months, base.runway_change_months)
         away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
-        goal = f', which moves you away from your goal "{away}"' if away else ""
+        # Said once: the clause on why the proposal wins may already name this goal (founder re-test 54).
+        goal = f', which moves you away from your goal "{away}"' if away and away not in why else ""
         parts.append(
-            f"The full model, {name}, is {model.money(base.one_off)} up front and {model.money(base.monthly)} a month"
-            f"{runway}{goal}; all of these are assumptions to confirm."
+            f"The full model, {name}{asked}{',' if asked else ''} is {model.money(base.one_off)} up front and "
+            f"{model.money(base.monthly)} a month{runway}{goal}; all of these are assumptions to confirm."
         )
     elif parts:
         parts.append("These are assumptions to confirm.")
@@ -1435,6 +1517,53 @@ def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], ch
             "drafted it?"
         )
     return " ".join(parts)
+
+
+_SMALL = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def _as_you_asked(model: Any) -> str:
+    """Founder re-test 54b: a figure the founder gave (often by changing the request) is acknowledged in one clause:
+    ", with two local hires, as you asked". Counts are spelled out, so no number needs a source."""
+    if model is None:
+        return ""
+    given = [i for i in model.items if i.basis == "founder"]
+    if not given:
+        return ""
+    words = []
+    for item in given:
+        if item.cadence == "count" and float(item.base).is_integer() and 0 <= item.base <= 10:
+            words.append(f"{_SMALL[int(item.base)]} {item.name.lower()}")
+        elif item.cadence == "percent":
+            words.append(f"{item.name.lower()} of {item.base:+g} %")
+        elif item.cadence == "points":
+            words.append(f"{item.name.lower()} of {item.base:+g} pts")
+        elif item.cadence == "count":
+            words.append(f"{item.base:g} {item.name.lower()}")
+        else:
+            words.append(f"{item.name.lower()} of {model.money(item.base)}")
+    return f", with {' and '.join(words)}, as you asked"
+
+
+def _why_proposed(frame: DecisionFrame, proposed: OptionCost) -> str:
+    """Founder re-test 57: when the full model does more for runway than the proposal, one clause says why the
+    proposal still comes first: the full model moves away from a goal, or the proposal is easier to undo. Doing
+    nothing is never the comparison: a smaller step is not proposed over it for its runway."""
+    full = next((o for o in frame.options if o.is_full), None)
+    if (
+        full is None
+        or full.name == proposed.name
+        or not proposed.modelled
+        or proposed.runway_change_months is None
+        or full.runway_change_months is None
+        or full.runway_change_months <= proposed.runway_change_months + 0.005
+    ):
+        return ""
+    away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
+    because = (
+        f'{full.name} moves you away from your goal "{away}"' if away else f"it is easier to undo than {full.name}"
+    )
+    return f"; proposed over {full.name} (runway {full.runway_change_months:+.2f} months) because {because}"
 
 
 def _runway_words(before: float | None, after: float | None, change: float | None) -> str:
@@ -1491,6 +1620,8 @@ class _SentenceGate:
         self.noted = False
         self.max_sentences: int | None = None  # a decision answer stays short
         self.said: list[str] = []  # what went out, to drop a sentence said twice
+        self.shown: list[str] = []  # the same, as written: a near-duplicate goes too (founder re-test 54)
+        self.goals = [g.goal for g in frame.goals] if frame is not None else []
         self.lead_figures: list[float] = []  # code's lead already gave these: a sentence of only these repeats it
         self.draft_on_record = False  # a proposed memo is on record: no question about its kill criteria
         self.no_figures = False  # the question is beyond the projection: the model may add no figure
@@ -1505,6 +1636,8 @@ class _SentenceGate:
                 continue
             if key in self.said or (self.max_sentences is not None and len(self.said) >= self.max_sentences):
                 continue
+            if any(near_duplicate(piece, earlier, self.goals) for earlier in self.shown):
+                continue
             figures = extract_figures(piece)
             if figures and self.no_figures:
                 continue
@@ -1513,6 +1646,7 @@ class _SentenceGate:
             if self.draft_on_record and (_KILL_QUESTION.search(piece) or _TARGET_QUESTION.search(piece)):
                 continue
             self.said.append(key)
+            self.shown.append(piece)
             kept.append(piece)
         out = "".join(kept)
         return out if out.strip() else ""  # nothing left: no stray spaces between what was said
@@ -1717,6 +1851,7 @@ async def advise(
     if lead:
         gate.max_sentences = DECISION_PROSE_SENTENCES
         gate.said.extend(re.sub(r"\W+", " ", p).strip().lower() for p in split_sentences(lead))
+        gate.shown.extend(p for p in split_sentences(lead) if p.strip())
         gate.max_sentences += len(gate.said)
         gate.lead_figures = [f.value for f in extract_figures(lead)]
         gate.draft_on_record = any(not r.is_decided for r in records)
@@ -1749,7 +1884,8 @@ async def advise(
                 if note:
                     sent.append(note)
                     yield StreamChunk(delta=note)
-                text = "".join(sent)
+                # The last pass: what a later note or sentence said again goes from the answer on record.
+                text = without_repeats("".join(sent), gate.goals)
                 yield StreamChunk(done=True, completion=chunk.completion.model_copy(update={"text": text}))
     except LLMError as exc:
         provider = router.primary(spec.privacy)
@@ -1775,7 +1911,7 @@ async def advise(
             gate.max_sentences = None  # the findings are the answer here: only what the lead already said goes
             text = gate._budgeted(text)
         yield StreamChunk(delta=text)
-        text = f"{lead} {text}" if lead else text
+        text = without_repeats(f"{lead} {text}" if lead else text, gate.goals)
         yield StreamChunk(
             done=True, completion=Completion(text=text, provider="rules", model="", fallback_from=provider.name)
         )

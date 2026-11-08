@@ -18,7 +18,7 @@ import {
   type UploadConflict,
   type UploadMode,
 } from "@/lib/api";
-import { csvHeaders } from "@/lib/format";
+import { collapseVersions, csvHeaders } from "@/lib/format";
 
 const selectClass = "h-10 min-w-0 rounded-lg border border-border-strong bg-background px-2 text-sm";
 
@@ -290,7 +290,7 @@ export function DataPanel() {
           <div className="mb-3 flex flex-col gap-1.5" data-testid="backups">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Earlier versions you can restore</p>
             <ul className="flex flex-col gap-1.5" aria-label="Earlier versions">
-              {backups.map((b) => (
+              {collapseVersions(backups).map((b) => (
                 <li key={b.id || b.table} className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground" data-testid="version">
                   <span>
                     <span className="num text-foreground">{b.table}</span>: <span className="num">{b.rows.toLocaleString("en-US")}</span> rows

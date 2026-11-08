@@ -262,3 +262,14 @@ export function withPeriod(text: string, period: string | null | undefined): str
   const words = periodLabel(period);
   return words && !text.includes(words) ? `${text} · ${words}` : text;
 }
+
+/**
+ * Identical versions one after another (same table, rows and source) are listed once: the first, which is the newest
+ * (founder re-test 59: three uploads of one file showed three equal rows).
+ */
+export function collapseVersions<
+  T extends { table: string; rows: number; source_file?: string | null; clean_sample?: boolean },
+>(versions: T[]): T[] {
+  const key = (v: T) => [v.table, v.rows, v.source_file ?? "", Boolean(v.clean_sample)].join("|");
+  return versions.filter((v, i) => i === 0 || key(versions[i - 1] as T) !== key(v));
+}

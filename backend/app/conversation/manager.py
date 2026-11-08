@@ -282,7 +282,9 @@ class ConversationManager:
             _ready_line(event.data),
         )
         self._say(session, recap, "recap")
-        if session.run_id == run_id:
+        # Founder re-test 56: every queued question is offered, one at a time, once nothing is running, whichever run
+        # ended (the session may have moved on to a restarted run that has already finished).
+        if session.run_id == run_id or not self._active(session):
             self._offer_next(session)
         self._close_offers(session, keep=session.run_id if session.run_id != run_id else None)
 

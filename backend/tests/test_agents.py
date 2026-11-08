@@ -401,6 +401,7 @@ async def test_team_approval_policy(finance: Any) -> None:
     assert orch.approve(run.run_id, approved=False) and not orch.approve(run.run_id)
     result = await run.task  # type: ignore[misc]
     assert result.status == "rejected" and result.agents == [] and "not approved" in result.answer
+    assert result.verification.state == "not_run"  # 51: held back, so no "Verified" badge
     assert any(e.type == "team.rejected" for e in orch.bus.history(run.run_id))
 
 

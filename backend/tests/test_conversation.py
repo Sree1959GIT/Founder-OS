@@ -455,3 +455,31 @@ async def test_a_follow_up_to_the_dubai_answer_is_offered_not_run_at_once(financ
     hires = next(i for i in new_run.plan.frame.cost_model.items if i.key == "hires")
     assert hires.base == 2 and hires.basis == "founder"
     assert [i.type for i in new_run.plan.team] == [i.type for i in run.plan.team]  # type: ignore[union-attr]
+
+
+async def test_every_queued_question_is_offered_one_at_a_time(finance: Any) -> None:
+    """56: never asked by itself; each is offered with Ask it now / Drop it, in order."""
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    first = await manager.turn(session_id, "What is our runway?")
+    second = await manager.turn(session_id, "What is our churn?")
+    provider.release.set()
+    await run.task
+    await _until(lambda: manager.sessions[session_id].queue[0].status == "offered")
+    queue = manager.sessions[session_id].queue
+    assert [(q.id, q.status) for q in queue] == [(first.queue_id, "offered"), (second.queue_id, "queued")]
+    assert manager.answer_queue(session_id, first.queue_id or "", False) == {"accepted": False, "run_id": None}
+    assert [(q.id, q.status) for q in manager.sessions[session_id].queue] == [(second.queue_id, "offered")]
+
+
+async def test_a_queued_question_is_offered_when_an_older_run_ends_and_nothing_runs(finance: Any) -> None:
+    """56: the session had moved on to another run, already finished: the queue is still offered."""
+    manager, provider = lane(finance)
+    session_id, run = await started(manager)
+    queued = await manager.turn(session_id, "What is our runway?")
+    session = manager.sessions[session_id]
+    session.run_id = "run_other"  # a restarted run that has already ended
+    provider.release.set()
+    await run.task
+    await _until(lambda: session.queue[0].status == "offered")
+    assert session.queue[0].id == queued.queue_id
