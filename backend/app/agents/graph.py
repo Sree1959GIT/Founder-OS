@@ -143,11 +143,36 @@ class ChatResult(BaseModel):
     status: str = "done"
 
 
+class DeltaQueue(asyncio.Queue["str | None"]):
+    """The Advisor's text as it is let out. The canvas reads this queue; the voice reads a `tap()` of it (M5).
+
+    A tap starts with everything said so far, then gets each new piece, so two readers never split one answer.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.said: list[str | None] = []
+        self.taps: list[asyncio.Queue[str | None]] = []
+
+    def put_nowait(self, item: str | None) -> None:
+        self.said.append(item)
+        for tap in self.taps:
+            tap.put_nowait(item)
+        super().put_nowait(item)
+
+    def tap(self) -> asyncio.Queue[str | None]:
+        copy: asyncio.Queue[str | None] = asyncio.Queue()
+        for item in self.said:
+            copy.put_nowait(item)
+        self.taps.append(copy)
+        return copy
+
+
 @dataclass
 class RunContext:
     run_id: str
     message: str
-    deltas: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
+    deltas: DeltaQueue = field(default_factory=lambda: DeltaQueue())
     approval: asyncio.Event = field(default_factory=asyncio.Event)
     approved: bool | None = None
     timings: dict[str, float] = field(default_factory=dict)

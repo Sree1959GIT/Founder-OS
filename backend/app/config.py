@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     max_local_agents: int = Field(default=2, ge=1, le=16)
     max_cloud_agents: int = Field(default=6, ge=1, le=32)
     agent_max_steps: int = Field(default=4, ge=1, le=12)
+    # The Advisor warns when this share of Monte Carlo runs (or more) runs out of cash within 12 months. Above 1: off.
+    cash_risk_warn_at: float = Field(default=0.5, ge=0, le=2)
     # Decision model (F7): llm (OLLAMA_CHAT_MODEL with JSON output) | fake. Below the confidence: escalate.
     decision_provider: Literal["llm", "fake", "laya", "jev"] = "llm"
     decision_min_confidence: float = Field(default=0.75, ge=0, le=1)
@@ -132,6 +134,26 @@ class Settings(BaseSettings):
     # HTTP
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     health_probe_timeout_s: float = Field(default=2.0, gt=0, le=30)
+    # Voice (M5, PRD F5). Models live in <data>/models; scripts/download_voice_models.py fetches them.
+    voice_enabled: bool = True
+    voice_mode: Literal["ptt", "duplex"] = "ptt"
+    # faster_whisper: small.en on CUDA (int8_float16), base.en int8 on CPU as the fallback. fake: tests.
+    voice_stt: Literal["faster_whisper", "fake"] = "faster_whisper"
+    voice_stt_model: str = "small.en"
+    voice_stt_cpu_model: str = "base.en"
+    voice_stt_device: Literal["auto", "cuda", "cpu"] = "auto"
+    voice_stt_compute_type: str = "auto"
+    # kokoro: Kokoro-82M ONNX on CPU (leaves the shared GPU to qwen3:8b and Whisper). fake: tests.
+    voice_tts: Literal["kokoro", "fake"] = "kokoro"
+    voice_tts_model: str = "kokoro-v1.0.onnx"
+    voice_tts_voice: str = "af_heart"
+    voice_models_dir: Path | None = None  # empty: <data_dir>/models
+    # silero: Silero VAD v6 (ONNX, bundled with faster-whisper). energy: an RMS threshold (fallback, tests).
+    voice_vad: Literal["silero", "energy"] = "silero"
+    voice_vad_threshold: float = Field(default=0.5, gt=0, lt=1)
+    voice_end_silence_ms: int = Field(default=400, ge=100, le=3000)
+    voice_barge_in_ms: int = Field(default=600, ge=100, le=5000)
+    voice_partial_interval_ms: int = Field(default=0, ge=0, le=5000)
 
     @field_validator("deep_provider", mode="before")
     @classmethod
@@ -168,6 +190,9 @@ class Settings(BaseSettings):
 
     def _resolve(self, path: Path) -> Path:
         return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+
+    def voice_models_path(self) -> Path:
+        return self._resolve(self.voice_models_dir or (self.data_dir / "models"))
 
     def workspace_data_dir(self, workspace_id: str | None = None) -> Path:
         """`<DATA_DIR>/<workspace_id>`: DuckDB file, mappings and logs for one workspace."""

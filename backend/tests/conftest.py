@@ -61,6 +61,10 @@ def settings(tmp_path: Path) -> Settings:
         vault_watch=False,
         llm_provider="fake",
         decision_provider="fake",
+        cash_risk_warn_at=2.0,
+        voice_stt="fake",
+        voice_tts="fake",
+        voice_vad="energy",  # off; tests/test_m5_carried.py turns it on
     )
 
 

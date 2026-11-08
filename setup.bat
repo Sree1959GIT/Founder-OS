@@ -53,7 +53,9 @@ if errorlevel 1 (
   echo        Recommended: install Python 3.12, delete the .venv folder and run setup.bat again.
 )
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul || exit /b 1
-".venv\Scripts\python.exe" -m pip install -e "backend[dev,gpu]" || exit /b 1
+".venv\Scripts\python.exe" -m pip install -e "backend[dev,gpu,voice]" || exit /b 1
+rem Voice models (Whisper, Kokoro) into data\models: about 900 MB once. A failure leaves text mode working.
+".venv\Scripts\python.exe" scripts\download_voice_models.py || echo Voice models not downloaded: run "python scripts\download_voice_models.py" later.
 
 rem --- Frontend ------------------------------------------------------------------
 echo Installing frontend dependencies ...

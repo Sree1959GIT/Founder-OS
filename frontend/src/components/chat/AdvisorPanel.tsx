@@ -1,7 +1,8 @@
-import { BellOff, Bell, Mic, SendHorizontal } from "lucide-react";
+import { BellOff, Bell, SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { AnswerCard } from "@/components/chat/AnswerCard";
+import { VoiceControls } from "@/components/chat/VoiceControls";
 import { ErrorNote } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useWorkspace, type Turn } from "@/lib/workspace";
@@ -160,7 +161,7 @@ export function AdvisorPanel() {
         </div>
       ) : null}
 
-      <form onSubmit={submit} className="m-4 mt-2 flex items-center gap-2 rounded-2xl border border-border-strong bg-card p-3">
+      <form onSubmit={submit} className="m-4 mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-border-strong bg-card p-3">
         <label htmlFor="ask" className="sr-only">
           Ask the advisor
         </label>
@@ -177,17 +178,7 @@ export function AdvisorPanel() {
         <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()} className="h-11 w-11 rounded-lg">
           <SendHorizontal aria-hidden="true" />
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label="Microphone (available in M5)"
-          title="Voice arrives in M5"
-          disabled
-          className="h-11 w-11 rounded-lg"
-        >
-          <Mic aria-hidden="true" />
-        </Button>
+        <VoiceControls />
       </form>
     </aside>
   );
