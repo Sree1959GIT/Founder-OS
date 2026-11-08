@@ -544,7 +544,7 @@ async def test_a_question_beyond_the_projection_never_gets_a_figure_for_that_dat
         ]
     )
     result = await orchestrator(provider, finance, None).start(question).task  # type: ignore[misc]
-    assert result.answer.startswith("The model projects 12 months, to ")
+    assert result.answer.startswith("The model's projection runs to ")
     assert f"so it has no figure for {label}" in result.answer
     assert f"{last}, which assumes today's trend holds (assumption, confirm)" in result.answer
     assert result.answer.count(last) == 1  # only code's labelled month-12 figure, never "for 2031"
@@ -573,6 +573,6 @@ def test_a_metric_answer_names_the_period_it_is_for() -> None:
         "as_of": "2026-10",
         "lineage": {"period": "2026-08..2026-10"},
     }
-    assert "over the 3 months to October 2026" in metric_sentence(content, "gross_revenue_churn")
+    assert "for August to October 2026" in metric_sentence(content, "gross_revenue_churn")
     point = {**content, "lineage": {"period": "2026-10"}}
     assert "as of October 2026" in metric_sentence(point, "gross_revenue_churn")

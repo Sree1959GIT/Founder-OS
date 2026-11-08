@@ -64,10 +64,15 @@ def in_one_voice(text: str) -> str:
     # Seen in the founder's review: "your adviser or your adviser", once two job titles became the same word.
     spoken = _SAME_TWICE.sub(r"\1", spoken)
     # "reducing runway by -2.07 months" says it twice: the verb already carries the sign.
-    return _DOUBLE_NEGATIVE.sub(lambda m: f"{m.group(1)} by {m.group(2)}", spoken)
+    spoken = _DOUBLE_NEGATIVE.sub(lambda m: f"{m.group(1)} by {m.group(2)}", spoken)
+    # "...assumptions to confirm (assumption, confirm)": the sentence already says it (founder re-test 50).
+    return _TAG_TWICE.sub(r"\1", spoken)
 
 
 _SAME_TWICE = re.compile(r"\b((?:your|an?|the)\s+advis[eo]rs?)(?:\s*(?:,|/|\bor\b|\band\b)\s*\1\b)+", re.I)
+_TAG_TWICE = re.compile(
+    r"(\bassumptions?\s+(?:to|you should|for you to)\s+confirm\b[^.(]*?)\s*\(assumption, confirm\)", re.I
+)
 _DOUBLE_NEGATIVE = re.compile(
     r"\b((?:reduc|lower|cut|shorten|shrink|decreas)\w*\s+(?:your\s+|the\s+|projected\s+)*runway)\s+by\s+-\s?(\d)",
     re.I,

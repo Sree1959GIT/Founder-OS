@@ -6,6 +6,12 @@ export interface AgentCatalog {
   agents: { type: string; title: string; spawnable: boolean; is_cloud?: boolean; job?: string }[];
   max_local_agents: number;
   max_cloud_agents: number;
+  cloud?: { allowed?: boolean; default_provider?: string | null };
+}
+
+/** Cloud agents can run: allowed in Settings and a provider with a key. Otherwise no cloud slot is shown (re-test 39). */
+export function cloudOn(catalog: AgentCatalog | null): boolean {
+  return Boolean(catalog?.cloud?.allowed && catalog.cloud.default_provider);
 }
 
 const ACTIVE = new Set(["thinking", "querying_data", "searching_vault", "searching_web", "waiting_cloud", "verifying"]);

@@ -437,3 +437,21 @@ async def test_the_same_question_is_queued_once(finance: Any) -> None:
 
 def test_what_if_is_a_follow_up() -> None:
     assert by_rules("what if we hired three instead?") == "amendment"
+
+
+async def test_a_follow_up_to_the_dubai_answer_is_offered_not_run_at_once(finance: Any) -> None:
+    """40, seen live: the Dubai frame asks for inputs, so "make it a two person team" re-ran with no offer."""
+    manager, provider = lane(finance)
+    provider.release.set()
+    first = await manager.turn("s40d", "Should we open a Dubai office?")
+    run = manager.orchestrator.runs[first.run_id or ""]
+    await run.task
+    offer = await manager.turn("s40d", "also make it a two person team")
+    assert offer.amendment_id and offer.reply == "That changes the decision. Restart with your change?"
+    accepted = manager.answer_amendment("s40d", offer.amendment_id or "", True)
+    new_run = manager.orchestrator.runs[accepted["run_id"]]
+    await new_run.task
+    assert new_run.plan is not None and new_run.plan.frame is not None and new_run.plan.frame.cost_model is not None
+    hires = next(i for i in new_run.plan.frame.cost_model.items if i.key == "hires")
+    assert hires.base == 2 and hires.basis == "founder"
+    assert [i.type for i in new_run.plan.team] == [i.type for i in run.plan.team]  # type: ignore[union-attr]

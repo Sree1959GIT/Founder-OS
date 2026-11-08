@@ -5,7 +5,7 @@ import { ErrorNote, EmptyNote, Pill, VerifiedBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { approveRun, cancelAgent, cancelRun, rerunAgent, type AgentInstance, type TeamEdit } from "@/lib/api";
 import { agentCode, agentKind, runTitle, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
-import { slotsInUse, useCatalog, type AgentCatalog } from "@/hooks/useCatalog";
+import { cloudOn, slotsInUse, useCatalog, type AgentCatalog } from "@/hooks/useCatalog";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
@@ -366,7 +366,13 @@ export function AgentActivity() {
           Local slots <span className="num">{slots.local}/{catalog?.max_local_agents ?? 2}</span>
         </Pill>
         <Pill>
-          Cloud slots <span className="num">{slots.cloud}/{catalog?.max_cloud_agents ?? 6}</span>
+          {cloudOn(catalog) ? (
+            <>
+              Cloud slots <span className="num">{slots.cloud}/{catalog?.max_cloud_agents ?? 6}</span>
+            </>
+          ) : (
+            "Cloud off"
+          )}
         </Pill>
         <Pill title="An estimate from the provider's published prices">
           Run cost <span className="num">{cost === null ? "n/a" : `≈ $${cost.toFixed(2)}`}</span>

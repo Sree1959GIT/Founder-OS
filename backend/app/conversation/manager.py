@@ -394,6 +394,11 @@ class ConversationManager:
     async def _turn_when_idle(self, session: Session, text: str) -> TurnOutcome:
         """Rules only. With nothing to protect, an unclear turn is simply a request: no model call before the run."""
         last = self.orchestrator.runs.get(session.run_id) if session.run_id else None
+        kind = by_rules(text)
+        # A decision is still open on screen: a follow-up ("also…", "make it…", "what if…") changes that decision,
+        # once the founder says yes (founder re-test 40). Plain figures in reply to the lane's question re-run at once.
+        if kind == "amendment" and last is not None and self._is_decision(last.run_id):
+            return self._offer_amendment(session, Classified(kind=kind, by="rules"), last, text)
         if self._gives_inputs(last, text) and last is not None:
             edited = f"{last.message}\nThe founder then added: {text}"
             run = self._start_run(
@@ -406,10 +411,6 @@ class ConversationManager:
                 reply="Running it again with your figures.",
                 run_id=run.run_id,
             )
-        kind = by_rules(text)
-        # A decision is still open on screen: a follow-up ("also…", "make it…", "what if…") changes that decision.
-        if kind == "amendment" and last is not None and self._is_decision(last.run_id):
-            return self._offer_amendment(session, Classified(kind=kind, by="rules"), last, text)
         if kind == "backchannel":
             return self._reply(session, Classified(kind=kind, by="rules"), "", session.run_id)
         if kind == "stop":

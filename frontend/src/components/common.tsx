@@ -1,5 +1,5 @@
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Citation, Lineage, VerificationView } from "@/lib/api";
 import { lineageLabel, prefillAsk, withPeriod } from "@/lib/format";
@@ -55,7 +55,7 @@ export function VerifiedBadge({ verified, checks = 0 }: { verified: boolean | nu
  * to confirm (amber), or the reasons it failed (red). The word "Verified" alone appears only for the green state.
  */
 export function VerificationBadge({ verification }: { verification: VerificationView }) {
-  const { open, setOpen, ref } = usePopover();
+  const { open, setOpen, ref, panel, shift } = usePopover();
   const id = useId();
   const { state, reasons, assumptions, sources, removed_claims: removed } = verification;
   const n = assumptions.length;
@@ -96,6 +96,8 @@ export function VerificationBadge({ verification }: { verification: Verification
           id={id}
           role="dialog"
           aria-label="What the check found"
+          ref={panel}
+          style={shift ? { transform: `translateX(${shift}px)` } : undefined}
           className="absolute right-0 top-full z-40 mt-1.5 block w-[min(380px,80vw)] rounded-xl border border-border-strong bg-panel p-3.5 text-left text-xs shadow-xl"
         >
           {state === "verified" ? (
@@ -177,9 +179,25 @@ export function AssumptionTag({ label = ASSUMPTION_LABEL }: { label?: string }) 
   );
 }
 
+const EDGE = 8; // px kept clear of the window edge
+
 function usePopover() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+  const [shift, setShift] = useState(0);
+  // A popover never runs off the screen (founder re-test 37: the badge's was cut off at the left edge).
+  useLayoutEffect(() => {
+    if (!open) {
+      setShift(0);
+      return;
+    }
+    const box = panel.current?.getBoundingClientRect();
+    if (!box) return;
+    const width = window.innerWidth || document.documentElement.clientWidth;
+    if (box.left < EDGE) setShift(EDGE - box.left);
+    else if (box.right > width - EDGE) setShift(Math.max(EDGE - box.left, width - EDGE - box.right));
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -195,7 +213,7 @@ function usePopover() {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
-  return { open, setOpen, ref };
+  return { open, setOpen, ref, panel, shift };
 }
 
 const chipClass =
@@ -203,7 +221,7 @@ const chipClass =
 
 /** Dashed blue chip that opens where a number came from: formula, rows, file. */
 export function LineageChip({ lineage, label, align = "left" }: { lineage: Lineage; label?: string; align?: "left" | "right" }) {
-  const { open, setOpen, ref } = usePopover();
+  const { open, setOpen, ref, panel, shift } = usePopover();
   const id = useId();
   // Founder re-test 45: every figure's chip says the period it is for.
   const text = label ?? withPeriod(lineageLabel(lineage.source_rows, lineage.metric), lineage.period);
@@ -223,6 +241,8 @@ export function LineageChip({ lineage, label, align = "left" }: { lineage: Linea
           id={id}
           role="dialog"
           aria-label={`Lineage of ${lineage.metric}`}
+          ref={panel}
+          style={shift ? { transform: `translateX(${shift}px)` } : undefined}
           className={cn(
             "absolute top-full z-40 mt-1.5 block w-[min(420px,80vw)] rounded-xl border border-border-strong bg-panel p-3.5 text-left text-xs shadow-xl",
             align === "right" ? "right-0" : "left-0",

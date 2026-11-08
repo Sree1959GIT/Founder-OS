@@ -133,7 +133,7 @@ def horizon_lead(message: str, asked: AskedPeriod, projection: Projection | None
     if wants_cash:
         parts.append(f"cash of {_money(projection.cash)}")
     return (
-        f"The model projects {projection.months} months, to {last}, so it has no figure for {asked.label}. "
+        f"The model's projection runs to {last}, so it has no figure for {asked.label}. "
         f"Its last month, {last}, shows {' and '.join(parts)}, which assumes today's trend holds ({ASSUMPTION})."
     )
 

@@ -21,7 +21,7 @@ from typing import Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agents.decision_frame import ASSUMPTION_LABEL, DecisionFrame, OptionCost, build_frame, names_goal
+from app.agents.decision_frame import DecisionFrame, OptionCost, build_frame, names_goal
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.guards import guarded, in_role, role_problems
 from app.agents.horizon import Projection, beyond, horizon_lead, without_uncovered
@@ -1279,13 +1279,16 @@ def _month_label(iso: str) -> str:
 
 
 def period_words(period: str | None, as_of: str) -> str:
-    """The period a metric figure is for, in words: "in October 2026", or "over the 3 months to October 2026" for
-    a figure computed over a window. Founder re-test 45: 0.90 % and 1.22 % were one metric over two periods."""
+    """The period a metric figure is for, in words: "in October 2026", or "for August to October 2026" for a figure
+    computed over a window. Founder re-test 45: 0.90 % and 1.22 % were one metric over two periods. No count of
+    months: a number written here would itself need a source."""
     if period and ".." in period:
         first, last = period.split("..", 1)
         if re.fullmatch(r"\d{4}-\d{2}", first) and re.fullmatch(r"\d{4}-\d{2}", last):
-            count = (int(last[:4]) - int(first[:4])) * 12 + int(last[5:]) - int(first[5:]) + 1
-            return f"over the {count} months to {_month_label(last)}"
+            start = _month_label(first)
+            if first[:4] == last[:4]:
+                start = start.rsplit(" ", 1)[0]
+            return f"for {start} to {_month_label(last)}"
     return f"in {_month_label(period or as_of)}"
 
 
@@ -1298,7 +1301,9 @@ def metric_sentence(content: dict[str, Any], metric: str, currency: str = "USD")
         )
     written = format_money(float(value), unit) if re.fullmatch(r"[A-Z]{3}", unit) else _fmt(value, unit, metric)
     period = (content.get("lineage") or {}).get("period")
-    when = period_words(period, as_of) if period and ".." in period else f"as of {_month_label(as_of)}"
+    # Runway is a position on a date (its burn is averaged, which the lineage shows); flows and ratios have a period.
+    windowed = period is not None and ".." in period and metric != "runway"
+    when = period_words(period, as_of) if windowed else f"as of {_month_label(as_of)}"
     sentence = f"{label} is {written} {when}"
     detail = content.get("detail") or {}
     if metric == "runway" and detail.get("closing_cash") is not None and detail.get("net_burn") is not None:
@@ -1416,10 +1421,10 @@ def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], ch
         goal = f', which moves you away from your goal "{away}"' if away else ""
         parts.append(
             f"The full model, {name}, is {model.money(base.one_off)} up front and {model.money(base.monthly)} a month"
-            f"{runway}{goal}; all of these are assumptions to confirm ({ASSUMPTION_LABEL})."
+            f"{runway}{goal}; all of these are assumptions to confirm."
         )
     elif parts:
-        parts.append(f"These are assumptions to confirm ({ASSUMPTION_LABEL}).")
+        parts.append("These are assumptions to confirm.")
     drafts = [r for r in records if not r.is_decided]
     if drafts:
         # A proposal never started, so it is not asked about its kill criteria: only what has changed.

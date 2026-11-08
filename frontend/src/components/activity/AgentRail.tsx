@@ -1,5 +1,5 @@
 import { Pill } from "@/components/common";
-import { slotsInUse, useCatalog } from "@/hooks/useCatalog";
+import { cloudOn, slotsInUse, useCatalog } from "@/hooks/useCatalog";
 import { safeStep, seconds, STATUS_WORDS, stepWords } from "@/lib/format";
 import { teamOf, useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,8 @@ export function AgentRail() {
         </a>
       </div>
       <p className="num text-xs text-muted-foreground">
-        {slots.local}/{catalog?.max_local_agents ?? 2} local · {slots.cloud}/{catalog?.max_cloud_agents ?? 6} cloud
+        {slots.local}/{catalog?.max_local_agents ?? 2} local ·{" "}
+        {cloudOn(catalog) ? `${slots.cloud}/${catalog?.max_cloud_agents ?? 6} cloud` : "cloud off"}
       </p>
       {run?.awaitingApproval ? (
         <a

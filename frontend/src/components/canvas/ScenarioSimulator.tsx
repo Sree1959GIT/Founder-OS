@@ -105,10 +105,10 @@ function CashChart({ result }: { result: ScenarioResult }) {
   const pad = Math.max((hi - lo) * 0.08, Math.abs(hi) * 0.01, 1);
   const same = result.points.every((p) => Number(p.base_cash) === Number(p.scenario_cash));
   return (
+    <>
+    {/* Above the plot, not on it: inside, it covered the "Under 3 months of cash" label (founder re-test 38). */}
+    {same ? <p className="mb-1 text-right text-xs text-muted-foreground">The scenario matches the base.</p> : null}
     <div className="relative h-[280px] w-full" role="img" aria-label="Cash by month, base against scenario">
-      {same ? (
-        <p className="absolute right-8 top-0 z-10 text-xs text-muted-foreground">The scenario matches the base.</p>
-      ) : null}
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={result.points} margin={{ top: 12, right: 24, left: 4, bottom: 0 }}>
           <CartesianGrid stroke="#262B35" vertical={false} />
@@ -157,6 +157,7 @@ function CashChart({ result }: { result: ScenarioResult }) {
         </LineChart>
       </ResponsiveContainer>
     </div>
+    </>
   );
 }
 
