@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M4: Canvas UI** (built, awaiting the founder's Major gate, branch `claude/m4-canvas-ui`). Then M5. P1–P7 are decided (PRD §12). M0, M1, M2, M3a, M3b and M3c are ACCEPTED and merged.
+- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate, branch `claude/m5-voice`). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-06 (M4 session)
+- **Last updated:** 2026-11-08 (M5 session)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -18,8 +18,8 @@
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
-| M4 | Canvas UI (first demoable build) | DONE, awaiting Major gate | All of PRD §8 for M4. Voice controls stay disabled until M5 |
-| M5 | Voice pipeline | NOT STARTED | |
+| M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
+| M5 | Voice pipeline | DONE, awaiting Major gate | All of PRD §8 for M5, measured on the founder's PC (see Current state). Kokoro runs on the CPU: the metric answer is 2.4 to 3.8 s, a little over the 3 s target |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
 ## Review gates (every PR passes all four)
@@ -61,7 +61,17 @@
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
 
 ## Current session
-- Started (UTC): 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate, time-box 60 minutes), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Started (UTC): 2026-11-08 09:39 (local Windows session, time-box 2 hours), branch `claude/m5-voice` from `origin/main`, target **M5: Voice** (gate tier: **Major**).
+- Plan, in the founder's priority order (an "M5 (partial)" PR is fine if time runs out):
+  - [x] Tidy the stale "Next milestone" and M4 table lines
+  - [x] (1) Carried items 60 (test: no agent before approval), 61, 62, 63, 55, 7
+  - [x] (2) Hardware recorded; versions, Windows wheels and licences re-checked; VRAM measured before and after loading
+  - [x] (3) `/ws/voice`, VAD, STT, Kokoro TTS, push-to-talk, hands-free with barge-in and backchannel detection, two lanes spoken, quiet, latency metrics in API and UI
+  - [x] (4) Tests with WAV fixtures and fake STT/TTS
+  - [x] Latency measured on this PC; Windows checklist; self-review; PR; CI green
+
+Previous session (2026-11-08, M4 fix round 3):
+- 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate), branch `claude/m4-canvas-ui`, PR #9.
 - Plan:
   - [x] Record the RX results first
   - [x] 58 metric routing (and 45 periods), 51 no badge when nothing ran, 54 de-dup sentences, 54b amendment clause
@@ -175,6 +185,47 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Voice (M5)
+**What you can do now**
+- In the Advisor panel, press the microphone (it asks for the microphone once). **Hold to talk**: hold the mic button, speak, let go. **Hands-free**: just talk; FounderOS finds the end of your sentence after 400 ms of quiet.
+- FounderOS answers out loud: first a short acknowledgement ("Checking that now." / "On it. I'll tell you how the team is doing as it works."), then the team's narration, then the checked answer, sentence by sentence. Everything also appears in the panel, as typed turns do.
+- **Barge-in:** talk over it and it pauses at once (65 ms measured); speech of 600 ms or more, or words that are not a backchannel, stop it. "Uh-huh", "right", "ok" while it speaks: it carries on.
+- **Mid-run turns** go through the same classifier as typed ones: a new question is queued, a change offers a restart, "stop" stops. Spoken answers to offers: "approve" / "hold it" (team approval), "ask it" / "drop it" (queued question), "restart" / "keep going" (a change).
+- **Quiet** (the bell) silences all speech; transcripts and the canvas carry on.
+- Latency per turn under the mic ("first words · answer · STT · barge-in stop"), and in `/api/voice/metrics` (p50s); engines, devices, fallbacks and VRAM in `/api/voice/status`.
+
+**How it works** (`backend/app/voice/`, `backend/app/api/voice.py`, `frontend/src/lib/voice.ts`, `components/chat/VoiceControls.tsx`)
+- Browser: AudioWorklet to 16 kHz mono int16, 32 ms frames over `/ws/voice`; 24 kHz int16 back, scheduled gap-free; `pause` suspends playback, `interrupt` flushes it and reports the flush time. Echo cancellation is on in `getUserMedia`.
+- `vad.py`: Silero VAD v6 ONNX (bundled in faster-whisper, run with onnxruntime on CPU; no torch), 512-sample frames, own state per connection; energy detector as the fallback. `Endpointer`: start after 96 ms of speech, end after `VOICE_END_SILENCE_MS` (400).
+- `stt.py`: faster-whisper `small.en` on CUDA `int8_float16`, falling back to `base.en` int8 on CPU at start-up if CUDA cannot load **or cannot run** (a test transcription catches missing DLLs). On Windows the CUDA DLLs come from the `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` wheels, added to the DLL path by `add_cuda_dll_dirs`.
+- `tts.py`: Kokoro-82M ONNX (`kokoro-v1.0.onnx`, voice `af_heart`) on CPU, 8 threads; long sentences are made clause by clause so the first words play sooner; short fixed lines are cached. `for_speech` drops `[source]` brackets and says "%" as "percent".
+- `turn_taking.py`: barge-in or backchannel, rules first (duration, a backchannel list, question words, three or more words), then the decision model (`yes_no`, 0.4 s timeout, confidence threshold); unsure or slow means barge-in.
+- `session.py`: one connection. Utterance to `ConversationManager.turn`; the conversation lane's lines are spoken, **but a lane line with a figure is replaced by "I've put that on screen."**; the answer is spoken from a `tap()` of the run's text (the canvas keeps reading the queue itself: a new `DeltaQueue` broadcasts, so two readers never split an answer). An interrupt drops queued lines and audio being made.
+- `service.py`: loads the engines in a worker thread at start-up (the canvas never waits, R4), records fallbacks and VRAM; `metrics.py`: per-turn and per-barge-in timings.
+- Models: `python scripts/download_voice_models.py` puts Whisper (small.en, base.en) and Kokoro into `data/models` (git-ignored). GitHub release downloads failed here with 504s, so Kokoro and its voices come from the Hugging Face mirror `fastrtc/kokoro-onnx` when GitHub fails.
+
+**Hardware (founder's PC, recorded 2026-11-08)**
+- RTX 4080 Laptop GPU, 12 GB VRAM (11.99 GiB usable), driver 617.14; i9-13900HX (24 cores); Python 3.12.7 venv.
+- The GPU is shared with qwen3:8b (Q4_K_M, 8k context: **5.86 GiB**) in the Docker `ollama` container, which other apps use too. With qwen3:8b loaded: 6.38 GiB in use, about 5.6 GiB free.
+- Measured: Whisper `small.en` int8_float16 on CUDA adds **0.52 GB** (6.38 → 6.90 GiB). Silero VAD and Kokoro run on the CPU and add nothing. Headroom left: about 5 GB. `small.en` FP16 (PRD §2 budget) would roughly double Whisper's share; `int8_float16` was chosen to keep headroom for other apps' models.
+
+**Measured on this PC** (2026-11-08, `scripts/voice_bench.py`, hands-free, the fixtures played in real time; qwen3:8b warm)
+| What | Result | Target |
+|---|---|---|
+| STT (small.en, CUDA), warm | 260–420 ms per utterance (p50 293 ms) | |
+| End of speech to first spoken word | p50 **932 ms** (755, 932, 960) | narration within 1 s: met |
+| End of speech to the first sentence of a metric answer | p50 **3.8 s** (8.4 s cold first turn, 3.8, 2.4) | about 3 s: close, not met on p50 |
+| Barge-in: speech onset to audio paused | **65 ms** | client flush within 100 ms |
+| Barge-in: speech onset to speech cancelled (long speech) | **576 ms** (the 600 ms rule) | |
+| Kokoro on CPU | about 1 s per second of speech (1.2 s for "Checking that now." uncached) | |
+| Whisper on CPU (fallback, base.en) | about 1.5 s per utterance | |
+
+**Limits**
+- Kokoro on the CPU is the slow part of an answer. Kokoro on the GPU needs `onnxruntime-gpu`, which replaces the `onnxruntime` package that faster-whisper depends on: left for M6 tuning (Next steps).
+- The figures above come from synthesised speech (the fixtures), not your microphone; the checklist below measures your voice.
+- Hands-free with loudspeakers relies on the browser's echo cancellation; with headphones barge-in is cleanest. A false barge-in only pauses: short noise resumes.
+- The first turn after start-up is slower (Ollama and Kokoro warm up).
+
 ### Canvas UI (M4)
 **What you can do now**
 - Open `http://127.0.0.1:3000` and run the whole product in the browser: ask, watch the team, approve or edit it, read the answer with its sources, try scenarios, read and export the memo.
@@ -601,15 +652,36 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M5 session)
-0. **Gate check:** M4 is a **Major** gate. The founder runs W0 to W15 below and merges the PR. Act on any "Founder feedback" first.
-1. M5 (PRD §8): the voice pipeline. The microphone and voice controls in the Advisor panel are the hook. It must test GPU sharing.
-2. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
+## Next steps (for the M6 session)
+0. **Gate check:** M5 is a **Major** gate. The founder runs V1 to V10 below and merges the PR. Act on any "Founder feedback" first.
+1. M6 (PRD §8): final `setup.bat`/`run.bat` (they now install the `voice` extra and download the voice models), README and the demo script, VRAM/latency tuning notes.
+2. Voice latency: try Kokoro on the GPU (`onnxruntime-gpu` in place of `onnxruntime`, checked against faster-whisper's Silero use) or `kokoro-v1.0.int8.onnx` (GitHub only); measure with `scripts/voice_bench.py`. Target: metric answer p50 under 3 s.
+3. Voice: Laya for the backchannel decision once fine-tuned (C8); a spoken "Ask it now" for the RY5 queue offer already works ("ask it").
+4. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
 3. Dubai verification: let a figure quoted from a decision on record carry that record as its source (Current state, M4 limits).
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M4 re-test after round 3 (Major gate, about 15 minutes). Run this one first: RY1 to RY7.** It covers 58, 51, 54, 56 and 57 of "[M4] Re-test RX1–RX12", plus the RX12 popover check. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+**M5 Voice (Major gate, about 30 minutes). Run this one first: V1 to V10.** You need your microphone (headphones make barge-in cleanest). Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **V1. Get the code and the voice packages.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\.venv\Scripts\python.exe -m pip install -e "backend[dev,gpu,voice]"; .\.venv\Scripts\python.exe scripts\download_voice_models.py`
+  **Expect:** "have small.en", "have base.en", Kokoro and voices saved (about 900 MB the first time). Then `.\run.bat`.
+- **V2. Engines and VRAM.** Wait about 30 s after start-up, then:
+  `$s = Invoke-RestMethod http://127.0.0.1:8000/api/voice/status; $s.stt; $s.tts; $s.vad; $s.notes; $s.vram_gb`
+  **Expect:** `stt` small.en on `cuda`, `tts` kokoro on `cpu`, `vad` silero, no notes, `vram_gb.whisper` about 0.5. Also `docker exec ollama ollama ps` (qwen3:8b about 5.9 GB) and `nvidia-smi --query-gpu=memory.used,memory.total --format=csv`. Write the three numbers down.
+- **V3. Push-to-talk, a metric.** Open `http://127.0.0.1:3000`, press the microphone button (allow the microphone). Hold the mic, say **"What is our runway?"**, let go. **Hear:** "Checking that now." within about a second, then "Runway (actual burn) is ... months ...". **See:** your words in the panel, the answer card, and under the mic "first words … ms · answer … ms · STT … ms".
+- **V4. Hands-free.** In the mode box choose **Hands-free**. Say **"What is our gross margin?"** and stop talking. **Hear:** the answer without pressing anything. The state reads Listening, Thinking, Speaking.
+- **V5. Barge-in.** Hands-free, Gear > **Ask before a team runs** > **Never** > **Save**. Say **"Should we open a Dubai office?"**. While it is still narrating (the team is working; "On it…" or "… are done"), say **"Wait, make it a two person team instead."**. **Hear:** it stops within a moment of your first word. **See:** "Interrupted", then your words as a turn and the restart offer ("Restart with my change"). Say **"restart"**: the new run starts, and its answer says "with two local hires, as you asked". (Said after the answer has started, the team is done, so it becomes a new question instead.)
+- **V6. Backchannel.** While it speaks a long answer (ask **"Should we raise our prices by 10%?"**), say a short **"uh-huh"** or **"right"**. **Hear:** a tiny pause, then it carries on from where it was. The latency line shows "(backchannel)".
+- **V7. Mid-run question.** While the Dubai team works, say **"What is our churn?"**. **Hear:** that it is queued; when the answer is done, "Your next question is ready. Say ask it, or drop it." Say **"ask it"**: the churn answer is spoken.
+- **V8. Approval by voice.** Gear > **Ask before a team runs** > **Always** > **Save**. Say **"Should we open a Dubai office?"**. **Hear:** "Waiting for your approval of this team: … Say approve, or hold it." Say **"approve"**: the team runs. Set approval back and **Save**.
+- **V9. No unverified number spoken; quiet.** In V5 to V8 the narration never says a figure (figures come only in the answer). Press the bell (**Quiet on**) and ask by voice: nothing is spoken, the transcript and the answer still appear.
+- **V10. Your latency numbers.** With approval at **Never**, run `.\.venv\Scripts\python.exe scripts\voice_bench.py` (about 2 minutes; it plays recorded questions into the backend, including the Dubai decision with an interruption), then after your own V3 to V6 turns:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,client_flush_ms,verdict,by`
+  **Expect:** first words p50 about 1 s or less; first answer audio p50 about 3 to 4 s; barge-in pause under 150 ms; client flush a few ms. Write the p50s in the Gate log row or under Founder feedback.
+
+**M4 re-test after round 3 (done: M4 ACCEPTED; reference). RY1 to RY7.** It covers 58, 51, 54, 56 and 57 of "[M4] Re-test RX1–RX12", plus the RX12 popover check. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
 
 - **RY1. Get the code.** Close the backend and frontend windows, then:
   `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
@@ -991,7 +1063,17 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M4 → M5, first task] Carried from the M4 review (not blocking)
+### [M4 → M5, first task] Carried from the M4 review: RESOLVED in M5 (re-test in V5 to V9 and RZ below)
+**Resolved (2026-11-08, M5 PR):** with tests in `tests/test_m5_carried.py` and `tests/test_decision_frame.py`. Causes:
+- 60: no agent ran. The new test patches `AgentRunner.run` and shows no call before approval and none after a rejection. But a rejection marks each planned agent "cancelled", and the narration counted a cancelled agent as finished ("… are done"). Agents that never started are now left out, and the lane says "I held the team back: no agent ran." The 5.7 s was planning (Planner and decision frame), which runs before approval by design.
+- 61: the sentence splitter split after "vs.", and the near-duplicate pass dropped the second half. "vs.", "e.g.", "i.e.", "cf." and "approx." no longer end a sentence.
+- 62: "as you asked" is said only when the request carries the founder's change ("The founder then added: …").
+- 63: every one-metric lookup waited for approval under "Always". A local, code-answered lookup now needs no approval; a team still does.
+- 55: the live tuner (`scripts/tune_prompts.py --agents devils_advocate --apply`) applied **v3** (3/5 against 0/5 for the old live v1 today; failures were the risk-line format). The tuning rubric now also fails an answer whose figures the source check removed. A stricter v4 scored 0/5 and is kept as a recorded version.
+- 7: code runs the seeded Monte Carlo (1,000 runs, no change to the plan) for decisions and runway or burn questions, and at `CASH_RISK_WARN_AT` (default 0.5) or more adds: "A warning: in N % of 1,000 simulated futures with no change to your plan, cash runs out within 12 months, so protecting runway comes first." Figures with lineage; verified. `ChatResult.cash_risk` carries it.
+- **RZ re-test (2 minutes):** approval **Always**: ask **What is our gross revenue churn?**: answered at once, no approval card (63). Ask **Should we open a Dubai office?** and **Hold the team back**: the lane says no agent ran, no "done" (60). Ask **Should we raise our prices by 10%?** with approval Never: no "as you asked" (62); a runway answer ends with the cash warning if your data's risk is 50 % or more (7).
+
+Original items:
 - 60: Check that "Hold the team back" really stops the agents. In held-back runs the narration still said "Librarian, Market Scout and Financial Analyst are done…" with about 5.7 s of work. Add a test that no agent runs before approval; fix if they do.
 - 61: The near-duplicate pass cut a sentence in half: "The main trade-off is runway reduction vs. Your goal 'Decide whether…'".
 - 62: "with price change of +10 %, as you asked" appeared when no change was asked. Acknowledge only real amendments.
@@ -1237,6 +1319,10 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M5 session (2026-11-08)
+- First task: 60 (test and narration fix), 61, 62, 63, 55 (v3 applied by the live tuner), 7 (Monte Carlo warning). Commit `bf918e6`.
+- Voice pipeline: `app/voice/` (audio, vad, stt, tts, turn_taking, session, service, metrics), `app/api/voice.py`, `DeltaQueue.tap()`, `scripts/download_voice_models.py`, `scripts/voice_bench.py`, frontend `lib/voice.ts` and `VoiceControls`. Real models loaded and measured on this PC (Current state). Tests: `tests/test_voice.py` (30) with four WAV fixtures made with Kokoro.
+
 ### M4 fix session, round 3 (2026-11-08)
 - Recorded the RX1–RX12 results, then fixed 58, 51, 54/54b, 56, 57, 52, 53, 59 (see the feedback item). New: `app/agents/dedupe.py`, `tests/test_m4_round3.py`; `Verification.state` gains `not_run`; `Projection.zero_cash_month`.
 
@@ -1317,6 +1403,16 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M5 session, 2026-11-08)
+- STT: faster-whisper `small.en`, `int8_float16` on CUDA (0.52 GB measured), `base.en` int8 on CPU as the fallback, chosen at start-up by a test transcription. CUDA DLLs from the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (`gpu` extra).
+- VAD: Silero v6 ONNX as bundled in faster-whisper, run with onnxruntime; the `silero-vad` package is not used (it needs torch). Frames are 512 samples (32 ms), the window Silero v5+ expects, not 30 ms.
+- TTS: Kokoro-82M ONNX on CPU (fp32 `kokoro-v1.0.onnx`, 8 threads), so the shared GPU keeps headroom; clause-by-clause synthesis; cached short lines.
+- Barge-in: any speech while speaking pauses at once; 600 ms of speech or non-backchannel words cancel; backchannel by rules first, then the decision model, unsure means barge-in.
+- The conversation lane never speaks a figure: such a line becomes "I've put that on screen." Quiet mode silences all speech.
+- A run's text is broadcast (`DeltaQueue.tap()`): the canvas and the voice each get all of it.
+- A one-metric lookup needs no team approval, even under "Always" (63).
+- The Advisor's cash warning is code-written from the Monte Carlo at `CASH_RISK_WARN_AT` = 0.5 (7).
 
 ## Decisions made (M4 fix round 3, 2026-11-08)
 - A finance answer that does not give every metric the question names is "not verified", whatever else checks out.

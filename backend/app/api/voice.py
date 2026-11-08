@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
@@ -78,7 +79,7 @@ async def voice_socket(websocket: WebSocket) -> None:
         engines.tts,
         _fresh_vad(engines.vad),
         send,
-        session_id=(websocket.query_params.get("session_id") or None),
+        session_id=_session_id(websocket.query_params.get("session_id")),
         config=config,
         metrics=service.metrics,
     )
@@ -117,6 +118,13 @@ async def voice_socket(websocket: WebSocket) -> None:
         logger.exception("Voice socket failed")
     finally:
         await session.close()
+
+
+def _session_id(raw: str | None) -> str | None:
+    """The conversation to join: the same limits as `/api/conversation/turn` (64 characters, a plain id)."""
+    if raw and len(raw) <= 64 and re.fullmatch(r"[A-Za-z0-9_-]+", raw):
+        return raw
+    return None
 
 
 def _fresh_vad(shared: Any) -> Any:

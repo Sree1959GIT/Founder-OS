@@ -115,6 +115,7 @@ class VoiceSession:
         self.speaking_until = 0.0
         self.paused_at: float | None = None
         self.barge: BargeIn | None = None
+        self._onset = 0.0  # when the speech that paused playback began
         self.interrupted_for_current = False
         self.offers = _Offers()
         self.current_turn: TurnMetric | None = None
@@ -300,7 +301,7 @@ class VoiceSession:
         self.speaking_until = 0.0
         self.paused_at = None
         if self.barge is not None and self.barge.stopped_ms is None and reason == "barge-in":
-            self.barge.stopped_ms = (self.clock() - getattr(self, "_onset", self.clock())) * 1000
+            self.barge.stopped_ms = (self.clock() - self._onset) * 1000
             self.metrics.barge_ins.append(self.barge)
             await self._emit({"type": "metrics", "barge_in": self.barge.as_dict()})
         await self._emit({"type": "interrupt", "reason": reason})
@@ -511,11 +512,14 @@ class VoiceSession:
     # ------------------------------------------------------------------------------------------------ lane events
     async def _listen_to_lane(self) -> None:
         """Narration, status and offers for this session, from the same bus the canvas reads."""
-        async for event in self.manager.bus.subscribe():
+        # Only what happens from now on: a reconnect to an existing session must not say its old lines again.
+        past = self.manager.bus.history()
+        async for event in self.manager.bus.subscribe(since=past[-1].seq if past else 0):
             if event.data.get("session_id") != self.session_id and event.type != "team.proposed":
                 continue
             if event.type == "team.proposed":
-                if event.run_id == self.manager.sessions[self.session_id].run_id and event.data.get("needs_approval"):
+                session = self.manager.sessions.get(self.session_id)
+                if session is not None and event.run_id == session.run_id and event.data.get("needs_approval"):
                     self.offers.approval_run = event.run_id
                 continue
             if event.type == "queue.offered":

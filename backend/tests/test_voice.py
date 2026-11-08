@@ -309,6 +309,21 @@ async def test_the_canvas_stream_and_the_voice_both_get_the_whole_answer(finance
     await session.close()
 
 
+async def test_a_reconnect_does_not_repeat_old_narration(finance: Any) -> None:
+    first, wire, _, _, manager = make(finance, [])
+    await first.start()
+    await first.control({"type": "text", "text": "What is our runway?"})
+    await _until(lambda: bool(wire.of("turn")))
+    await manager.orchestrator.runs[wire.of("turn")[0]["outcome"]["run_id"]].task  # type: ignore[misc]
+    await first.close()
+    again = Wire()
+    second = VoiceSession(manager, FakeSTT(), FakeTTS(), EnergyVAD(), again.send, session_id=first.session_id)
+    await second.start()
+    await asyncio.sleep(0.2)
+    assert not again.of("say")
+    await second.close()
+
+
 # --- helpers ---------------------------------------------------------------------------------------------------------
 def test_speech_text_and_chunks() -> None:
     assert for_speech("Runway is 10.65 months [metrics/runway] and churn 1.5 %.") == (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from app.engine.duckdb_engine import FinanceDB
 from app.engine.ingest import ingest_directory
 from app.main import create_app
 from app.probes import DependencyProbe, DependencyState, DependencyStatus
+
+# Tests never load Whisper or Kokoro, even where a test builds its own Settings: the environment wins over defaults.
+for _name, _value in (("VOICE_STT", "fake"), ("VOICE_TTS", "fake"), ("VOICE_VAD", "energy")):
+    os.environ.setdefault(_name, _value)
 
 
 class FakeProbe:
