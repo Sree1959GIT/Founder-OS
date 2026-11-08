@@ -58,7 +58,7 @@
 | M3a Agent framework | [Sree1959GIT/Founder-OS#6](https://github.com/Sree1959GIT/Founder-OS/pull/6) | Medium |    ACCEPTED (SM, 2026-11-04), Medium; steps 1–9, 11–14, RT1–RT9 and RV1–RV9 pass on Windows (Docker Ollama, qwen3:8b) |
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
-| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | AWAITING FOUNDER (re-test RY1 to RY7; RX round 3 fixes in this PR) |
+| M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
 
 ## Current session
 - Started (UTC): 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate, time-box 60 minutes), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
@@ -991,6 +991,14 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M4 → M5, first task] Carried from the M4 review (not blocking)
+- 60: Check that "Hold the team back" really stops the agents. In held-back runs the narration still said "Librarian, Market Scout and Financial Analyst are done…" with about 5.7 s of work. Add a test that no agent runs before approval; fix if they do.
+- 61: The near-duplicate pass cut a sentence in half: "The main trade-off is runway reduction vs. Your goal 'Decide whether…'".
+- 62: "with price change of +10 %, as you asked" appeared when no change was asked. Acknowledge only real amendments.
+- 63: Gross and net revenue churn still go to a team, so they wait for approval when "Ask before a team runs" is Always. Give them the same instant path as the other metrics.
+- 55: The Devil's Advocate often writes unsupported figures that the Verifier removes. Tune its prompt.
+- 7: The Advisor should speak up when the chance of running out of cash within 12 months is high.
+- Priority: medium
 ### [M4] Re-test RX1–RX12: RESOLVED, awaiting re-test (fix session 2026-11-08, round 3)
 **Resolved (2026-11-08, PR #9):** 58, 51, 54, 54b, 56, 57, 52, 53, 59, with tests. Re-test: RY1 to RY7. Causes:
 - 58: "gross revenue churn" was not a known name ("gross" was a word the fast path did not expect), so the question
