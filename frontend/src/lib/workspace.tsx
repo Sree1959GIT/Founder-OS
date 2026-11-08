@@ -461,6 +461,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState, load);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Runs this window already follows. A turn sent while the first is still being planned arrives before React has
+  // rendered that run, so the state alone cannot say whether it is new (founder re-test RW6).
+  const followed = useRef(new Set<string>());
 
   // A reload keeps the conversation and the open decision (founder review 17). Streaming text saves at most twice a second.
   useEffect(() => {
@@ -484,6 +487,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const follow = useCallback((runId: string, message: string) => {
+    followed.current.add(runId);
     dispatch({ type: "run", runId, message });
     dispatch({ type: "turn", turn: { id: `advisor-${runId}`, role: "advisor", runId } });
     void (async () => {
@@ -516,6 +520,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         const outcome = await postTurn(clean, stateRef.current.sessionId);
         const isNewSession = stateRef.current.sessionId === null;
+        // Set at once, not on the next render: a turn chained right behind this one must join the same session,
+        // not open a second one (and a second run) of its own.
+        stateRef.current = { ...stateRef.current, sessionId: outcome.session_id };
         dispatch({ type: "session", id: outcome.session_id });
         if (isNewSession && stateRef.current.quiet) {
           await setQuiet(outcome.session_id, true).catch(() => dispatch({ type: "quiet", quiet: false }));
@@ -523,9 +530,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const startedRun =
           outcome.run_id !== null &&
           outcome.run_id !== stateRef.current.currentRunId &&
-          !stateRef.current.runs[outcome.run_id];
+          !stateRef.current.runs[outcome.run_id] &&
+          !followed.current.has(outcome.run_id);
         // An amendment or a queued question shows its own card, with the same words.
-        if (outcome.reply && !outcome.amendment_id && !outcome.queue_id) {
+        // A question already queued gets no second card, so its reply ("already queued") is shown instead.
+        const queuedBefore =
+          outcome.queue_id !== null &&
+          stateRef.current.turns.some((t) => t.role === "queued" && t.queueId === outcome.queue_id);
+        if (outcome.reply && !outcome.amendment_id && (!outcome.queue_id || queuedBefore)) {
           dispatch({
             type: "turn",
             turn: { id: `reply-${Date.now()}`, role: "lane", text: outcome.reply, kind: "reply" },
