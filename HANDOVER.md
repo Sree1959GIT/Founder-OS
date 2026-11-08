@@ -59,6 +59,7 @@
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
+| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER: checklist V1–V10 and RZ; CI green; bench on the PC: first words p50 0.93 s, metric answer p50 3.8 s (target ~3 s, not met), barge-in pause 65 ms / cancel 576 ms, Whisper +0.52 GB VRAM |
 
 ## Current session
 - Started (UTC): 2026-11-08 09:39 (local Windows session, time-box 2 hours), branch `claude/m5-voice` from `origin/main`, target **M5: Voice** (gate tier: **Major**).
