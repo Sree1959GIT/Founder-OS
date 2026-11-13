@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import operator
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -403,7 +404,10 @@ class AgentOrchestrator:
         meta: dict[str, Any] = {"provider": "", "model": "", "usage": Usage()}
         claim_issues: list[str] = []
         exists = vault_checker(self.ctx_factory(""))
-        async for chunk in advise(self.router, state["message"], state["plan"], results, claim_issues, exists):
+        earlier = _earlier_turns(run.context)
+        async for chunk in advise(
+            self.router, state["message"], state["plan"], results, claim_issues, exists, earlier=earlier
+        ):
             if chunk.delta:
                 parts.append(chunk.delta)
                 await run.deltas.put(chunk.delta)
@@ -419,7 +423,8 @@ class AgentOrchestrator:
             finance = getattr(self.ctx_factory(""), "finance", None)
             run.cash_risk = await asyncio.to_thread(cash_risk, finance, self.cash_risk_warn_at)
             if run.cash_risk is not None:
-                warning = f" {run.cash_risk.sentence}"
+                # One full stop, whatever came before (founder review of M5: "comes first..").
+                warning = f" {run.cash_risk.sentence.rstrip('. ')}."
                 parts.append(warning)
                 await run.deltas.put(warning)
         run.timings["advise"] = _ms(started)
@@ -484,7 +489,7 @@ class AgentOrchestrator:
         citations: list[Citation] = []
         for r in results:
             citations.extend(c for c in r.citations if c not in citations)
-        answer = state.get("answer", "")
+        answer = _DOUBLE_STOP.sub(".", state.get("answer", ""))
         frame = the_plan.frame
         known = [
             *(n for r in results for n in r.numbers),
@@ -625,6 +630,20 @@ class AgentOrchestrator:
         finished = [rid for rid, r in self.runs.items() if r.task is not None and r.task.done()]
         for rid in finished[: max(0, len(self.runs) - keep)]:
             self.runs.pop(rid, None)
+
+
+# A sentence that ends twice: ".." but never an ellipsis.
+_DOUBLE_STOP = re.compile(r"(?<![.])\.\.(?![.])")
+
+
+def _earlier_turns(context: Any) -> str:
+    """What was asked and answered before in this conversation (founder decision D), or nothing."""
+    turns = getattr(context, "recent_turns", None)
+    if not turns:
+        return ""
+    from app.conversation.contexts import conversation_block  # the lane imports this module
+
+    return conversation_block(turns)
 
 
 def _new_agent_id() -> str:

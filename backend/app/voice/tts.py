@@ -128,6 +128,7 @@ class CachedTTS:
 _SPOKEN_FIXES = [
     (re.compile(r"\[[^\]]*\]"), ""),  # source paths in brackets are for the screen
     (re.compile(r"\*\*|__|`"), ""),
+    (re.compile(r"\s*&\s*"), " and "),
     (re.compile(r"\s+%"), " percent"),
     (re.compile(r"%"), " percent"),
     (re.compile(r"\s{2,}"), " "),

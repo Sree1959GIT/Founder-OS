@@ -1805,6 +1805,7 @@ async def advise(
     results: list[AgentResult],
     issues: list[str] | None = None,
     exists: Callable[[str], bool] | None = None,
+    earlier: str = "",
 ) -> AsyncIterator[StreamChunk]:
     """The Advisor streams its reply, sentence by sentence, each one checked before it goes out.
 
@@ -1828,6 +1829,13 @@ async def advise(
         )
         + f"\n\nTeam findings:\n{findings}"
     )
+    if earlier:
+        # Founder decision D: a follow-up ("and why that one?") is read against what was asked and answered before.
+        # The sentence gate still removes any figure that this run's findings do not back.
+        context += (
+            f"\n\nEarlier in this conversation, for context only:\n{earlier}\n"
+            "Use it to understand what the founder's message refers to. Take figures only from the team findings."
+        )
     # Only when there is one: told about past decisions in general, the model invented one ("you decided in August").
     decisions_rule = (PROMPTS_DIR / "advisor_past_decisions.md").read_text(encoding="utf-8")
     system = spec.prompt() + (decisions_rule if _team_decisions(results) else "")

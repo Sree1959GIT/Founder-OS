@@ -304,8 +304,10 @@ async def test_the_canvas_stream_and_the_voice_both_get_the_whole_answer(finance
         canvas.append(piece)
     await _until(lambda: any(m.get("lane") == "answer" for m in wire.of("say")))
     await asyncio.sleep(0.05)
-    spoken = " ".join(m["text"] for m in wire.of("say") if m["lane"] == "answer")
-    assert "".join(canvas).strip() and spoken.split()[:3] == "".join(canvas).split()[:3]
+    spoken = [m["text"] for m in wire.of("say") if m["lane"] == "answer"]
+    # The canvas has the whole answer with its exact figure; the voice says the outcome, rounded (founder decision B).
+    assert "".join(canvas).startswith("Runway (actual burn) is 10.65 months")
+    assert spoken[0] == "Your runway is about ten and a half months."
     await session.close()
 
 

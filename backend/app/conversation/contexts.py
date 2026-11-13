@@ -28,7 +28,7 @@ class GlobalContext(BaseModel):
 class Turn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    role: str = Field(description="founder or lane")
+    role: str = Field(description="founder, lane or advisor (the first sentences of an earlier answer)")
     text: str
 
 
@@ -45,8 +45,22 @@ class RunSnapshot(BaseModel):
     amendment_of: str | None = Field(default=None, description="The run this one replaces, after an amendment")
 
 
+def conversation_block(turns: tuple[Turn, ...] | list[Turn], limit: int = 8) -> str:
+    """Earlier turns for the Advisor (founder decision D, 2026-11-13): what was asked and answered before, so a
+    follow-up is read in context. The founder's questions and the Advisor's answers only, never the lane's narration.
+    The last founder turn is the question being answered now, so it is left out."""
+    kept = [t for t in turns if t.role in ("founder", "advisor")]
+    if kept and kept[-1].role == "founder":
+        kept = kept[:-1]
+    if not any(t.role == "advisor" for t in kept):
+        return ""
+    return "\n".join(f"- {'Founder' if t.role == 'founder' else 'You answered'}: {t.text}" for t in kept[-limit:])
+
+
 class LocalContext:
-    """The session window. Old turns fall off; nothing here reaches an agent or a cloud provider."""
+    """The session window. Old turns fall off. The founder's questions and the first sentences of earlier answers go
+    to the Advisor with the next run (through the privacy filter, as every cloud payload does); the lane's own lines
+    stay here."""
 
     def __init__(self, size: int = LOCAL_WINDOW) -> None:
         self._turns: deque[Turn] = deque(maxlen=size)
