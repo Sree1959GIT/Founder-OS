@@ -1497,6 +1497,7 @@ Second planning round (2026-11-02):
 - A spoken share is a fraction only when it is a share "of" something and within 2.5 points of a simple fraction; "around" for thousands, "about" for millions; a round figure is said without either.
 - The floor rule: speech in progress or being understood holds back all new audio; replies go ahead of waiting narration.
 - The echo gate (see Open questions).
+- CI caught what this PC could not: the venv here is Python 3.12, CI is 3.11. On 3.11 `asyncio.wait_for` can swallow a cancellation, so the speaker's floor wait outlived `close()` and the Windows job hung for 28 minutes (cancelled by hand). The floor wait now uses `asyncio.timeout`, the speaker stops when the session closes, and `close()` waits at most 5 s. The fake STT now takes its script line when the audio arrives, so two utterances transcribed at once cannot swap words (the other Windows failure). Avoid `asyncio.wait_for` around a wait that a task cancel must end.
 - "Re-run" after the answer re-runs the team with that agent's new brief, through the amendment path when there is a change. A re-run request that names no agent is an ordinary turn.
 - The Advisor's context is the founder's turns and the first two sentences of each earlier answer (last 12 turns), never the lane's narration. It goes through the privacy filter like any cloud payload.
 

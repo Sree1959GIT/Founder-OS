@@ -45,6 +45,7 @@ Sender = Callable[[dict[str, Any] | bytes], Awaitable[None]]
 CHUNK_SAMPLES = OUT_RATE // 10  # 100 ms of audio per binary message
 PREROLL_MS = 200  # audio kept from before speech was detected, so the first syllable reaches the STT
 MAX_UTTERANCE_S = 30
+CLOSE_WAIT_S = 5
 FLOOR_WAIT_S = 12  # a room that never goes quiet (a television) must not silence FounderOS for good
 ON_SCREEN = "I've put that on screen."
 ACK_METRIC = "Checking that now."
@@ -184,11 +185,14 @@ class VoiceSession:
 
     async def close(self) -> None:
         self._closed = True
-        for task in list(self._tasks):
+        tasks = list(self._tasks)
+        for task in tasks:
             task.cancel()
-        for task in list(self._tasks):
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+        if tasks:
+            # Bounded: a task that fails to stop must not keep the socket's handler (or a test) waiting for ever.
+            _, stuck = await asyncio.wait(tasks, timeout=CLOSE_WAIT_S)
+            if stuck:
+                logger.warning("voice session closed with {} task(s) still running", len(stuck))
 
     def _spawn(self, coro: Awaitable[Any]) -> asyncio.Task[Any]:
         task = asyncio.ensure_future(coro)
@@ -640,7 +644,7 @@ class VoiceSession:
             self._says.put_nowait(s)
 
     async def _speaker(self) -> None:
-        while True:
+        while not self._closed:
             item = await self._says.get()
             if not self._floor.is_set():
                 # Never start a line while the founder is speaking or being understood. It goes back to the head of
@@ -675,8 +679,13 @@ class VoiceSession:
 
     async def _floor_free(self) -> bool:
         """Waits until the founder has finished and been answered. False: still not free after `FLOOR_WAIT_S`."""
+        if self._floor.is_set():
+            return True
+        # Not `asyncio.wait_for`: on Python 3.11 it swallows a cancellation that lands as the wait completes, and the
+        # speaker then outlives `close()`.
         try:
-            await asyncio.wait_for(self._floor.wait(), timeout=FLOOR_WAIT_S)
+            async with asyncio.timeout(FLOOR_WAIT_S):
+                await self._floor.wait()
         except TimeoutError:
             return False
         return True

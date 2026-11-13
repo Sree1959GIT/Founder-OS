@@ -54,11 +54,13 @@ class FakeSTT:
 
     def transcribe(self, samples: np.ndarray) -> Transcript:
         started = time.perf_counter()
-        if self.delay_s:
-            time.sleep(self.delay_s)
+        # The script line is taken when the audio arrives, not after the delay: two utterances being transcribed at
+        # once must not swap their words.
         index = min(len(self.heard), len(self.script) - 1)
         self.heard.append(int(samples.size))
         text = self.script[index] if self.script else ""
+        if self.delay_s:
+            time.sleep(self.delay_s)
         return Transcript(text, (time.perf_counter() - started) * 1000, samples.size * 1000 / IN_RATE)
 
 
