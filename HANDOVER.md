@@ -62,6 +62,17 @@
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER: checklist V1–V10 and RZ; CI green; bench on the PC: first words p50 0.93 s, metric answer p50 3.8 s (target ~3 s, not met), barge-in pause 65 ms / cancel 576 ms, Whisper +0.52 GB VRAM |
 
 ## Current session
+- Started (UTC): 2026-11-13 03:17 (local Windows bug-fix and voice-behaviour session for the M5 Major gate, time-box 2 hours), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan, in the founder's priority order:
+  - [x] Record the founder feedback first
+  - [ ] P1: V7, the spoken mid-run question that was lost; WAV-fixture test of a question spoken over narration
+  - [ ] P2 B: spoken-number normaliser (money, %, months, dates, lakh/crore) with tests
+  - [ ] P2 A, C: team line at the start, one line per stage, a short spoken summary with an offer of more; the answer text is no longer read aloud
+  - [ ] P2 D: conversation context in voice; P2 E: re-run an agent by voice
+  - [ ] Cash warning double full stop
+  - [ ] PRD §12 (A–E; M6 F, G, Kokoro licence, TTS latency; v1.1 H, I, J); RV re-test steps; PR #10 updated; CI green
+
+Previous session (2026-11-08, M5):
 - Started (UTC): 2026-11-08 09:39 (local Windows session, time-box 2 hours), branch `claude/m5-voice` from `origin/main`, target **M5: Voice** (gate tier: **Major**).
 - Plan, in the founder's priority order (an "M5 (partial)" PR is fine if time runs out):
   - [x] Tidy the stale "Next milestone" and M4 table lines
@@ -1064,6 +1075,17 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M5] Founder review V1–V10: OPEN (fix session 2026-11-13)
+Founder's results (2026-11-13): **PASS** V3, V4, V5, V6, V8, V9. **FAIL** V7. **V10** to re-measure.
+- **V7 (P1 bug).** Hands-free, approval Never: asked "Should we open a Dubai office?", and while the team worked said "What is our churn?" (and later "What's our current churn?"). The app kept narrating Dubai; the question was not shown, nothing said or showed "queued", and after the answer there was no "Your next question is ready. Say ask it, or drop it." and no Ask it now / Drop it. In text mode the same flow works (M4 RY5).
+- **P2, founder design decision: how the Advisor speaks** (PRD §12):
+  - A. At the start of a team run, say briefly how the team is organised: who is on it and each one's focus, in one or two sentences. No running commentary of every step.
+  - B. Never read the on-screen text or an agent's output aloud. One short line on what each agent produced, and the outcome. Spoken numbers are rounded and colloquial, produced by code from the verified figure, never by the model ("around 10 thousand dollars", "about 1.8 million", "about ten and a half months", "about four in five"). Exact figures and lineage stay on screen. A spoken-number normaliser (money, %, months, dates; ready for INR lakh/crore), with tests.
+  - C. Not a non-stop speaker: lead with the outcome and the one thing that matters, about 2–3 sentences a turn, then pause and offer more ("Want me to go through the risks?").
+  - D. Use the full conversation context in voice (the open decision, earlier answers, earlier questions), so follow-ups are answered in context.
+  - E. Re-run an agent by voice ("re-run the analyst, assume three hires", "redo the Devil's Advocate") through the existing re-run and amendment paths; the Advisor then resumes where it was.
+- Also: the cash warning ends with a double full stop ("comes first..").
+- Priority: V7 high; A–E medium
 ### [M4 → M5, first task] Carried from the M4 review: RESOLVED in M5 (re-test in V5 to V9 and RZ below)
 **Resolved (2026-11-08, M5 PR):** with tests in `tests/test_m5_carried.py` and `tests/test_decision_frame.py`. Causes:
 - 60: no agent ran. The new test patches `AgentRunner.run` and shows no call before approval and none after a rejection. But a rejection marks each planned agent "cancelled", and the narration counted a cancelled agent as finished ("… are done"). Agents that never started are now left out, and the lane says "I held the team back: no agent ran." The 5.7 s was planning (Planner and decision frame), which runs before approval by design.
