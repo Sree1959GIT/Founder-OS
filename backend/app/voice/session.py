@@ -594,15 +594,17 @@ class VoiceSession:
             self._answer(outcome.run_id, turn)
         elif outcome.reply:
             await self._say("conversation", outcome.reply, outcome.run_id, turn, keep=True, first=True)
-        elif outcome.kind == "backchannel" and self.offers.more and self._offer_again is not self.offers.more[0]:
+        elif (
+            outcome.kind == "backchannel"
+            and self.offers.more
+            and self._offer_again is not self.offers.more[0]
+            and not self.manager.session(self.session_id).asked
+            and self.manager.state(self.session_id)["running"] is False
+        ):
             # Founder re-test R5: "uh-huh" over the summary cut it off before its offer. The offer is said again
             # (once), so the turn still ends with it.
-            if (
-                not self.manager.session(self.session_id).asked
-                and self.manager.state(self.session_id)["running"] is False
-            ):
-                self._offer_again = self.offers.more[0]
-                await self._say("answer", self.offers.more[0].offer, None, turn)
+            self._offer_again = self.offers.more[0]
+            await self._say("answer", self.offers.more[0].offer, None, turn)
         if outcome.amendment_id:
             self.offers.amendment_id = outcome.amendment_id
         if outcome.answered:
