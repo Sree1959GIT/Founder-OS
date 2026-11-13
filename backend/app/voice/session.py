@@ -45,6 +45,7 @@ Sender = Callable[[dict[str, Any] | bytes], Awaitable[None]]
 CHUNK_SAMPLES = OUT_RATE // 10  # 100 ms of audio per binary message
 PREROLL_MS = 200  # audio kept from before speech was detected, so the first syllable reaches the STT
 MAX_UTTERANCE_S = 30
+FLOOR_WAIT_S = 12  # a room that never goes quiet (a television) must not silence FounderOS for good
 ON_SCREEN = "I've put that on screen."
 ACK_METRIC = "Checking that now."
 ACK_TEAM = "On it."
@@ -601,8 +602,8 @@ class VoiceSession:
                 await self._say("answer", said_early, run_id, turn)
         await asyncio.wait({run.task})
         result = run.result
-        if run.task.cancelled() or run.task.exception() is not None or result is None:
-            return  # the lane's recap says it was cancelled or failed
+        if run.task.cancelled() or run.task.exception() is not None or result is None or result.status != "done":
+            return  # the lane says it was cancelled, failed or held back
         spoken = summarise(result)
         for line in spoken.lead:
             if line != said_early:
@@ -646,8 +647,9 @@ class VoiceSession:
                 # the queue, so the reply to what they are saying can still be put in front of it.
                 for s in [item, *_drain(self._says)]:
                     self._says.put_nowait(s)
-                await self._floor.wait()
-                continue
+                if await self._floor_free():
+                    continue
+                item = self._says.get_nowait()  # waited long enough: speak
             if item.epoch != self.epoch or self.quiet:
                 continue
             spoken = for_speech(item.text)
@@ -662,7 +664,7 @@ class VoiceSession:
                     logger.warning("TTS failed: {}", exc)
                     await self._emit({"type": "error", "message": f"speech failed: {exc}"})
                     break
-                await self._floor.wait()
+                await self._floor_free()
                 if item.epoch != self.epoch or self.quiet:
                     break  # interrupted while it was being made
                 if not announced:
@@ -670,6 +672,14 @@ class VoiceSession:
                     await self._first_audio(item, started)
                 await self._set_state("speaking")
                 await self._play(audio, item.epoch)
+
+    async def _floor_free(self) -> bool:
+        """Waits until the founder has finished and been answered. False: still not free after `FLOOR_WAIT_S`."""
+        try:
+            await asyncio.wait_for(self._floor.wait(), timeout=FLOOR_WAIT_S)
+        except TimeoutError:
+            return False
+        return True
 
     async def _first_audio(self, item: _Say, started: float) -> None:
         now = self.clock()
@@ -735,9 +745,12 @@ class VoiceSession:
         the rest."""
         data = event.data
         if event.type == "recap":
-            # A finished run's summary is spoken by `_speak_answer`; a cancelled or failed one has only this line.
-            done = data.get("status", "done") == "done"
-            return "" if done and event.run_id in self.offers.voiced_runs else str(data.get("text", ""))
+            # A finished run's summary is spoken by `_speak_answer`, and a held-back team by its own line; a
+            # cancelled or failed run has only this one.
+            status = data.get("status", "done")
+            if status == "rejected" or (status == "done" and event.run_id in self.offers.voiced_runs):
+                return ""
+            return str(data.get("text", ""))
         if event.type != "narration":
             return ""
         kind = data.get("kind")

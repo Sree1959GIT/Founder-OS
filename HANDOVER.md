@@ -1116,7 +1116,7 @@ write the issues under "Founder feedback".
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
 ### [M5] Founder review V1–V10: RESOLVED, awaiting re-test RV1–RV11 (fix session 2026-11-13)
-**Resolved (2026-11-13, PR #10):** V7, A to E, the number normaliser and the full stop, with tests in `tests/test_voice_round2.py` (43) and the fixture `churn.wav`. Causes and what changed:
+**Resolved (2026-11-13, PR #10):** V7, A to E, the number normaliser and the full stop, with tests in `tests/test_voice_round2.py` (44) and the fixture `churn.wav`. Causes and what changed:
 - **V7, where the spoken turn was lost.** Not in the queue or the classifier: once the words "What is our churn?" reach the lane they are queued and offered (test with fixtures). They were lost before that, in three ways, all in `app/voice/session.py`:
   1. **A stale verdict resumed the narration over you.** Any sound paused playback; its verdict ("backchannel, carry on") arrived after transcription, by which time you had started your question. The resume played the narration over your question, the 600 ms barge-in rule no longer applied (nothing was "paused"), and Whisper got your voice mixed with the narration. Now a verdict about older speech never resumes over newer speech.
   2. **New lines started while you were speaking.** The speaker did not check whether you were mid-sentence, so the next narration line played over the rest of your question. Now nothing new is played while you speak or while your words are being understood, and the reply to you is said first.

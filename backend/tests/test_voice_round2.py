@@ -412,6 +412,22 @@ async def test_a_cancelled_run_is_still_said_to_be_cancelled(finance: Any) -> No
     await session.close()
 
 
+async def test_a_held_back_team_is_said_once(finance: Any) -> None:
+    session, wire, *_ = make(finance, [], approval_policy="always")
+    await session.start()
+    await session.control({"type": "text", "text": DUBAI})
+    await wait_for(lambda: session.offers.approval_run is not None)
+    await wait_for(lambda: any("Say approve, or hold it." in m["text"] for m in wire.of("say")))
+    asked = next(m["text"] for m in wire.of("say") if "Say approve" in m["text"])
+    assert asked.startswith("This needs your approval. ") and " on this: " in asked
+    await session.control({"type": "text", "text": "Hold it."})
+    await wait_for(lambda: any(m["text"] == "I held the team back: no agent ran." for m in wire.of("say")))
+    await asyncio.sleep(0.3)
+    after = [m["text"] for m in wire.of("say")]
+    assert sum("held the team back" in t or "not approved" in t for t in after) == 1  # not three ways of saying it
+    await session.close()
+
+
 # --- D: follow-ups in context ----------------------------------------------------------------------------------------
 async def test_and_what_about_a_metric_is_answered_as_that_metric(finance: Any) -> None:
     manager = lane(finance)
