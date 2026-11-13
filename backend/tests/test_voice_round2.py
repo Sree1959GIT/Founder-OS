@@ -337,9 +337,11 @@ async def test_an_old_verdict_never_resumes_playback_over_newer_speech(finance: 
     session.speaking_until = session.clock() + 30
     await stream(session, wav_bytes("uh_huh"))
     await stream(session, wav_bytes("churn"))
-    await wait_for(lambda: bool(wire.of("turn")))
+    await wait_for(lambda: bool(wire.of("turn")) and len(wire.of("transcript")) == 2)
+    await asyncio.sleep(0.1)  # the older verdict has been acted on too
     assert not wire.of("resume")
-    assert [m["text"] for m in wire.of("transcript")] == ["Uh-huh.", "What is our churn?"]
+    # Both are being transcribed at once, so either may come back first (seen on the Windows CI runner).
+    assert sorted(m["text"] for m in wire.of("transcript")) == ["Uh-huh.", "What is our churn?"]
     assert wire.of("interrupt") and session.metrics.turns[-1].text == "What is our churn?"
     await session.close()
 
