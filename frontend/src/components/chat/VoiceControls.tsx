@@ -31,6 +31,7 @@ export function VoiceControls() {
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState("");
   const [missed, setMissed] = useState(false);
+  const [unsure, setUnsure] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [turn, setTurn] = useState<VoiceTurnMetric | null>(null);
   const [barge, setBarge] = useState<VoiceBargeIn | null>(null);
@@ -51,9 +52,14 @@ export function VoiceControls() {
         setHeard("");
         setMissed(true);
       },
+      onUnsure: (text) => {
+        setHeard("");
+        setUnsure(text);
+      },
       onTurn: (text, outcome) => {
         setHeard("");
         setMissed(false);
+        setUnsure("");
         if (text.trim()) spokenRef.current(text, outcome);
       },
       onSay: () => undefined,
@@ -135,6 +141,9 @@ export function VoiceControls() {
           </div>
           {heard ? <span className="italic">“{heard}”</span> : null}
           {missed && !heard ? <span data-testid="voice-missed">Didn't catch that. Say it again.</span> : null}
+          {unsure && !heard ? (
+            <span data-testid="voice-unsure">Did you say “{unsure}”? Say yes, or say it again.</span>
+          ) : null}
           {turn || barge ? <span title="Measured on the backend for the last turn">{latencyLine(turn, barge)}</span> : null}
         </div>
       ) : null}

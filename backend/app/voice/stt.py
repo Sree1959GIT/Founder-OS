@@ -9,6 +9,7 @@ start-up, never in the middle of a turn.
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import time
 from collections.abc import Iterable
@@ -27,6 +28,7 @@ class Transcript:
     text: str
     ms: float
     audio_ms: float
+    confidence: float = 1.0  # 0 to 1: how sure the recogniser is of these words (1.0 when it does not say)
 
 
 class STT(Protocol):
@@ -51,6 +53,7 @@ class FakeSTT:
     model: str = "fake"
     note: str = ""
     heard: list[int] = field(default_factory=list)  # sample counts, so tests can check what reached the STT
+    confidences: list[float] = field(default_factory=list)  # one per script line; missing means sure
 
     def transcribe(self, samples: np.ndarray) -> Transcript:
         started = time.perf_counter()
@@ -61,7 +64,8 @@ class FakeSTT:
         text = self.script[index] if self.script else ""
         if self.delay_s:
             time.sleep(self.delay_s)
-        return Transcript(text, (time.perf_counter() - started) * 1000, samples.size * 1000 / IN_RATE)
+        confidence = self.confidences[index] if index < len(self.confidences) else 1.0
+        return Transcript(text, (time.perf_counter() - started) * 1000, samples.size * 1000 / IN_RATE, confidence)
 
 
 def add_cuda_dll_dirs() -> list[str]:
@@ -99,10 +103,15 @@ class FasterWhisperSTT:
         cpu_model: str = "base.en",
         download_root: Path | None = None,
         cpu_threads: int = 8,
+        prompt: str = "",
+        hotwords: str = "",
     ) -> None:
         from faster_whisper import WhisperModel
 
         self.note = ""
+        # Founder re-test R6: the recogniser is told what it is likely to hear (agent and metric names, "Dubai",
+        # "hires", "runway"). Empty strings turn that off.
+        self.prompt, self.hotwords = prompt.strip(), hotwords.strip()
         if device in ("auto", "cuda"):
             add_cuda_dll_dirs()
         attempts: list[tuple[str, str, str]] = []
@@ -144,10 +153,32 @@ class FasterWhisperSTT:
             vad_filter=False,  # our own VAD already cut the utterance
             condition_on_previous_text=False,
             without_timestamps=True,
+            initial_prompt=self.prompt or None,
+            hotwords=self.hotwords or None,
         )
-        text = " ".join(s.text.strip() for s in _iter(segments)).strip()
-        return Transcript(text, (time.perf_counter() - started) * 1000, samples.size * 1000 / IN_RATE)
+        parts = _iter(segments)
+        text = " ".join(s.text.strip() for s in parts).strip()
+        return Transcript(
+            text, (time.perf_counter() - started) * 1000, samples.size * 1000 / IN_RATE, confidence_of(parts)
+        )
 
 
-def _iter(segments: Iterable[object]) -> Iterable[object]:
+def confidence_of(segments: list[object]) -> float:
+    """The recogniser's own confidence, 0 to 1: the mean token probability over the segments, weighted by length,
+    and lowered when it thinks there was no speech at all. Segments without these fields count as sure."""
+    total, weight, no_speech = 0.0, 0.0, 0.0
+    for segment in segments:
+        logprob = getattr(segment, "avg_logprob", None)
+        if logprob is None:
+            continue
+        size = max(1, len(str(getattr(segment, "text", "")).split()))
+        total += math.exp(min(0.0, float(logprob))) * size
+        weight += size
+        no_speech = max(no_speech, float(getattr(segment, "no_speech_prob", 0.0) or 0.0))
+    if not weight:
+        return 1.0
+    return round((total / weight) * (1.0 - no_speech if no_speech > 0.6 else 1.0), 3)
+
+
+def _iter(segments: Iterable[object]) -> list[object]:
     return list(segments)  # faster-whisper decodes lazily: the work happens here

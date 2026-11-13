@@ -2,10 +2,11 @@
 
 - Spoken numbers are rounded and colloquial, made from the verified figure: "around 10 thousand dollars", "about 1.8
   million dollars", "about ten and a half months", "about four in five". Exact figures and lineage stay on screen.
-- A team run starts with one or two sentences on who is on the team and each one's focus; each stage gets one short
-  line on what its agents produced.
-- The answer is never read aloud. The spoken turn is a summary: the outcome, the one thing that matters, then an
-  offer of more ("Want me to go through the risks?"), which the founder accepts or declines.
+- A team run gets ONE opening turn: who is on the team, and that they look at the question from different angles.
+  Then the voice is silent while they work (founder decision R4, 2026-11-13, replacing the line a stage).
+- The answer is never read aloud. The spoken turn is a summary: the team's two or three key findings, the outcome
+  (the proposal and its main trade-off), then always an offer of more ("Want me to go through the risks?"), which
+  the founder accepts or declines.
 """
 
 from __future__ import annotations
@@ -220,77 +221,43 @@ def spoken_text(text: str, currency: str = "USD") -> str:
 
 
 # --- the team, at the start and stage by stage -----------------------------------------------------------------------
-_FOCUS = {
-    "financial_analyst": "on the numbers",
-    "librarian": "on your notes and past decisions",
-    "market_scout": "on the market",
-    "revenue_customer": "on revenue and customers",
-    "people_ops": "on people and operations",
-    "regulatory_tax": "on regulation and tax",
-    "prioritiser": "on priorities",
-    "perspective_lens": "for another point of view",
-    "devils_advocate": "on what could go wrong",
-    "memo_writer": "to write it up",
-}
-_PRODUCED = {
-    "financial_analyst": "has priced it",
-    "librarian": "has checked your notes",
-    "market_scout": "has looked at the market",
-    "revenue_customer": "has looked at revenue and customers",
-    "people_ops": "has looked at people and operations",
-    "regulatory_tax": "has flagged the regulatory points",
-    "prioritiser": "has ranked the options",
-    "perspective_lens": "has given another view",
-    "devils_advocate": "has listed the risks",
-    "memo_writer": "has drafted the memo",
-}
-
-
 def _joined(parts: list[str]) -> str:
     return parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
-
-
-_SAID_AS = {
-    "Regulatory & Tax": "Regulatory and Tax adviser",
-    "People & Ops": "People and Ops adviser",
-    "Revenue & Customer": "Revenue and Customer analyst",
-}
-
-
-def _the(name: str) -> str:
-    for written, said in _SAID_AS.items():
-        name = name.replace(written, said)
-    return f"the {name.replace('&', 'and')}"
 
 
 def _capital(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def team_line(team: list[dict[str, Any]]) -> str:
-    """Who is on the team and each one's focus, in one or two sentences. Nothing for a one-agent lookup."""
-    members = [f"{_the(str(m.get('name', 'an agent')))} {_FOCUS.get(str(m.get('type')), 'on it')}" for m in team]
-    if len(members) < 2:
+def _member(name: str, first: bool) -> str:
+    said = name.replace("&", "and")
+    if "advocate" in said.lower():
+        return f"a {said}"
+    return f"the {said}" if first else said
+
+
+def _topic_words(topic: str) -> str:
+    """ "A Dubai office" as "the Dubai office"; no topic, or one with a figure in it, as "it"."""
+    topic = topic.strip().rstrip(".")
+    if not topic or re.search(r"\d", topic):
+        return "it"
+    if re.match(r"(?i)^(a|an|the)\s", topic):
+        rest = topic.split(" ", 1)[1]
+        return "the " + (rest[5:] if rest.lower().startswith("full ") else rest)  # "A full Dubai office"
+    return topic[0].lower() + topic[1:] if topic.startswith("This ") else topic
+
+
+def team_line(team: list[dict[str, Any]], topic: str = "") -> str:
+    """The one opening turn of a team run (founder decision R4): who is on the team, and why there are several.
+    Nothing for a one-agent lookup. After this the voice is silent until the summary."""
+    names = [str(m.get("name", "an agent")) for m in team]
+    if len(names) < 2:
         return ""
-    count = words(len(members)).capitalize()
-    if len(members) <= 4:
-        return f"{count} on this: {_joined(members)}."
-    return f"{count} on this: {_joined(members[:3])}. Then {_joined(members[3:])}."
-
-
-def produced_line(wave: list[dict[str, Any]]) -> str:
-    """One short line on what the agents of a stage produced. No figures and no content: the screen has those."""
-    done = [m for m in wave if m.get("status", "done") == "done"]
-    parts = [f"{_the(str(m.get('name')))} {_PRODUCED.get(str(m.get('type')), 'is done')}" for m in done]
-    stopped = [_the(str(m.get("name"))) for m in wave if m.get("status", "done") != "done"]
-    line = ""
-    if parts:
-        line = f"{_capital(_joined(parts))}."
-    if stopped:
-        line += f" {_capital(_joined(stopped))} did not finish."
-    if any(not m.get("verified", True) for m in done):
-        line += " Part of that is unverified."
-    return line.strip()
+    members = [_member(name, i == 0) for i, name in enumerate(names)]
+    return (
+        f"I've put together a team of {words(len(members))}: {_joined(members)}. "
+        f"They're looking at {_topic_words(topic)} from different angles so the decision holds up."
+    )
 
 
 # --- the answer, as a short spoken summary ---------------------------------------------------------------------------
@@ -416,30 +383,55 @@ def summarise(result: Any) -> Spoken:
     lead: list[str] = []
     more: list[Segment] = []
     if frame is not None and frame.options:
+        # Founder decision R4: first the team's two or three key findings, then the outcome (the proposal and its
+        # main trade-off), then an offer. Every figure is code's, said through the normaliser.
         proposed = next((o for o in frame.options if o.name == frame.default_option), frame.options[0])
+        full = next((o for o in frame.options if o.is_full and o.name != proposed.name and o.modelled), None)
+        away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
+        findings: list[str] = []
+        if full is not None:
+            # "Full office" is said as "The full office"; any other name is said as it is written.
+            name = f"The {full.name[0].lower()}{full.name[1:]}" if full.name.startswith("Full ") else full.name
+            findings.append(
+                f"{name} would cost {_cost_words(full, currency)}{_runway_words(full.runway_change_months)}."
+            )
+        if away:
+            what = "That" if full is not None else "It"
+            findings.append(f"{what} moves you away from your goal, {spoken_text(away, currency).rstrip('.')}.")
+        if risk is not None:
+            findings.append(cash_risk_line(risk.probability))
+        caveat = ""
+        if state == "not_verified":
+            caveat = "Part of this is unverified, so check the screen."
+        elif getattr(result, "assumptions_to_confirm", 0):
+            caveat = "The costs are assumptions for you to confirm."
+        # Three at most, and what is unverified or assumed is always one of them.
+        lead.extend([*findings[:2], caveat] if caveat else findings[:3])
         lead.append(
             f"My proposal is {proposed.name}: {_cost_words(proposed, currency)}"
             f"{_runway_words(proposed.runway_change_months if proposed.modelled else None)}."
         )
-        away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
-        if risk is not None:
-            lead.append(cash_risk_line(risk.probability))
-        elif away:
-            lead.append(f"The thing to weigh: it moves you away from your goal, {spoken_text(away, currency)}.")
-        if state == "not_verified":
-            lead.append("Part of this is unverified, so check the screen.")
-        elif getattr(result, "assumptions_to_confirm", 0):
-            lead.append("The costs are assumptions for you to confirm.")
+        gives_up = str(getattr(proposed, "trade_off", "") or "").strip().rstrip(".")
+        if gives_up:
+            lead.append(f"The trade-off: {spoken_text(gives_up, currency)}.")
         advocate = next(
             (a for a in getattr(result, "agents", []) if a.type == "devils_advocate" and a.status == "done"), None
         )
-        risks = [spoken_text(s, currency) for s in _sentences(advocate.text)][:3] if advocate is not None else []
+        # Statements only (founder re-test R7): a question about a target or a stop rule is not a risk to read
+        # out, and the one question the founder is asked is on screen.
+        stated = [s for s in _sentences(advocate.text) if not s.rstrip().endswith("?")] if advocate is not None else []
+        risks = [spoken_text(s, currency) for s in stated][:3]
         if risks:
             more.append(Segment("risks", "Want me to go through the risks?", risks))
         others = [o for o in frame.options if o.name != proposed.name][:4]
         if others:
             listed = "; ".join(f"{o.name}, {_cost_words(o, currency)}" for o in others)
             more.append(Segment("options", "Want the other options?", [f"The other options: {listed}."]))
+        if not more:
+            # Founder re-test R5: the summary always ends with an offer, even with no risks and one option.
+            costs = spoken_text(frame.cost_sentence(), currency) if frame.cost_model is not None else ""
+            more.append(Segment("detail", "Want me to go through the costs?", [costs] if costs else []))
+        return Spoken(lead=lead, more=more)
     elif metrics and getattr(result, "intent", "") == "finance":
         first = metrics[0]
         lead.append(metric_lead(first.label, first.value, first.unit, first.metric))

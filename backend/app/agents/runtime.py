@@ -1602,6 +1602,23 @@ _TARGET_QUESTION = re.compile(
     r"\b(?:expected to|likely to|realistic\w*|going to)\b[^?]*\b(?:meet|hit|reach|achieve)\b[^?]*\?", re.I
 )
 _KILL_QUESTION = re.compile(r"\b(?:kill criteri\w*|on track|meet(?:ing)? (?:its|the) (?:targets?|criteria))\b", re.I)
+# The memo on record, named again after code's lead has named it (founder re-test R7: said twice in one answer).
+_MEMO_AGAIN = re.compile(
+    r"\b(?:proposed|draft(?:ed)?|earlier|existing|previous|prior)\s+(?:decision\s+)?memo\b|"
+    r"\bmemo\b[^.?!]*\b(?:on record|already|drafted)\b|\balready (?:have|drafted|wrote|written)\b[^.?!]*\bmemo\b",
+    re.I,
+)
+
+
+def asks_about_a_draft(sentence: str) -> bool:
+    """With a proposed memo on record, code asks the one question ("what has changed since you drafted it?"). Any
+    other question from the model is about the draft's targets, forecasts or stop rules, which never started
+    (founder re-test R7: "Is the runway still above 10.44 months by 2027-05-06, as predicted?", "Is the risk of
+    runway falling below 6 months by March 2027 acceptable?"). So is the memo named a second time."""
+    text = sentence.strip()
+    return text.endswith("?") or bool(
+        _KILL_QUESTION.search(text) or _TARGET_QUESTION.search(text) or _MEMO_AGAIN.search(text)
+    )
 
 
 class _SentenceGate:
@@ -1649,7 +1666,7 @@ class _SentenceGate:
                 continue
             if figures and self.lead_figures and all(number_supported(f, self.lead_figures) for f in figures):
                 continue  # the proposal and the full model, said again in the model's words
-            if self.draft_on_record and (_KILL_QUESTION.search(piece) or _TARGET_QUESTION.search(piece)):
+            if self.draft_on_record and asks_about_a_draft(piece):
                 continue
             self.said.append(key)
             self.shown.append(piece)
@@ -1850,10 +1867,19 @@ async def advise(
     lead = (
         horizon_lead(user_message, asked, projection) if asked else decision_lead(frame, records, chosen, user_message)
     )
+    draft_on_record = bool(lead) and any(not r.is_decided for r in records)
     if lead:
+        # Founder re-test R7: with a proposed memo on record the one question is code's ("what has changed since you
+        # drafted it?"); the model adds none, and does not name the memo again.
+        adds = (
+            "the main trade-off, and nothing else. Ask no question and do not mention the memo on record again: the "
+            "founder has already been asked what has changed since it was drafted."
+            if draft_on_record
+            else "the main trade-off, and one question."
+        )
         context += (
             f"\n\nAlready said to the founder, first, by code: {lead}\nDo not repeat it, the goal or the proposal. "
-            f"Add at most {DECISION_PROSE_SENTENCES} short sentences: the main trade-off, and one question."
+            f"Add at most {DECISION_PROSE_SENTENCES} short sentences: {adds}"
             + (" Add no figures: the question is beyond what the projection covers." if asked else "")
         )
     messages = [Message.system(system), Message.user(context)]
@@ -1870,7 +1896,7 @@ async def advise(
         gate.shown.extend(p for p in split_sentences(lead) if p.strip())
         gate.max_sentences += len(gate.said)
         gate.lead_figures = [f.value for f in extract_figures(lead)]
-        gate.draft_on_record = any(not r.is_decided for r in records)
+        gate.draft_on_record = draft_on_record
         gate.no_figures = asked is not None  # beyond the projection: the only figure is code's, labelled
         sent.append(f"{lead} ")
         yield StreamChunk(delta=f"{lead} ")

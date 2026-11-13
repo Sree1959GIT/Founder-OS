@@ -31,7 +31,6 @@ from app.voice.session import ACK_METRIC, MISSED, QUEUE_OFFER
 from app.voice.spoken import (
     cash_risk_line,
     metric_lead,
-    produced_line,
     say_date,
     say_money,
     say_months,
@@ -191,26 +190,16 @@ TEAM = [
 ]
 
 
-def test_the_team_is_said_in_one_or_two_sentences() -> None:
-    line = team_line(TEAM)
-    assert line.startswith("Five on this: the Financial Analyst on the numbers, the Librarian on your notes")
-    assert "the Devil's Advocate on what could go wrong." in line and "&" not in line
-    assert len(re.findall(r"[.!?](?:\s|$)", line)) == 2
-    assert len(re.findall(r"[.!?](?:\s|$)", team_line(TEAM[:3]))) == 1
+def test_the_team_is_said_in_one_opening_turn() -> None:
+    """Founder decision R4 (round 2), replacing "Five on this: the Financial Analyst on the numbers, ..."."""
+    line = team_line(TEAM, "A Dubai office")
+    assert line == (
+        "I've put together a team of five: the Financial Analyst, Librarian, Market Scout, Regulatory and Tax and a "
+        "Devil's Advocate. They're looking at the Dubai office from different angles so the decision holds up."
+    )
+    assert "&" not in line and not EXACT_FIGURE.search(line)
+    assert "looking at it from" in team_line(TEAM[:3])  # no topic: "it"
     assert team_line(TEAM[:1]) == ""  # a one-agent lookup has no team to describe
-
-
-def test_a_stage_gets_one_line_on_what_was_produced_and_no_figure() -> None:
-    wave = [{**m, "status": "done", "verified": True} for m in TEAM[:3]]
-    assert produced_line(wave) == (
-        "The Financial Analyst has priced it, the Librarian has checked your notes and the Market Scout has looked "
-        "at the market."
-    )
-    doubt = [{**TEAM[3], "status": "done", "verified": False}, {**TEAM[4], "status": "cancelled", "verified": False}]
-    assert produced_line(doubt) == (
-        "The Regulatory and Tax adviser has flagged the regulatory points. The Devil's Advocate did not finish. "
-        "Part of that is unverified."
-    )
 
 
 # --- C: a summary and an offer, never the text card ------------------------------------------------------------------
@@ -219,9 +208,13 @@ async def test_a_decision_is_summarised_with_the_outcome_what_matters_and_an_off
     result = await finished(manager, (await manager.turn(None, DUBAI)).run_id)
     spoken = summarise(result)
     proposed = result.decision_frame.default_option
-    assert spoken.lead[0].startswith(f"My proposal is {proposed}: ") and "a month" in spoken.lead[0]
-    assert spoken.lead[1].startswith("One warning: in about ") and "cash runs out within a year" in spoken.lead[1]
-    assert 2 <= len(spoken.lead) <= 3
+    # Round 2 (R4): the team's key findings first, then the outcome: the proposal and its main trade-off.
+    outcome = next(i for i, line in enumerate(spoken.lead) if line.startswith(f"My proposal is {proposed}: "))
+    findings = spoken.lead[:outcome]
+    assert 2 <= len(findings) <= 3 and findings[0].startswith("The full office would cost ")
+    assert any(f.startswith("One warning: in about ") and "cash runs out within a year" in f for f in findings)
+    assert "a month" in spoken.lead[outcome] and spoken.lead[outcome + 1].startswith("The trade-off: ")
+    assert len(spoken.lead) == outcome + 2
     assert not any(EXACT_FIGURE.search(line) for line in spoken.lead)
     assert [s.key for s in spoken.more][-1] == "options" and spoken.more[0].offer.endswith("?")
     assert all(len(s.lines) <= 3 for s in spoken.more)
@@ -243,7 +236,7 @@ async def test_a_metric_is_summarised_from_the_routines_figure(finance: Any) -> 
     assert summarise(burn).more[0].lines[0] == "That is for August to October 2026."  # its period, not the figure again
 
 
-async def test_voice_says_the_team_a_line_a_stage_and_a_short_summary(finance: Any) -> None:
+async def test_voice_says_one_opening_turn_then_a_short_summary(finance: Any) -> None:
     session, wire, _, _tts, manager = make(finance, [], approval_policy="never")
     await session.start()
     await session.control({"type": "text", "text": DUBAI})
@@ -255,11 +248,11 @@ async def test_voice_says_the_team_a_line_a_stage_and_a_short_summary(finance: A
     talk = [m["text"] for m in says if m["lane"] == "conversation"]
     answer = [m["text"] for m in says if m["lane"] == "answer"]
     assert talk[0] == "On it."
-    assert sum(" on this: " in t for t in talk) == 1  # A: who is on the team, said once
-    assert any("has priced it" in t for t in talk)  # B: what a stage produced, not what it found
-    assert not any("assumption would change" in t or "to go" in t for t in talk)  # no commentary on every step
-    assert answer[0].startswith("My proposal is ") and answer[-1].startswith("Want")
-    assert len(answer) <= 4  # C: two or three sentences, then the offer
+    assert sum(t.startswith("I've put together a team of ") for t in talk) == 1  # who is on the team, said once
+    assert len(talk) == 2, talk  # R4: "On it.", the opening turn, then silence while the team works
+    assert not any("assumption would change" in t or "to go" in t or "has priced" in t for t in talk)
+    assert sum(a.startswith("My proposal is ") for a in answer) == 1 and answer[-1].startswith("Want")
+    assert answer[-2].startswith("The trade-off: ") and len(answer) <= 7  # findings, outcome, then the offer
     spoken = " ".join(m["text"] for m in says)
     assert not EXACT_FIGURE.search(spoken), spoken  # B: exact figures stay on screen
     assert not any(a in result.answer for a in answer)  # never the on-screen answer read aloud
@@ -409,7 +402,10 @@ async def test_a_cancelled_run_is_still_said_to_be_cancelled(finance: Any) -> No
     await wait_for(lambda: bool(wire.of("turn")))
     await session.control({"type": "text", "text": "stop"})
     await wait_for(lambda: len(wire.of("turn")) == 2)
-    await wait_for(lambda: wire.of("interrupt") and wire.of("turn")[1]["outcome"]["reply"] == "Stopping the team.")
+    assert wire.of("turn")[1]["outcome"]["reply"] == "Stop the team? Say yes to stop."  # R1: asked first
+    await session.control({"type": "text", "text": "Yes."})
+    await wait_for(lambda: len(wire.of("turn")) == 3)
+    await wait_for(lambda: wire.of("interrupt") and wire.of("turn")[2]["outcome"]["reply"] == "Stopping the team.")
     provider.release.set()
     await session.close()
 
@@ -421,7 +417,7 @@ async def test_a_held_back_team_is_said_once(finance: Any) -> None:
     await wait_for(lambda: session.offers.approval_run is not None)
     await wait_for(lambda: any("Say approve, or hold it." in m["text"] for m in wire.of("say")))
     asked = next(m["text"] for m in wire.of("say") if "Say approve" in m["text"])
-    assert asked.startswith("This needs your approval. ") and " on this: " in asked
+    assert asked.startswith("I've put together a team of ") and asked.endswith("Say approve, or hold it.")
     await session.control({"type": "text", "text": "Hold it."})
     await wait_for(lambda: any(m["text"] == "I held the team back: no agent ran." for m in wire.of("say")))
     await asyncio.sleep(0.3)
@@ -518,7 +514,10 @@ async def test_rerun_after_the_answer_runs_the_same_team_with_the_new_brief(fina
     old = await finished(manager, first.run_id)
     again = await manager.turn(first.session_id, "Re-run the analyst, assume three hires")
     assert again.started_run and again.run_id != first.run_id
-    assert again.reply == "Running it again with your change, the Financial Analyst first."
+    # Round 2 (R8): "assume three hires" changes the decision, so this is the one case the whole team runs again.
+    assert again.reply == (
+        "That changes the decision, so the whole team runs again with it, the Financial Analyst included."
+    )
     new_run = manager.orchestrator.runs[again.run_id or ""]
     assert new_run.message == f"{DUBAI}\nThe founder then added: assume three hires"
     assert new_run.context.amendment_of == first.run_id  # the amendment path: the run it replaces is on record
@@ -527,7 +526,8 @@ async def test_rerun_after_the_answer_runs_the_same_team_with_the_new_brief(fina
     analyst = next(a for a in new.team if a.type == "financial_analyst")
     assert analyst.brief.endswith("The founder then added: assume three hires")
     redo = await manager.turn(first.session_id, f"Redo the Devil{chr(0x2019)}s Advocate.")  # a typeset apostrophe
-    assert redo.started_run and redo.reply == "Running it again, with the Devil's Advocate redoing its part."
+    assert redo.started_run
+    assert redo.reply == "Re-running only the Devil's Advocate again. The rest of the team's findings stand."
     assert manager.orchestrator.runs[redo.run_id or ""].message == new_run.message  # no change: the same request
     await finished(manager, redo.run_id)
 
@@ -553,8 +553,9 @@ async def test_voice_rerun_is_acknowledged_and_its_outcome_is_summarised(finance
     await finished(manager, wire.of("turn")[1]["outcome"]["run_id"])
     await wait_for(lambda: sum(m["text"].startswith("My proposal is ") for m in wire.of("say")) == 2)
     after = [m["text"] for m in wire.of("say")[before:]]
-    assert after[0] == "Running it again, with the Devil's Advocate redoing its part."
-    assert any("has listed the risks" in t for t in after)  # then the Advisor carries on as before
+    assert after[0] == "Re-running only the Devil's Advocate again. The rest of the team's findings stand."
+    assert not any(t.startswith("I've put together") for t in after)  # the team was introduced the first time
+    assert after[-1].startswith("Want")  # then the summary again, ending with its offer
     await session.close()
 
 

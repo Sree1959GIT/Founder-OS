@@ -543,7 +543,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             turn: { id: `reply-${Date.now()}`, role: "lane", text: outcome.reply, kind: "reply" },
           });
         }
-        if (startedRun && outcome.run_id) follow(outcome.run_id, clean);
+        // An offer answered in words, typed or spoken (M5 re-test R8): its card shows the answer, and a restarted
+        // run is followed under the title its button would have given it, so the canvas shows the new figures.
+        const answered = outcome.answered ?? null;
+        let title = clean;
+        if (answered) {
+          const status = answered.accept ? "accepted" : "declined";
+          const turns = stateRef.current.turns;
+          if (answered.what === "amendment") {
+            dispatch({ type: "amendment", id: answered.id, status });
+            const offered = turns.find((t) => t.role === "amendment" && t.amendmentId === answered.id);
+            const change = offered && offered.role === "amendment" ? offered.text : "";
+            const before = stateRef.current.currentRunId
+              ? stateRef.current.runs[stateRef.current.currentRunId]?.message
+              : undefined;
+            const root = before ? runTitle(before).split(" · changed: ")[0] : "";
+            title = root && change ? `${root} · changed: ${change}` : change || clean;
+          } else {
+            dispatch({ type: "queue", id: answered.id, status });
+            const offered = turns.find((t) => t.role === "queued" && t.queueId === answered.id);
+            title = offered && offered.role === "queued" ? offered.text : clean;
+          }
+        }
+        if (startedRun && outcome.run_id) follow(outcome.run_id, title);
     },
     [follow],
   );

@@ -31,13 +31,15 @@ from loguru import logger
 
 from app.agents.runtime import single_metric
 from app.agents.verifier import extract_figures
-from app.conversation.manager import ConversationError, ConversationManager
+from app.conversation.classifier import is_filler
+from app.conversation.manager import ConversationManager
 from app.voice.audio import FRAME_MS, IN_RATE, OUT_RATE, FrameBuffer, float_to_pcm16, pcm16_to_float, rms
+from app.voice.domain import corrected
 from app.voice.metrics import BargeIn, TurnMetric, VoiceMetrics
-from app.voice.spoken import Segment, metric_lead, produced_line, summarise, team_line
+from app.voice.spoken import Segment, metric_lead, summarise, team_line
 from app.voice.stt import STT
 from app.voice.tts import TTS, for_speech, speech_chunks
-from app.voice.turn_taking import decide
+from app.voice.turn_taking import TurnVerdict, decide
 from app.voice.vad import VAD, Endpointer
 
 Sender = Callable[[dict[str, Any] | bytes], Awaitable[None]]
@@ -53,6 +55,10 @@ ACK_TEAM = "On it."
 MISSED = "Sorry, I didn't catch that."
 QUEUE_OFFER = "Your next question is ready. Say ask it, or drop it."
 QUEUED = "I'll keep that for when this run finishes."  # the lane's reply to a question asked mid-run
+STILL_WORKING = "Still working on it."
+SAY_AGAIN = "Okay. Say it again."
+UNSURE = "I'm not sure I heard that right. If the words on screen are what you said, say yes. If not, say it again."
+MAX_ONSET_AGE_S = 2.0  # speech is noticed about 0.1 s after it starts: an older "start" is a clock that went stale
 ACKS = (
     ACK_METRIC,
     ACK_TEAM,
@@ -63,6 +69,9 @@ ACKS = (
     "Running it now.",
     "Dropped.",
     "Holding the team back.",
+    STILL_WORKING,
+    SAY_AGAIN,
+    UNSURE,
 )
 _APPROVE = re.compile(
     r"^(yes|yeah|approve|approved|go|go ahead|run it|approve and run|do it)\b[\s.!,]*(please)?[.!]*$", re.I
@@ -83,6 +92,17 @@ _MORE = re.compile(
 _NO_MORE = re.compile(
     r"^(no|nope|no thanks|no thank you|not now|that's (all|enough)|skip( it| that)?)\b[\s.!,]*$", re.I
 )
+_ANSWERED = {
+    ("queue", True): "queue_asked",
+    ("queue", False): "queue_dropped",
+    ("amendment", True): "restarted",
+    ("amendment", False): "kept",
+}
+# Answers to "Did you say: ...?"
+_HEARD_RIGHT = re.compile(
+    r"^(yes|yeah|yep|yup|correct|right|that's right|i did|exactly)\b[\s.!,]*(i did)?[\s.!]*$", re.I
+)
+_HEARD_WRONG = re.compile(r"^(no|nope|nah|wrong|that's wrong|i didn't|i did not)\b[\s.!,]*$", re.I)
 
 
 @dataclass
@@ -90,7 +110,9 @@ class VoiceConfig:
     mode: str = "ptt"  # ptt | duplex
     vad_threshold: float = 0.5
     end_silence_ms: float = 400
-    barge_in_ms: float = 600
+    # Speech over FounderOS that lasts this long stops it without waiting for the words. Founder re-test R1: a
+    # listening noise of up to about a second ("uh-huh", "right") is a backchannel, so it must be able to resume.
+    barge_in_ms: float = 1000
     partial_interval_ms: float = 0  # 0: no partial transcripts
     decision_timeout_s: float = 0.4
     # While FounderOS is playing audio, a frame counts as speech only if it is at least this share of the founder's
@@ -98,6 +120,12 @@ class VoiceConfig:
     # browser's echo cancelling is far quieter than the founder, so it no longer pauses itself or hears words in its
     # own echo. 0 turns the gate off.
     echo_gate: float = 0.3
+    # Founder decision R4: after the opening turn the voice is silent while the team works, except for one short
+    # line if the run is still going after this long. 0: never.
+    still_working_s: float = 30.0
+    # Founder re-test R6: a turn the recogniser is less sure of than this is read back before it is acted on
+    # ("Did you say ...?"). 0: never ask.
+    confirm_below: float = 0.0
 
 
 @dataclass
@@ -175,6 +203,10 @@ class VoiceSession:
         self._answering = 0
         self._answers_idle = asyncio.Event()
         self._answers_idle.set()
+        self._unsure: str | None = None  # words read back to the founder ("Did you say ...?"), awaiting yes or no
+        self._barge_seq = -1  # the stretch of speech the current barge-in record is about
+        self._still_said: set[str] = set()  # runs that have had their one "still working" line
+        self._offer_again: Segment | None = None  # the offer already repeated after a listening noise
 
     # ------------------------------------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -252,7 +284,7 @@ class VoiceSession:
                 self._hear(samples, self.clock(), samples.size * 1000 / IN_RATE, paused=False)
         elif kind == "mode" and message.get("mode") in ("ptt", "duplex"):
             self.config.mode = str(message["mode"])
-            self.endpointer.reset()
+            self._reset_endpointer()
             self.ptt_active = False
             self.utterance = []
             self._update_floor()
@@ -310,8 +342,10 @@ class VoiceSession:
             return
         self.utterance.append(frame)
         if sum(u.size for u in self.utterance) > MAX_UTTERANCE_S * IN_RATE:
-            self.endpointer.reset()
+            self._reset_endpointer()
             self.utterance = []
+            if self.paused_at is not None:  # nothing will come to resume it: never leave the audio paused
+                await self._resume()
             self._update_floor()
             return
         long_enough = self.endpointer.speech_ms() >= self.config.barge_in_ms
@@ -343,11 +377,22 @@ class VoiceSession:
         heard = float(np.median(levels))
         self._voice_level = heard if self._voice_level is None else 0.7 * self._voice_level + 0.3 * heard
 
+    def _reset_endpointer(self) -> None:
+        """The endpointer numbers its frames from zero again, so the arrival times must start again with it.
+        Founder re-test R2: they did not, and after a switch of mode or a 30 s stretch of sound every later
+        barge-in read its onset from a frame minutes old ("paused_ms" of 35,000 to 168,000)."""
+        self.endpointer.reset()
+        self.arrivals.clear()
+        self.arrival_offset = 0
+
     def _arrival(self, index: int) -> float:
+        now = self.clock()
         position = index - self.arrival_offset
         if 0 <= position < len(self.arrivals):
-            return self.arrivals[position]
-        return self.clock()
+            at = self.arrivals[position]
+            # Belt and braces for the same fault: an onset cannot be older than the speech that was just noticed.
+            return at if now - at <= MAX_ONSET_AGE_S else now
+        return now
 
     def _maybe_partial(self, now: float) -> None:
         interval = self.config.partial_interval_ms
@@ -369,6 +414,7 @@ class VoiceSession:
     # ------------------------------------------------------------------------------------------------ barge-in
     async def _pause(self, onset: float) -> None:
         self.paused_at = self.clock()
+        self._barge_seq = self._speech_seq
         self.barge = BargeIn(session_id=self.session_id)
         self.barge.paused_ms = (self.paused_at - onset) * 1000
         self._onset = onset
@@ -432,15 +478,31 @@ class VoiceSession:
             return
         await self._set_state("thinking")
         heard = await asyncio.to_thread(self.stt.transcribe, samples)
-        await self._emit({"type": "transcript", "text": heard.text, "final": True, "stt_ms": round(heard.ms, 1)})
+        heard.text = corrected(heard.text)  # a command's opening, repaired by code (founder re-test R6)
+        await self._emit(
+            {
+                "type": "transcript",
+                "text": heard.text,
+                "final": True,
+                "stt_ms": round(heard.ms, 1),
+                "confidence": heard.confidence,
+            }
+        )
+        if not paused and self.barge is not None and seq == self._barge_seq and not self.barge.text:
+            self.barge.text = heard.text  # a barge-in decided by its length: its words, once they are known
         if paused:
-            verdict = await decide(
-                heard.text,
-                speech_ms,
-                self.config.barge_in_ms,
-                self.manager.orchestrator.decisions,
-                self.config.decision_timeout_s,
-            )
+            if self._answers_a_question(heard.text):
+                # "Yes" said over the last words of "Stop the team? Say yes to stop." is an answer, not a listening
+                # noise: it must reach the lane, not just resume the speech.
+                verdict = TurnVerdict("barge_in", "rules")
+            else:
+                verdict = await decide(
+                    heard.text,
+                    speech_ms,
+                    self.config.barge_in_ms,
+                    self.manager.orchestrator.decisions,
+                    self.config.decision_timeout_s,
+                )
             if self.barge is not None:
                 self.barge.verdict, self.barge.by, self.barge.text = verdict.verdict, verdict.by, heard.text
             if verdict.verdict == "backchannel":
@@ -458,7 +520,51 @@ class VoiceSession:
             await self._set_state("listening" if self.config.mode == "duplex" else "idle")
             return
         self._missed_last = False
-        await self._turn(heard.text.strip(), end_t, heard.ms, speech_ms)
+        text = await self._sure_of(heard.text.strip(), heard.confidence)
+        if text:
+            await self._turn(text, end_t, heard.ms, speech_ms)
+        else:
+            await self._set_state("listening" if self.config.mode == "duplex" else "idle")
+
+    def _answers_a_question(self, text: str) -> bool:
+        """The founder is answering something FounderOS asked: its own read-back, the lane's yes/no question, an
+        approval, or the offer at the end of a summary."""
+        words = text.strip()
+        if not words:
+            return False
+        if self._unsure is not None and (_HEARD_RIGHT.match(words) or _HEARD_WRONG.match(words)):
+            return True
+        if self.manager.has_question(self.session_id, words):
+            return True
+        if self.offers.approval_run and (_APPROVE.match(words) or _HOLD.match(words)):
+            return True
+        return bool(self.offers.more) and bool(_MORE.match(words) or _NO_MORE.match(words))
+
+    async def _sure_of(self, text: str, confidence: float) -> str:
+        """The words to act on, or nothing yet (founder re-test R6). A turn the recogniser was unsure of is read back
+        first: yes takes it as heard, no drops it, and anything else is simply the founder saying it again."""
+        pending, self._unsure = self._unsure, None
+        if pending is not None:
+            if _HEARD_RIGHT.match(text):
+                return pending
+            if _HEARD_WRONG.match(text):
+                await self._say("conversation", SAY_AGAIN, None, None, keep=True, first=True)
+                return ""
+            return text
+        if confidence >= self.config.confirm_below or not self._worth_asking(text):
+            return text
+        self._unsure = text
+        await self._emit({"type": "unsure", "text": text, "confidence": confidence})
+        line = UNSURE if extract_figures(text) else f"Did you say: {text.rstrip('.!? ')}? Say yes, or say it again."
+        await self._say("conversation", line, None, None, keep=True, first=True)
+        return ""
+
+    def _worth_asking(self, text: str) -> bool:
+        """Not a listening noise, and not a plain answer to something on offer: those cost nothing if misheard."""
+        if is_filler(text) or len(text.split()) < 2 or self.manager.has_question(self.session_id, text):
+            return False
+        simple = (_APPROVE, _HOLD, _ASK_IT, _DROP_IT, _RESTART, _KEEP, _MORE, _NO_MORE)
+        return not any(pattern.match(text) for pattern in simple)
 
     async def _turn(self, text: str, end_t: float, stt_ms: float | None, speech_ms: float = 0.0) -> None:
         turn = TurnMetric(session_id=self.session_id, mode=self.config.mode, text=text, speech_ms=speech_ms)
@@ -473,7 +579,11 @@ class VoiceSession:
         outcome = await self.manager.turn(self.session_id, text)
         turn.turn_ms = (self.clock() - end_t) * 1000
         turn.kind = outcome.kind or "run"
-        await self._emit({"type": "turn", "outcome": outcome.model_dump(mode="json")})
+        if outcome.answered:  # "yes" to an offer: recorded as what it did, like the offer's own words
+            turn.kind = _ANSWERED[str(outcome.answered["what"]), bool(outcome.answered["accept"])]
+        await self._emit({"type": "turn", "text": text, "outcome": outcome.model_dump(mode="json")})
+        if outcome.kind == "stop":
+            await self._interrupt("stop")  # first, so that "Stopping the team." is said and not dropped with the rest
         if outcome.run_id and (outcome.started_run or outcome.kind is None):
             self.offers.approval_run = None
             self.offers.more = []
@@ -484,14 +594,27 @@ class VoiceSession:
             self._answer(outcome.run_id, turn)
         elif outcome.reply:
             await self._say("conversation", outcome.reply, outcome.run_id, turn, keep=True, first=True)
+        elif outcome.kind == "backchannel" and self.offers.more and self._offer_again is not self.offers.more[0]:
+            # Founder re-test R5: "uh-huh" over the summary cut it off before its offer. The offer is said again
+            # (once), so the turn still ends with it.
+            if (
+                not self.manager.session(self.session_id).asked
+                and self.manager.state(self.session_id)["running"] is False
+            ):
+                self._offer_again = self.offers.more[0]
+                await self._say("answer", self.offers.more[0].offer, None, turn)
         if outcome.amendment_id:
             self.offers.amendment_id = outcome.amendment_id
-        if outcome.kind == "stop":
-            await self._interrupt("stop")
+        if outcome.answered:
+            self.offers.amendment_id = self.offers.queue_id = None
 
     async def _voice_command(self, text: str, turn: TurnMetric) -> bool:
         """Spoken answers to what is on offer: approve the team, ask a queued question, restart with a change."""
         orchestrator = self.manager.orchestrator
+        # The lane's own question comes first ("Stop the team? Say yes to stop.", "Restart with your change?", "Did
+        # you mean two people?"): its yes or no goes to the lane, typed or spoken.
+        if self.manager.has_question(self.session_id, text):
+            return False
         run_id = self.offers.approval_run
         if run_id and (_APPROVE.match(text) or _HOLD.match(text)):
             approve = bool(_APPROVE.match(text))
@@ -501,38 +624,15 @@ class VoiceSession:
                 await self._say(
                     "conversation", "Running it now." if approve else "Holding the team back.", run_id, turn
                 )
+                if approve:
+                    self._spawn(self._still_working(run_id))
                 return True
         if self.offers.queue_id and (_ASK_IT.match(text) or _DROP_IT.match(text)):
-            accept = bool(_ASK_IT.match(text))
-            try:
-                answer = self.manager.answer_queue(self.session_id, self.offers.queue_id, accept)
-            except ConversationError:
-                self.offers.queue_id = None
-                return False
-            self.offers.queue_id = None
-            turn.kind = "queue_asked" if accept else "queue_dropped"
-            new_run = answer.get("run_id") if accept else None
-            await self._say("conversation", "Running it now." if accept else "Dropped.", new_run, turn, keep=True)
-            if new_run:
-                self.offers.more = []
-                self._answer(str(new_run), turn)
-            return True
+            queue_id, self.offers.queue_id = self.offers.queue_id, None
+            return await self._offer_answered("queue", queue_id, bool(_ASK_IT.match(text)), turn)
         if self.offers.amendment_id and (_RESTART.match(text) or _KEEP.match(text)):
-            accept = bool(_RESTART.match(text))
-            try:
-                answer = self.manager.answer_amendment(self.session_id, self.offers.amendment_id, accept)
-            except ConversationError:
-                self.offers.amendment_id = None
-                return False
-            self.offers.amendment_id = None
-            turn.kind = "restarted" if accept else "kept"
-            new_run = answer.get("run_id") if accept else None
-            line = "Running it now." if accept else "Okay, the team carries on."
-            await self._say("conversation", line, None, turn, keep=True)
-            if new_run:
-                self.offers.more = []
-                self._answer(str(new_run), turn)
-            return True
+            amendment_id, self.offers.amendment_id = self.offers.amendment_id, None
+            return await self._offer_answered("amendment", amendment_id, bool(_RESTART.match(text)), turn)
         if self.offers.more and (_MORE.match(text) or _NO_MORE.match(text)):
             if _NO_MORE.match(text):
                 self.offers.more = []
@@ -543,6 +643,33 @@ class VoiceSession:
             await self._say_more(text, turn)
             return True
         return False
+
+    async def _offer_answered(self, what: str, ref: str, accept: bool, turn: TurnMetric) -> bool:
+        """An offer answered by voice goes the way its button does, and the screen is told (founder re-test R8: a
+        restart accepted by voice ran, but the canvas was never told and kept showing the old answer)."""
+        outcome = self.manager.answer_offer(self.session_id, what, ref, accept)
+        if outcome is None:
+            return False  # the offer has closed: the words are an ordinary turn
+        turn.kind = _ANSWERED[what, accept]
+        await self._emit({"type": "turn", "text": turn.text, "outcome": outcome.model_dump(mode="json")})
+        await self._say("conversation", outcome.reply, None, turn, keep=True, first=True)
+        if accept and outcome.run_id:
+            self.offers.more = []
+            self._answer(outcome.run_id, turn)
+        return True
+
+    async def _still_working(self, run_id: str | None) -> None:
+        """Founder decision R4: silent while the team works, but for one short line if it takes long."""
+        wait = self.config.still_working_s
+        if not wait or run_id is None or run_id in self._still_said:
+            return
+        self._still_said.add(run_id)
+        await asyncio.sleep(wait)
+        run = self.manager.orchestrator.runs.get(run_id)
+        session = self.manager.sessions.get(self.session_id)
+        working = run is not None and run.task is not None and not run.task.done()
+        if working and session is not None and session.run_id == run_id:
+            await self._say("conversation", STILL_WORKING, run_id, None)
 
     async def _say_more(self, text: str, turn: TurnMetric) -> None:
         """The next part on offer, or the one the founder named ("go through the risks"); then the next offer."""
@@ -745,13 +872,15 @@ class VoiceSession:
                 continue
             text = self._spoken_line(event)
             if text:
-                keep = event.type == "recap" or event.data.get("kind") in ("approval", "held")
+                keep = event.type == "recap" or event.data.get("kind") in ("approval", "held", "team")
                 await self._say("conversation", text, event.run_id, self.current_turn, keep=keep)
+                if event.data.get("kind") == "team":
+                    self._spawn(self._still_working(event.run_id))
 
     def _spoken_line(self, event: Any) -> str:
-        """What the voice says for a lane event (founder decision A and B): how the team is organised, one line a
-        stage on what its agents produced, and a run that ended without an answer. Not every step: the screen has
-        the rest."""
+        """What the voice says for a lane event (founder decision R4, 2026-11-13): ONE opening turn on who is on the
+        team, then nothing while they work (no line per agent or stage, no Verifier line, no figure, no assumption
+        question: the screen has all of that), and a run that ended without an answer."""
         data = event.data
         if event.type == "recap":
             # A finished run's summary is spoken by `_speak_answer`, and a held-back team by its own line; a
@@ -763,15 +892,14 @@ class VoiceSession:
         if event.type != "narration":
             return ""
         kind = data.get("kind")
+        topic = str(data.get("topic") or "")
         if kind == "team":
-            return team_line(list(data.get("team") or []))
+            return team_line(list(data.get("team") or []), topic)
         if kind == "approval":
-            team = team_line(list(data.get("team") or [])) or str(data.get("text", ""))
-            return f"This needs your approval. {team} Say approve, or hold it."
+            team = team_line(list(data.get("team") or []), topic) or str(data.get("text", ""))
+            return f"{team} This needs your approval. Say approve, or hold it."
         if kind == "held":
             return str(data.get("text", ""))
-        if kind == "wave" and int(data.get("team_size") or 0) > 1:
-            return produced_line(list(data.get("wave") or []))
         return ""
 
 

@@ -237,8 +237,11 @@ async def test_the_fast_model_words_a_reply_and_a_slow_one_is_not_waited_for(fin
 async def test_stop_cancels_the_run(finance: Any) -> None:
     manager, _ = lane(finance)
     session_id, run = await started(manager)
-    outcome = await manager.turn(session_id, "stop")
-    assert outcome.kind == "stop"
+    asked = await manager.turn(session_id, "stop")
+    assert asked.kind == "confirm" and asked.reply == "Stop the team? Say yes to stop."  # founder re-test R1
+    assert not run.task.done()
+    outcome = await manager.turn(session_id, "yes")
+    assert outcome.kind == "stop" and outcome.reply == "Stopping the team."
     with pytest.raises(asyncio.CancelledError):
         await run.task
     await _until(lambda: not manager.sessions[session_id].narrators)

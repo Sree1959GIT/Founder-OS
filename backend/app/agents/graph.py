@@ -188,6 +188,9 @@ class RunContext:
     context: Any = None  # the conversation lane's frozen run snapshot
     cash_risk: CashRisk | None = None
     streamed: bool = False  # someone is reading `deltas`: each piece of text goes to one reader
+    # Founder re-test R8: re-running one agent keeps the others' findings. Agent id (in this run's team) -> the
+    # result that agent gave in the run this one replaces. An agent listed here does not run again.
+    reuse: dict[str, AgentResult] = field(default_factory=dict)
 
 
 class TeamEdit(BaseModel):
@@ -349,6 +352,9 @@ class AgentOrchestrator:
         """One instance, as its own task, so the founder can cancel or re-run it without touching the rest."""
         run = self.runs[state["run_id"]]
         inst = state["instance"]
+        kept = run.reuse.get(inst.id)
+        if kept is not None:
+            return {"results": [self._kept(run, inst, kept)]}
         while True:
             task = asyncio.create_task(self._in_a_slot(inst, state))
             run.agent_tasks[inst.id] = task
@@ -384,6 +390,31 @@ class AgentOrchestrator:
             finally:
                 run.agent_tasks.pop(inst.id, None)
             return {"results": [result]}
+
+    def _kept(self, run: RunContext, inst: AgentInstance, earlier: AgentResult) -> AgentResult:
+        """An agent whose findings stand from the run before: shown as done, with its cards, at no new cost."""
+        artifacts = [a.model_copy(update={"agent_id": inst.id}) for a in earlier.artifacts]
+        result = earlier.model_copy(
+            update={"agent_id": inst.id, "artifacts": artifacts, "usage": Usage(), "est_cost_usd": 0.0}
+        )
+        self.bus.emit("agent.step", run.run_id, inst.id, step="kept from the last run")
+        for artifact in artifacts:
+            self.bus.emit("agent.artifact", run.run_id, inst.id, artifact=artifact.model_dump(mode="json"))
+        self.bus.emit(
+            "agent.done",
+            run.run_id,
+            inst.id,
+            status=result.status,
+            verified=result.verified,
+            issues=result.issues,
+            elapsed_ms=0.0,
+            provider=result.provider,
+            model=result.model,
+            tokens=Usage().model_dump(),
+            est_cost_usd=0.0,
+            kept=True,
+        )
+        return result
 
     async def _verify_node(self, state: GraphState) -> dict[str, Any]:
         run = self.runs[state["run_id"]]
@@ -432,9 +463,20 @@ class AgentOrchestrator:
         return {"answer": "".join(parts).strip(), "advisor": meta}
 
     # ---------------------------------------------------------------- runs
-    def start(self, message: str, *, plan_override: Plan | None = None, context: Any = None) -> RunContext:
+    def start(
+        self,
+        message: str,
+        *,
+        plan_override: Plan | None = None,
+        context: Any = None,
+        reuse: dict[str, AgentResult] | None = None,
+    ) -> RunContext:
         run = RunContext(
-            run_id=f"run_{uuid.uuid4().hex[:10]}", message=message, plan_override=plan_override, context=context
+            run_id=f"run_{uuid.uuid4().hex[:10]}",
+            message=message,
+            plan_override=plan_override,
+            context=context,
+            reuse=dict(reuse or {}),
         )
         self.runs[run.run_id] = run
         self._trim()

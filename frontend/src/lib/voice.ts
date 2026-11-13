@@ -34,6 +34,8 @@ export interface VoiceHandlers {
   onTranscript: (text: string) => void;
   /** Speech was heard but no words were made out: the founder is told, so a turn is never lost in silence. */
   onMissed: () => void;
+  /** The recogniser was unsure of these words: they are read back ("Did you say ...?") before anything is done. */
+  onUnsure: (text: string) => void;
   onTurn: (text: string, outcome: TurnOutcome) => void;
   onSay: (lane: string, text: string) => void;
   onTurnMetric: (metric: VoiceTurnMetric) => void;
@@ -190,8 +192,12 @@ export class VoiceClient {
       case "missed":
         this.on.onMissed();
         break;
+      case "unsure":
+        this.on.onUnsure(String(m.text ?? ""));
+        break;
       case "turn":
-        this.on.onTurn(this.lastTranscript, m.outcome as TurnOutcome);
+        // `text` is the turn as it was acted on: after "Did you say ...?" and a "yes", the words confirmed.
+        this.on.onTurn(typeof m.text === "string" ? m.text : this.lastTranscript, m.outcome as TurnOutcome);
         break;
       case "say":
         this.on.onSay(String(m.lane), String(m.text));

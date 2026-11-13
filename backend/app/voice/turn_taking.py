@@ -4,8 +4,11 @@ While FounderOS speaks, any speech pauses the audio at once. When the founder's 
 - longer than `barge_in_ms`: a barge-in, decided without waiting for the words;
 - the words are a backchannel ("uh-huh", "ok", "right"): playback resumes where it paused;
 - clearly words of their own (three or more, or a question): a barge-in;
-- one or two other words: the decision model is asked, with a short timeout; unsure or slow means barge-in, because
-  talking over the founder is worse than stopping once too often.
+- a listening noise or one stray word ("Ugh!", "Huh.", "Thanks."): a backchannel (founder re-test R1: "uh-huh" came
+  out of the recogniser as "Ugh!" and stopped the team);
+- two other words: the decision model is asked, with a short timeout; unsure or slow means barge-in, because
+  talking over the founder is worse than stopping once too often. A barge-in only stops the speech: whether the
+  words stop the team is the conversation lane's decision, and that takes an explicit word and a yes.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from app.conversation.classifier import is_filler
 from app.decision.base import DecisionError, DecisionService
 
 Verdict = Literal["backchannel", "barge_in"]
@@ -48,6 +52,8 @@ def by_rules(text: str, speech_ms: float, barge_in_ms: float) -> TurnVerdict | N
         return TurnVerdict("backchannel", "rules")
     if QUESTION.search(words) or len(words.split()) >= 3:
         return TurnVerdict("barge_in", "rules")
+    if is_filler(words):
+        return TurnVerdict("backchannel", "rules")
     return None
 
 

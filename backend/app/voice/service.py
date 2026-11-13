@@ -18,6 +18,7 @@ from typing import Any
 from loguru import logger
 
 from app.config import Settings
+from app.voice.domain import HOTWORDS, PROMPT
 from app.voice.metrics import VoiceMetrics
 from app.voice.session import VoiceConfig
 from app.voice.stt import STT, FakeSTT, FasterWhisperSTT
@@ -81,6 +82,8 @@ class VoiceService:
             barge_in_ms=s.voice_barge_in_ms,
             partial_interval_ms=s.voice_partial_interval_ms,
             echo_gate=s.voice_echo_gate,
+            still_working_s=s.voice_still_working_s,
+            confirm_below=s.voice_confirm_below,
         )
 
     # ---------------------------------------------------------------------------------------------------- loading
@@ -115,6 +118,8 @@ class VoiceService:
                         s.voice_stt_compute_type,
                         cpu_model=s.voice_stt_cpu_model,
                         download_root=s.voice_models_path() / "whisper",
+                        prompt=PROMPT if s.voice_stt_vocabulary else "",
+                        hotwords=HOTWORDS if s.voice_stt_vocabulary else "",
                     )
                     stt_after = vram_used_gb()
                     if stt_before is not None and stt_after is not None:

@@ -152,10 +152,17 @@ class Settings(BaseSettings):
     voice_vad: Literal["silero", "energy"] = "silero"
     voice_vad_threshold: float = Field(default=0.5, gt=0, lt=1)
     voice_end_silence_ms: int = Field(default=400, ge=100, le=3000)
-    voice_barge_in_ms: int = Field(default=600, ge=100, le=5000)
+    voice_barge_in_ms: int = Field(default=1000, ge=100, le=5000)
     voice_partial_interval_ms: int = Field(default=0, ge=0, le=5000)
     # While FounderOS speaks, sound below this share of the founder's own speech level is its own echo (0: off).
     voice_echo_gate: float = Field(default=0.3, ge=0, le=1)
+    # Founder re-test R6: tell Whisper the words it is likely to hear (agent and metric names, "Dubai", "hires").
+    voice_stt_vocabulary: bool = True
+    # A spoken turn Whisper is less sure of than this (0 to 1) is read back before it is acted on. 0: never ask.
+    voice_confirm_below: float = Field(default=0.45, ge=0, le=1)
+    # During a team run the voice is silent after its opening turn, but for one "Still working on it." after this
+    # many seconds (0: never).
+    voice_still_working_s: float = Field(default=30.0, ge=0, le=600)
 
     @field_validator("deep_provider", mode="before")
     @classmethod
