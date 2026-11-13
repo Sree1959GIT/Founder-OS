@@ -62,6 +62,14 @@
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RV1–RV11 after the fix round of 2026-11-13 (V7, how the Advisor speaks, spoken numbers). Founder review 2026-11-13: V3, V4, V5, V6, V8, V9 pass; V7 failed (fixed, re-test RV2 and RV3); V10 to re-measure (RV11). Bench on the PC before this round: first words p50 0.93 s, metric answer p50 3.8 s (target ~3 s, not met), barge-in pause 65 ms / cancel 576 ms, Whisper +0.52 GB VRAM |
 
 ## Current session
+- Started (UTC): 2026-11-13 14:33 (local Windows session, second fix round for the M5 Major gate, time-box 2 hours), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan, in the founder's priority order:
+  - [x] Record the founder's RV1–RV11 results first
+  - [ ] P1: R1 (a filler is never stop; stop is confirmed), R8 (re-run one agent only; an accepted change is applied), R2 (barge-in timings)
+  - [ ] P2: R4 and R5 (one opening turn, silence, summary that ends with an offer), R6 (transcription), R3 (ambiguous numbers confirmed), R7 (a proposed memo gets one question)
+  - [ ] Tests, PRD §12, RW re-test steps, PR #10 updated, CI green
+
+Previous session (2026-11-13, M5 fix round 1):
 - Started (UTC): 2026-11-13 03:17 (local Windows bug-fix and voice-behaviour session for the M5 Major gate, time-box 2 hours), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan, in the founder's priority order:
   - [x] Record the founder feedback first
@@ -1115,6 +1123,22 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M5] Re-test RV1–RV11: OPEN (fix session 2026-11-13, round 2)
+Founder's results (2026-11-13): **PASS** RV2 (headphones), RV3 (speakers), RV7, RV8, RV10. **RV9 partly.** **FAIL** RV4, RV5, RV6.
+Founder's PC numbers (RV11, headphones): first words p50 **931 ms**, metric answer p50 **1869 ms**, barge-in pause **62–71 ms**, cancel **574–582 ms**, STT p50 **396 ms**, TTS first **591 ms**, VRAM **7.4 / 12 GB**, Whisper **+0.52 GB**.
+Headphones or a headset give the best voice results.
+
+P1
+- **R1 (important).** While a team ran, the founder said "uh-huh"; STT gave "Ugh!", the barge-in verdict came from "fallback", and the turn was taken as stop ("Stopping the team."). A short non-command utterance (filler, one word, no question, under about 1 s) while a team runs is a backchannel, never stop. Stop only on explicit words (stop, cancel, halt, hold it), and confirm before cancelling a running team ("Stop the team? Say yes to stop."). WAV/text fixtures for "uh-huh", "ugh", "mm", "hmm", "right", "okay".
+- **R8.** Voice re-run: "re-run the analyst" re-ran the whole team; re-running one agent must re-run only that agent, then rewrite the summary. "Assume 3 hires." offered a restart, but the answers afterwards still showed 2 hires ($32,347.24, -2.07). Check that an accepted change is applied (3 hires: $43,770.86 a month, -2.58) and that the spoken and on-screen restart offers both work.
+- **R2.** `/api/voice/metrics` `recent_barge_ins` has rows with `paused_ms` 35,000–168,000 ms, empty text and verdict by "duration": find whether the timing is wrong or audio really stayed paused that long, and fix.
+
+P2, founder design decision: voice during a team run (PRD §12, replacing round 1's per-stage lines)
+- **R4.** Speak ONE opening turn only, e.g. "I've put together a team of six: the Librarian, Market Scout, Financial Analyst, People & Ops, Regulatory & Tax and a Devil's Advocate. They're looking at the Dubai office from different angles so the decision holds up." Then stay silent while they work; at most one short "still working on it" if the run passes about 30 s. No per-agent lines, no Verifier lines, no figures, no assumption question; all of that stays on screen. When done: a short spoken summary of the team's two or three key findings (rounded numbers by code), then the outcome (the proposal and the main trade-off).
+- **R5.** The spoken summary must always end with an offer ("Want me to go through the risks?") and then stop. On the founder's run it ended after the proposal with no offer.
+- **R6.** Smarter transcription: "Should we open a Dubai office" came out "should be open a Dubai office", "Re-run the analyst, assume three hires" as "Freerun the another test assume 3 hires", and "two person" as "2%". Add a domain prompt / hotwords for faster-whisper (FounderOS terms, agent names, metric names, Dubai, hires, runway, churn), measure whether a larger model (e.g. large-v3-turbo int8) fits the VRAM with qwen3:8b loaded and what it costs in latency, normalise numbers with context, and confirm low-confidence or ambiguous turns ("Did you mean two people?"). No slow LLM correction pass unless measured to add under about 300 ms.
+- **R3.** Ambiguous numbers in amendments ("2%" when the decision has hires, "two" with no unit) are confirmed before they are applied.
+- **R7.** The Dubai text and spoken answers still ask target or kill-criterion questions about a PROPOSED memo ("Is the runway still above 10.44 months by 2027-05-06, as predicted?", "Is the risk of runway falling below 6 months by March 2027 acceptable?") and once repeated the prior-memo point twice. For a proposed memo on record, ask only "what has changed since you drafted it?". Tests with these strings.
 ### [M5] Founder review V1–V10: RESOLVED, awaiting re-test RV1–RV11 (fix session 2026-11-13)
 **Resolved (2026-11-13, PR #10):** V7, A to E, the number normaliser and the full stop, with tests in `tests/test_voice_round2.py` (44) and the fixture `churn.wav`. Causes and what changed:
 - **V7, where the spoken turn was lost.** Not in the queue or the classifier: once the words "What is our churn?" reach the lane they are queued and offered (test with fixtures). They were lost before that, in three ways, all in `app/voice/session.py`:
