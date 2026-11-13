@@ -101,9 +101,12 @@ async def test_a_filler_spoken_while_a_team_works_changes_nothing(finance: Any, 
     await wait_for(lambda: bool(wire.of("turn")))
     run = manager.orchestrator.runs[wire.of("turn")[0]["outcome"]["run_id"]]
     await stream(session, wav_bytes(name))
-    await wait_for(lambda: len(wire.of("turn")) == 2)
-    outcome = wire.of("turn")[1]["outcome"]
-    assert outcome["kind"] == "backchannel" and outcome["reply"] == ""
+    # The opening line may or may not be playing when the noise arrives (it depends on the machine's timing). Over
+    # the voice, the voice resumes; in silence, the lane hears a backchannel. Either way nothing changes.
+    await wait_for(lambda: len(wire.of("turn")) == 2 or bool(wire.of("resume")))
+    for heard in wire.of("turn")[1:]:
+        assert heard["outcome"]["kind"] == "backchannel" and heard["outcome"]["reply"] == ""
+    assert not wire.of("interrupt")
     await asyncio.sleep(0.1)
     assert run.task is not None and not run.task.done()  # the team is still working
     said = [m["text"] for m in wire.of("say")]
