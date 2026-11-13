@@ -377,6 +377,26 @@ def _chunks(lines: list[str], size: int = 3, limit: int = 2) -> list[list[str]]:
     return [lines[i : i + size] for i in range(0, len(lines), size)][:limit]
 
 
+_PERIOD_TAIL = re.compile(r"\b(?:for|in|as of) [A-Z][a-z]+ [^.:]*$")
+
+
+def _metric_detail(sentences: list[str], currency: str) -> list[str]:
+    """What stands behind a metric, when the founder asks for it: the parts of the checked answer that the lead did
+    not say (what it is made of, or its period), then the Advisor's question. The figure itself is not said again."""
+    if not sentences:
+        return []
+    first = sentences[0].rstrip(". ")
+    lines: list[str] = []
+    if ": " in first:
+        lines.append(_capital(spoken_text(first.split(": ", 1)[1], currency)) + ".")
+    else:
+        period = _PERIOD_TAIL.search(first)
+        if period is not None:
+            lines.append(f"That is {period.group(0)}.")
+    lines.extend(spoken_text(s, currency) for s in sentences[1:] if "simulated futures" not in s)
+    return lines[:3]
+
+
 def summarise(result: Any) -> Spoken:
     """The spoken turn for a finished run: the outcome and the one thing that matters, then offers of more.
 
@@ -427,7 +447,7 @@ def summarise(result: Any) -> Spoken:
             lead.append(cash_risk_line(risk.probability))
         if state == "not_verified":
             lead.append("Part of this is unverified, so check the screen.")
-        detail = [spoken_text(s, currency) for s in sentences if "simulated futures" not in s][:3]
+        detail = _metric_detail(sentences, currency)
         if detail:
             more.append(Segment("detail", "Want the detail?", detail))
     else:

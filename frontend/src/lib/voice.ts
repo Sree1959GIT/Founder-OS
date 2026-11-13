@@ -32,6 +32,8 @@ export interface VoiceHandlers {
   onReady: (sessionId: string, status: Record<string, unknown>) => void;
   onPartial: (text: string) => void;
   onTranscript: (text: string) => void;
+  /** Speech was heard but no words were made out: the founder is told, so a turn is never lost in silence. */
+  onMissed: () => void;
   onTurn: (text: string, outcome: TurnOutcome) => void;
   onSay: (lane: string, text: string) => void;
   onTurnMetric: (metric: VoiceTurnMetric) => void;
@@ -184,6 +186,9 @@ export class VoiceClient {
       case "transcript":
         this.lastTranscript = String(m.text ?? "");
         this.on.onTranscript(this.lastTranscript);
+        break;
+      case "missed":
+        this.on.onMissed();
         break;
       case "turn":
         this.on.onTurn(this.lastTranscript, m.outcome as TurnOutcome);

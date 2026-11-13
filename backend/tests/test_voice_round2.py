@@ -26,7 +26,7 @@ from app.engine.metrics import MetricsEngine
 from app.engine.scenario import ScenarioEngine
 from app.llm.fake import FakeProvider
 from app.llm.router import LLMRouter
-from app.voice.audio import FRAME
+from app.voice.audio import FRAME, float_to_pcm16, pcm16_to_float, rms
 from app.voice.session import ACK_METRIC, MISSED, QUEUE_OFFER
 from app.voice.spoken import (
     cash_risk_line,
@@ -56,6 +56,18 @@ def finance(loaded_db: FinanceDB, tmp_path: Path) -> Any:
         scenario=ScenarioEngine(loaded_db),
         calibration=CalibrationStore(tmp_path / "cal"),
     )
+
+
+class AnyVoice:
+    """Like Silero, and unlike the tests' energy detector: speech is speech however quiet it is."""
+
+    name = "any-voice"
+
+    def probability(self, frame: Any) -> float:
+        return 1.0 if rms(frame) > 0.002 else 0.0
+
+    def reset(self) -> None:
+        return None
 
 
 async def wait_for(condition: Any, seconds: float = 30.0) -> None:
@@ -222,7 +234,13 @@ async def test_a_metric_is_summarised_from_the_routines_figure(finance: Any) -> 
     result = await finished(manager, (await manager.turn(None, "What is our runway?")).run_id)
     spoken = summarise(result)
     assert spoken.lead == ["Your runway is about ten and a half months."]
-    assert spoken.more[0].key == "detail" and "about 1.8 million dollars" in spoken.more[0].lines[0]
+    assert spoken.more[0].key == "detail" and spoken.more[0].lines[0] == (
+        "Closing cash is about 1.8 million dollars, with a net burn of around 170 thousand dollars per month, so cash "
+        "reaches zero in September 2027."
+    )
+    burn = await finished(manager, (await manager.turn(None, "What is our net burn?")).run_id)
+    assert summarise(burn).lead == ["Your net burn is around 170 thousand dollars a month."]
+    assert summarise(burn).more[0].lines[0] == "That is for August to October 2026."  # its period, not the figure again
 
 
 async def test_voice_says_the_team_a_line_a_stage_and_a_short_summary(finance: Any) -> None:
@@ -356,6 +374,31 @@ async def test_speech_that_cannot_be_made_out_is_not_lost_in_silence(finance: An
     await session.close()
 
 
+@pytest.mark.parametrize(("gate", "pauses"), [(0.3, False), (0.0, True)])
+async def test_its_own_echo_is_not_taken_for_the_founder(finance: Any, gate: float, pauses: bool) -> None:
+    """Seen in the founder's decision log and with the real engines: what is left of FounderOS's own voice in the
+    microphone paused it again and again and was transcribed as turns ("See?", "No."). While it plays, sound far
+    quieter than the founder's own speech is its echo."""
+    session, wire, *_ = make(finance, ["What is our runway?", "What is our churn?"], mode="duplex", echo_gate=gate)
+    session.vad = AnyVoice()
+    await session.start()
+    await stream(session, wav_bytes("runway"))  # the founder's level is learnt while nothing is playing
+    await wait_for(lambda: bool(wire.of("turn")))
+    assert session._voice_level is not None and session._voice_level > 0.01
+    session.speaking_until = session.clock() + 30  # FounderOS is speaking
+    echo = float_to_pcm16(pcm16_to_float(wav_bytes("churn")) * 0.1)
+    await stream(session, echo)
+    await asyncio.sleep(0.3)
+    assert bool(wire.of("pause")) is pauses
+    if not pauses:
+        assert len(wire.of("transcript")) == 1  # nothing was sent to the STT, so no made-up turn
+        session.speaking_until = session.clock() + 30
+        await stream(session, wav_bytes("churn"))  # the founder, at their own level, still stops it
+        await wait_for(lambda: len(wire.of("turn")) == 2)
+        assert wire.of("pause") and wire.of("interrupt")
+    await session.close()
+
+
 async def test_a_cancelled_run_is_still_said_to_be_cancelled(finance: Any) -> None:
     provider = slow_provider()
     session, wire, *_ = make(finance, [], provider=provider, approval_policy="never")
@@ -389,6 +432,14 @@ async def test_why_that_option_is_answered_from_the_open_decision(finance: Any) 
     assert why.kind == "answerable_now" and why.run_id == first.run_id and not why.started_run
     assert why.reply.startswith(f"I proposed {result.decision_frame.default_option} because ")
     assert not EXACT_FIGURE.search(why.reply)  # the lane states no figure
+    # A metric looked up in between does not close the decision: "that option" and its team are still the decision's.
+    churn = await manager.turn(first.session_id, "And what about churn?")
+    await finished(manager, churn.run_id)
+    again = await manager.turn(first.session_id, "why that one?")
+    assert again.reply == why.reply and not again.started_run
+    redo = await manager.turn(first.session_id, "redo the Devil's Advocate")
+    assert redo.started_run and manager.orchestrator.runs[redo.run_id or ""].message == DUBAI
+    await finished(manager, redo.run_id)
     # With no decision open, the same words are an ordinary question.
     fresh = await manager.turn(None, "Why that option?")
     assert fresh.started_run

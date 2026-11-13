@@ -80,6 +80,7 @@ class VoiceService:
             end_silence_ms=s.voice_end_silence_ms,
             barge_in_ms=s.voice_barge_in_ms,
             partial_interval_ms=s.voice_partial_interval_ms,
+            echo_gate=s.voice_echo_gate,
         )
 
     # ---------------------------------------------------------------------------------------------------- loading

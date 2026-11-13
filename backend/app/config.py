@@ -154,6 +154,8 @@ class Settings(BaseSettings):
     voice_end_silence_ms: int = Field(default=400, ge=100, le=3000)
     voice_barge_in_ms: int = Field(default=600, ge=100, le=5000)
     voice_partial_interval_ms: int = Field(default=0, ge=0, le=5000)
+    # While FounderOS speaks, sound below this share of the founder's own speech level is its own echo (0: off).
+    voice_echo_gate: float = Field(default=0.3, ge=0, le=1)
 
     @field_validator("deep_provider", mode="before")
     @classmethod

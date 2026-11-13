@@ -32,7 +32,7 @@ from loguru import logger
 from app.agents.runtime import single_metric
 from app.agents.verifier import extract_figures
 from app.conversation.manager import ConversationError, ConversationManager
-from app.voice.audio import FRAME_MS, IN_RATE, OUT_RATE, FrameBuffer, float_to_pcm16, pcm16_to_float
+from app.voice.audio import FRAME_MS, IN_RATE, OUT_RATE, FrameBuffer, float_to_pcm16, pcm16_to_float, rms
 from app.voice.metrics import BargeIn, TurnMetric, VoiceMetrics
 from app.voice.spoken import Segment, metric_lead, produced_line, summarise, team_line
 from app.voice.stt import STT
@@ -50,7 +50,18 @@ ACK_METRIC = "Checking that now."
 ACK_TEAM = "On it."
 MISSED = "Sorry, I didn't catch that."
 QUEUE_OFFER = "Your next question is ready. Say ask it, or drop it."
-ACKS = (ACK_METRIC, ACK_TEAM, ON_SCREEN, MISSED, QUEUE_OFFER, "Running it now.", "Dropped.", "Holding the team back.")
+QUEUED = "I'll keep that for when this run finishes."  # the lane's reply to a question asked mid-run
+ACKS = (
+    ACK_METRIC,
+    ACK_TEAM,
+    ON_SCREEN,
+    MISSED,
+    QUEUE_OFFER,
+    QUEUED,
+    "Running it now.",
+    "Dropped.",
+    "Holding the team back.",
+)
 _APPROVE = re.compile(
     r"^(yes|yeah|approve|approved|go|go ahead|run it|approve and run|do it)\b[\s.!,]*(please)?[.!]*$", re.I
 )
@@ -80,6 +91,11 @@ class VoiceConfig:
     barge_in_ms: float = 600
     partial_interval_ms: float = 0  # 0: no partial transcripts
     decision_timeout_s: float = 0.4
+    # While FounderOS is playing audio, a frame counts as speech only if it is at least this share of the founder's
+    # own usual level (learnt from what they say while it is silent). What is left of its own voice after the
+    # browser's echo cancelling is far quieter than the founder, so it no longer pauses itself or hears words in its
+    # own echo. 0 turns the gate off.
+    echo_gate: float = 0.3
 
 
 @dataclass
@@ -152,6 +168,8 @@ class VoiceSession:
         self._floor = asyncio.Event()
         self._floor.set()
         self._missed_last = False
+        self._voice_level: float | None = None  # the founder's usual speech level, for the echo gate
+        self._levels: list[float] = []  # voiced frames of the utterance being heard, while nothing is playing
         self._answering = 0
         self._answers_idle = asyncio.Event()
         self._answers_idle.set()
@@ -260,7 +278,7 @@ class VoiceSession:
         if len(self.arrivals) == self.arrivals.maxlen:
             self.arrival_offset += 1
         self.arrivals.append(now)
-        probability = self.vad.probability(frame)
+        probability = self._gated(self.vad.probability(frame), frame, now)
         event = self.endpointer.push(probability)
         if not self.endpointer.in_speech and event is None:
             self.preroll.append(frame)
@@ -276,6 +294,7 @@ class VoiceSession:
             await self._emit({"type": "vad", "speech": True})
             return
         if event is not None and event.kind == "end":
+            self._learn_level()
             samples = np.concatenate(self.utterance) if self.utterance else np.zeros(0, dtype=np.float32)
             self.utterance = []
             end_t = self._arrival(event.frame_index)
@@ -297,6 +316,27 @@ class VoiceSession:
                 self.barge.verdict, self.barge.by = "barge_in", "duration"
             await self._interrupt("barge-in")
         self._maybe_partial(now)
+
+    def _gated(self, probability: float, frame: np.ndarray, now: float) -> float:
+        """The echo gate. While audio is playing, sound much quieter than the founder's own voice is FounderOS
+        hearing itself: not speech. While nothing is playing (and for a moment after, for the loudspeaker's tail),
+        the founder's level is learnt from their own speech."""
+        level = rms(frame)
+        playing = self.paused_at is None and now < self.speaking_until
+        if playing:
+            quiet = self._voice_level is not None and level < self.config.echo_gate * self._voice_level
+            return 0.0 if quiet and not self.endpointer.in_speech else probability
+        if probability >= self.config.vad_threshold and self.paused_at is None and now > self.speaking_until + 0.3:
+            self._levels.append(level)
+        return probability
+
+    def _learn_level(self) -> None:
+        """After an utterance: the median level of its voiced frames, smoothed over utterances."""
+        levels, self._levels = self._levels, []
+        if len(levels) * FRAME_MS < 300:
+            return
+        heard = float(np.median(levels))
+        self._voice_level = heard if self._voice_level is None else 0.7 * self._voice_level + 0.3 * heard
 
     def _arrival(self, index: int) -> float:
         position = index - self.arrival_offset

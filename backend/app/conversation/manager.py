@@ -104,6 +104,7 @@ class Session:
         self.narrators: set[asyncio.Task[None]] = set()
         self.finished: dict[str, list[tuple[str, bool]]] = {}
         self.last_wave: list[dict[str, Any]] = []  # the stage the last grouped line reported, for the voice
+        self.decision_run_id: str | None = None  # the last decision answered: what "that option" refers to
 
 
 _LEFT_IN_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
@@ -358,6 +359,8 @@ class ConversationManager:
             return
         first = [p.strip() for p in split_sentences(result.answer) if p.strip()][:2]
         session.local.add("advisor", " ".join(first)[:500])
+        if result.decision_frame is not None:
+            session.decision_run_id = run_id
 
     @staticmethod
     def _close_offers(session: Session, keep: str | None = None) -> None:
@@ -511,8 +514,9 @@ class ConversationManager:
         return plain if single_metric(plain) else text
 
     def _open_decision(self, session: Session) -> RunContext | None:
-        """The last decision this session got an answer to: what "that option" refers to."""
-        run = self.orchestrator.runs.get(session.run_id) if session.run_id else None
+        """The last decision this session got an answer to, even if a metric was looked up since: what "that
+        option" and "the Devil's Advocate" refer to."""
+        run = self.orchestrator.runs.get(session.decision_run_id) if session.decision_run_id else None
         if run is None or run.result is None or run.result.decision_frame is None:
             return None
         return run
@@ -529,21 +533,26 @@ class ConversationManager:
         proposed = next((o for o in frame.options if o.name == frame.default_option), frame.options[0])
         full = next((o for o in frame.options if o.is_full and o.name != proposed.name), None)
         away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
-        reasons: list[str] = []
+        # An option's name may carry a figure ("Change prices by +10 %"): then it is named by its role.
+        name = "that option" if extract_figures(proposed.name) else proposed.name
+        reason = "it is the smallest step that tests the decision"
         if full is not None:
-            cheaper = proposed.monthly <= full.monthly and proposed.one_off <= full.one_off
-            if proposed.modelled and full.modelled and cheaper:
-                reasons.append(f"it costs less than {full.name} and is easier to undo")
+            other = "the full option" if extract_figures(full.name) else full.name
+            both = proposed.modelled and full.modelled
+            cheaper = both and (proposed.monthly, proposed.one_off) != (full.monthly, full.one_off)
+            cheaper = cheaper and proposed.monthly <= full.monthly and proposed.one_off <= full.one_off
             if away and not extract_figures(away):
-                reasons.append(f'{full.name} moves you away from your goal "{away}"')
+                reason = f'{other} moves you away from your goal "{away}"'
             elif away:
-                reasons.append(f"{full.name} moves you away from one of your goals")
-        if proposed.trade_off and not extract_figures(proposed.trade_off):
-            reasons.append(proposed.trade_off.rstrip(". "))
-        if not reasons:
-            reasons.append("it is the smallest step that tests the decision")
-        because = "; and ".join(reasons[:2])
-        return f"I proposed {proposed.name} because {because}. The costs of each option are on screen."
+                reason = f"{other} moves you away from one of your goals"
+            elif cheaper:
+                reason = f"it costs less than {other} and is easier to undo"
+            else:
+                reason = f"it is easier to undo than {other}"
+        # `trade_off` is what the proposal gives up: said as that, never as a reason for it.
+        gives_up = proposed.trade_off.strip().rstrip(".")
+        trade_off = f" The trade-off: {gives_up}." if gives_up and not extract_figures(gives_up) else ""
+        return f"I proposed {name} because {reason}.{trade_off} The costs of each option are on screen."
 
     # --- re-run one agent (founder decision E) ---------------------------------------------------------------------
     def _rerun(self, session: Session, text: str) -> TurnOutcome | None:
@@ -573,7 +582,12 @@ class ConversationManager:
             return self._reply(session, by, "There is no team to re-run yet. Ask me something first.", session.run_id)
         title = REGISTRY[kind].title
         inst = next((i for i in run.plan.team if i.type == kind), None)
-        if inst is None:
+        decision = self._open_decision(session)
+        if inst is None and decision is not None and decision.plan is not None and not self._active(session):
+            # A metric was looked up since: "redo the Devil's Advocate" still means the open decision's team.
+            run = decision
+            inst = next((i for i in decision.plan.team if i.type == kind), None)
+        if inst is None or run.plan is None:
             return self._reply(session, by, f"The {title} is not on this team.", run.run_id)
         brief = f"{inst.brief}\nThe founder then added: {change}" if change else inst.brief
         if run.task is not None and not run.task.done():
