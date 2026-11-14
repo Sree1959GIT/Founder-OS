@@ -2,7 +2,8 @@
 
 Seen live: code's opening named the goal and the model's next sentence named it again; and "what has changed since
 you drafted it? What has changed since you drafted the proposal?". The first sentence stays (code's comes first), a
-near-duplicate after it goes. Two sentences with different figures are never duplicates.
+near-duplicate after it goes. Two sentences with different figures are never duplicates, with one exception (founder
+re-test S5, 2026-11-14): a second sentence on the same goal goes even when its figures differ.
 """
 
 from __future__ import annotations
@@ -106,8 +107,28 @@ def _question(sentence: str) -> str:
     return re.split(r":\s|\s[-\u2013\u2014]\s", sentence.rstrip())[-1]
 
 
+# Which way a decision moves a goal. A later sentence that is the first to say so is news, not a repeat.
+_DIRECTION = re.compile(
+    r"\b(away|against|further from|short of|hurts?|conflicts?|towards?|closer|helps?|supports?|serves?)\b", re.I
+)
+
+
+def same_goal(sentence: str, earlier: str, goals: Iterable[str] = ()) -> bool:
+    """The same goal, told twice (founder re-test S5): "…, which moves you away from your goal "Extend runway…""
+    and then "This moves you away from your goal "Extend runway…": …". The second telling goes whatever figures it
+    carries: the first already said which way the decision moves the goal, and the figures are on the card."""
+    for goal in goals:
+        if goal and names_goal(goal, sentence) and names_goal(goal, earlier):
+            if _DIRECTION.search(sentence) and not _DIRECTION.search(earlier):
+                continue  # the earlier one only named the goal; this one says which way it moves
+            return True
+    return False
+
+
 def near_duplicate(sentence: str, earlier: str, goals: Iterable[str] = ()) -> bool:
     """Does `sentence` say again what `earlier` said?"""
+    if same_goal(sentence, earlier, goals):
+        return True
     if _figures(sentence) != _figures(earlier):
         return False
     mine, theirs = _content(sentence), _content(earlier)
@@ -117,8 +138,7 @@ def near_duplicate(sentence: str, earlier: str, goals: Iterable[str] = ()) -> bo
     if sentence.rstrip().endswith("?"):
         asked, before = _content(_question(sentence)), _content(_question(earlier)) if "?" in earlier else set()
         return len(asked) >= 3 and len(before) >= 3 and len(asked & before) / len(asked | before) >= NEAR
-    # The same goal, told twice: a statement about a goal the answer has already named adds nothing.
-    return any(names_goal(goal, sentence) and names_goal(goal, earlier) for goal in goals if goal)
+    return False
 
 
 def without_repeats(text: str, goals: Iterable[str] = (), said: Iterable[str] = ()) -> str:

@@ -33,7 +33,10 @@ from app.voice.domain import count_reading
 
 MAX_SESSIONS = 100
 ASSUMPTION_QUESTION = 'While the team works on "{request}": which assumption would change your mind if it were wrong?'
-INPUTS_REPLY = "Those are your figures. Cancel this run and start again with them?"
+RESTART_OFFER = "That changes the decision. Restart with your change?"
+RESTART_REQUEST = "That changes the request. Restart with your change?"
+# A change offered while the team worked and not answered by the time the answer was ready (founder re-test S4).
+CHANGE_STILL_OPEN = "You asked for a change while the team worked, and this answer does not have it. Restart with it?"
 # A follow-up names its subject only by reference: "and what about churn?", "how about burn?" (founder decision D).
 _WHAT_ABOUT = re.compile(
     r"^(?:(?:and|so|ok|okay|then|also|now)[,\s]+)*(?:(?:what|how)\s+about|and)\s+(?:our\s+|the\s+|my\s+)?"
@@ -387,11 +390,25 @@ class ConversationManager:
         )
         self._say(session, recap, "recap", status=str(status or "done"))
         self._remember_answer(session, run_id)
+        # Founder re-test S4: a change the founder asked for while the team worked, and never answered, is not lost
+        # when the answer arrives without it. Its offer stays open on this finished run and is asked again.
+        unanswered = next(
+            (
+                a
+                for a in session.amendments.values()
+                if a.status == "offered" and a.run_id == run_id == session.run_id and status in (None, "done")
+            ),
+            None,
+        )
+        if unanswered is not None:
+            session.asked = Asked(kind="amendment", ref=unanswered.id)
+            self._say(session, CHANGE_STILL_OPEN, kind="change_open", amendment_id=unanswered.id)
         # Founder re-test 56: every queued question is offered, one at a time, once nothing is running, whichever run
         # ended (the session may have moved on to a restarted run that has already finished).
         if session.run_id == run_id or not self._active(session):
             self._offer_next(session)
-        self._close_offers(session, keep=session.run_id if session.run_id != run_id else None)
+        keep = run_id if unanswered is not None else (session.run_id if session.run_id != run_id else None)
+        self._close_offers(session, keep=keep)
 
     def _remember_answer(self, session: Session, run_id: str) -> None:
         """Founder decision D: a follow-up is answered in context, so the session keeps what was answered (its first
@@ -470,11 +487,14 @@ class ConversationManager:
         return " ".join(p for p in parts if p)
 
     # --- turns -----------------------------------------------------------------------------------------------------
-    async def turn(self, session_id: str | None, text: str) -> TurnOutcome:
+    async def turn(self, session_id: str | None, text: str, *, spoken: bool = False) -> TurnOutcome:
+        """`spoken`: the words came from the recogniser, not the keyboard. Only that changes how "stop" is taken
+        (founder decision 2026-11-14): a typed "stop" stops the team at once, a spoken one is asked about first,
+        because a recogniser can hear "stop" in a noise."""
         session = self.session(session_id)
         running = self._running(session)
         session.local.add("founder", text)
-        answered = await self._answer_asked(session, text)
+        answered = await self._answer_asked(session, text, spoken)
         if answered is not None:
             return answered
         unclear = self._unclear_number(session, running, text)
@@ -486,9 +506,7 @@ class ConversationManager:
         if running is None:
             return await self._turn_when_idle(session, text)
         if self._gives_inputs(running, text):
-            classified = Classified(kind="amendment", by="rules")
-            outcome = self._offer_amendment(session, classified, running, text)
-            return outcome.model_copy(update={"reply": INPUTS_REPLY})
+            return self._offer_amendment(session, Classified(kind="amendment", by="rules"), running, text)
         classified = await self.classifier.classify(text, running.message)
         running = self._running(session)  # the run may have ended while the classifier was thinking
         if running is None:
@@ -504,6 +522,11 @@ class ConversationManager:
                     session,
                 )
                 outcome = self._reply(session, classified, reply, running.run_id)
+            case "stop" if not spoken:
+                # Founder decision 2026-11-14: typed words are what the founder meant, so a typed "stop" stops at
+                # once, like the Cancel button.
+                self.orchestrator.cancel(running.run_id)
+                outcome = self._reply(session, classified, "Stopping the team.", running.run_id)
             case "stop":
                 # Founder re-test R1: a team is never cancelled on one hearing of one word. Ask, then stop on yes.
                 session.asked = Asked(kind="stop", ref=running.run_id)
@@ -532,7 +555,7 @@ class ConversationManager:
             return False
         return None
 
-    async def _answer_asked(self, session: Session, text: str) -> TurnOutcome | None:
+    async def _answer_asked(self, session: Session, text: str, spoken: bool = False) -> TurnOutcome | None:
         """Yes or no to what the lane asked. Any other turn is taken as itself: a stop or a number that was not
         confirmed lapses (nothing changed), while an offer with a card on screen stays on its card."""
         asked, session.asked = session.asked, None
@@ -554,7 +577,7 @@ class ConversationManager:
             if not yes:
                 reply = "Okay, nothing has changed. Say the number with what it counts, for example three hires."
                 return self._reply(session, by, reply, session.run_id)
-            outcome = await self.turn(session.id, asked.text)
+            outcome = await self.turn(session.id, asked.text, spoken=spoken)
             if outcome.amendment_id:  # already confirmed once: the change is applied without a second question
                 return self._accept(session, "amendment", outcome.amendment_id, True) or outcome
             return outcome
@@ -789,12 +812,11 @@ class ConversationManager:
         )
         session.amendments[amendment.id] = amendment
         session.asked = Asked(kind="amendment", ref=amendment.id)  # "yes" answers it, as the card's button does
-        finished = running.task is not None and running.task.done()
-        reply = (
-            "That changes the decision. Restart with your change?"
-            if finished
-            else "That changes the request. Cancel this run and start again with your change?"
-        )
+        # Founder re-test S4: the same offer, in the same words, while the team works as after the answer.
+        # A run whose team is still being chosen has no plan yet: only a run known not to be a decision is a
+        # "request".
+        known_other = running.plan is not None and not self._is_decision(running.run_id)
+        reply = RESTART_REQUEST if known_other else RESTART_OFFER
         self._emit(session, "amendment.offered", amendment_id=amendment.id, text=text, reply=reply)
         outcome = self._reply(session, classified, reply, running.run_id)
         return outcome.model_copy(update={"amendment_id": amendment.id})

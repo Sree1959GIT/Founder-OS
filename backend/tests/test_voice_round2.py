@@ -400,12 +400,11 @@ async def test_a_cancelled_run_is_still_said_to_be_cancelled(finance: Any) -> No
     await session.start()
     await session.control({"type": "text", "text": "Should we expand the team this year?"})
     await wait_for(lambda: bool(wire.of("turn")))
+    # Founder decision 2026-11-14: a typed "stop" stops at once (a spoken one is asked about: test_voice_round4).
     await session.control({"type": "text", "text": "stop"})
     await wait_for(lambda: len(wire.of("turn")) == 2)
-    assert wire.of("turn")[1]["outcome"]["reply"] == "Stop the team? Say yes to stop."  # R1: asked first
-    await session.control({"type": "text", "text": "Yes."})
-    await wait_for(lambda: len(wire.of("turn")) == 3)
-    await wait_for(lambda: wire.of("interrupt") and wire.of("turn")[2]["outcome"]["reply"] == "Stopping the team.")
+    await wait_for(lambda: wire.of("interrupt") and wire.of("turn")[1]["outcome"]["reply"] == "Stopping the team.")
+    await wait_for(lambda: any(m["text"] == "That run was cancelled." for m in wire.of("say")))
     provider.release.set()
     await session.close()
 

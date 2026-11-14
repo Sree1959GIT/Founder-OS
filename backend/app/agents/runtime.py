@@ -1605,9 +1605,50 @@ _KILL_QUESTION = re.compile(r"\b(?:kill criteri\w*|on track|meet(?:ing)? (?:its|
 # The memo on record, named again after code's lead has named it (founder re-test R7: said twice in one answer).
 _MEMO_AGAIN = re.compile(
     r"\b(?:proposed|draft(?:ed)?|earlier|existing|previous|prior)\s+(?:decision\s+)?memo\b|"
-    r"\bmemo\b[^.?!]*\b(?:on record|already|drafted)\b|\balready (?:have|drafted|wrote|written)\b[^.?!]*\bmemo\b",
+    r"\bmemo\b[^.?!]*\b(?:on record|already|drafted)\b|\balready (?:have|drafted|wrote|written)\b[^.?!]*\bmemo\b|"
+    # Founder re-test S5: the memo told again without the word "memo" ("You already proposed a Dubai office in 2027
+    # with a Travel-led pilot").
+    r"\b(?:you(?:'ve| have)?|we(?:'ve| have)?)\s+(?:already|earlier|previously)\s+"
+    r"(?:proposed|drafted|planned|considered|looked at|written|wrote|recommended)\b|"
+    r"\b(?:earlier|existing|previous|prior)\s+(?:proposal|draft|plan|recommendation)\b|"
+    r"\bas (?:you )?(?:proposed|drafted|planned) (?:earlier|before|previously)\b",
     re.I,
 )
+# A sentence that speaks of a decision or memo on record, and the dates it gives for it.
+_OF_A_RECORD = re.compile(
+    r"\b(?:memo|already|earlier|previously|proposed|proposal|drafted|draft|decided|on record)\b",
+    re.I,
+)
+_ISO_DATE = re.compile(r"\b(?:19|20)\d{2}-\d{2}-\d{2}\b")
+# When it was written: "proposed … in 2027", "a memo from 2026-11-06", "drafted on 6 November 2026".
+_WRITTEN_WHEN = re.compile(
+    r"\b(?:proposed|drafted|decided|wrote|written|memo|proposal|draft)\b"
+    r"(?:(?!\b(?:review|forecast|predict|target|until|criteri)\w*)[^.?!;:]){0,80}?"
+    r"\b(?:in|on|from|dated|of|since)\s+(?:(?:early|late|mid)[- ])?(?:\d{1,2}\s+)?(?:[A-Z][a-z]+\s+)?(?:\d{1,2},?\s+)?"
+    r"(?P<year>(?:19|20)\d{2})(?P<rest>-\d{2}-\d{2})?",
+    re.I,
+)
+
+
+def misdates_a_record(sentence: str, records: list[DecisionRecord]) -> bool:
+    """Founder re-test S5: "You already proposed a Dubai office in 2027", of a memo dated 2026-11-06. A sentence
+    about a decision on record never gives a date the record does not: not as the date it was written (that is its
+    own date only), and no other full date (a review date or a forecast's date must be one the record states). A
+    bare year elsewhere in the sentence is left alone: it may be about the market or the plan, not the memo."""
+    if not records or not _OF_A_RECORD.search(sentence):
+        return False
+    written = {r.drafted_on() for r in records if r.drafted_on()}
+    on_record = " ".join(
+        " ".join([r.path, r.title, r.decided or "", r.review_date or "", r.decision, *r.predictions, *r.kill_criteria])
+        for r in records
+    )
+    when = _WRITTEN_WHEN.search(sentence)
+    if when is not None and written:
+        stated = when["year"] + (when["rest"] or "")
+        if not any(date == stated or (not when["rest"] and date.startswith(stated)) for date in written):
+            return True
+    known_dates = set(_ISO_DATE.findall(on_record))
+    return any(date not in known_dates for date in _ISO_DATE.findall(sentence))
 
 
 def asks_about_a_draft(sentence: str) -> bool:
@@ -1668,6 +1709,8 @@ class _SentenceGate:
                 continue  # the proposal and the full model, said again in the model's words
             if self.draft_on_record and asks_about_a_draft(piece):
                 continue
+            if misdates_a_record(piece, self.records):
+                continue  # a date the memo on record does not have (founder re-test S5)
             self.said.append(key)
             self.shown.append(piece)
             kept.append(piece)

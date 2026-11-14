@@ -237,10 +237,10 @@ async def test_the_fast_model_words_a_reply_and_a_slow_one_is_not_waited_for(fin
 async def test_stop_cancels_the_run(finance: Any) -> None:
     manager, _ = lane(finance)
     session_id, run = await started(manager)
-    asked = await manager.turn(session_id, "stop")
+    asked = await manager.turn(session_id, "stop", spoken=True)
     assert asked.kind == "confirm" and asked.reply == "Stop the team? Say yes to stop."  # founder re-test R1
     assert not run.task.done()
-    outcome = await manager.turn(session_id, "yes")
+    outcome = await manager.turn(session_id, "yes", spoken=True)
     assert outcome.kind == "stop" and outcome.reply == "Stopping the team."
     with pytest.raises(asyncio.CancelledError):
         await run.task
@@ -347,12 +347,18 @@ async def test_only_one_amendment_can_replace_a_run(finance: Any) -> None:
     await manager.orchestrator.runs[accepted["run_id"]].task
 
 
-async def test_an_offer_ends_with_its_run(finance: Any) -> None:
+async def test_an_unanswered_offer_stays_open_on_its_finished_run_until_another_run_replaces_it(finance: Any) -> None:
+    """Founder re-test S4 (2026-11-14): a change asked for while the team worked is not lost when the answer arrives
+    without it. (Before, the offer ended with its run.) A new run is what closes it."""
     manager, provider = lane(finance)
     session_id, run = await started(manager)
     offer = await manager.turn(session_id, "Actually, assume two hires")
     provider.release.set()
     await run.task
+    await _until(lambda: not manager.sessions[session_id].narrators)
+    assert manager.sessions[session_id].amendments[offer.amendment_id or ""].status == "offered"
+    other = await manager.turn(session_id, "What is our runway?")
+    await manager.orchestrator.runs[other.run_id or ""].task
     await _until(lambda: not manager.sessions[session_id].narrators)
     with pytest.raises(ConversationError):
         manager.answer_amendment(session_id, offer.amendment_id or "", True)

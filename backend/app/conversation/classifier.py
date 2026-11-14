@@ -129,6 +129,12 @@ class TurnClassifier:
             # two words or fewer is a listening noise, anything longer is kept as a question.
             kind: TurnKind = "backchannel" if len(text.split()) <= 2 and "?" not in text else "new_question"
             return Classified(kind=kind, by="rules", probability=decision.probability, decision_id=decision.id)
+        if decision.choice == "backchannel" and len(text.split()) >= 3:
+            # Founder re-test S4: words said while the team works are never dropped on a model's guess. A listening
+            # noise is short and the rules know it; three words or more are kept as a question, so nothing is lost.
+            return Classified(
+                kind="new_question", by="rules", probability=decision.probability, decision_id=decision.id
+            )
         return Classified(
             kind=decision.choice,  # type: ignore[arg-type]
             by="decision",

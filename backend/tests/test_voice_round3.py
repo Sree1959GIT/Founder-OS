@@ -134,17 +134,18 @@ async def test_stop_is_asked_about_and_only_yes_stops_the_team(finance: Any) -> 
     manager = lane(finance, provider)
     first = await manager.turn(None, TEAM_QUESTION)
     run = manager.orchestrator.runs[first.run_id or ""]
-    asked = await manager.turn(first.session_id, "Stop the team.")
+    # Spoken turns (founder decision 2026-11-14: a typed "stop" stops at once, see test_voice_round4).
+    asked = await manager.turn(first.session_id, "Stop the team.", spoken=True)
     assert (asked.kind, asked.reply) == ("confirm", "Stop the team? Say yes to stop.")
-    kept = await manager.turn(first.session_id, "No, keep going.")
+    kept = await manager.turn(first.session_id, "No, keep going.", spoken=True)
     assert kept.reply == "Okay, the team carries on." and not run.task.done()  # type: ignore[union-attr]
     # A question that was not answered lapses: a later "yes" stops nothing.
-    await manager.turn(first.session_id, "stop")
-    await manager.turn(first.session_id, "Hmm.")
-    stray = await manager.turn(first.session_id, "yes")
+    await manager.turn(first.session_id, "stop", spoken=True)
+    await manager.turn(first.session_id, "Hmm.", spoken=True)
+    stray = await manager.turn(first.session_id, "yes", spoken=True)
     assert stray.kind == "backchannel" and not run.task.done()  # type: ignore[union-attr]
-    await manager.turn(first.session_id, "hold it")
-    stopped = await manager.turn(first.session_id, "Yes, stop.")
+    await manager.turn(first.session_id, "hold it", spoken=True)
+    stopped = await manager.turn(first.session_id, "Yes, stop.", spoken=True)
     assert (stopped.kind, stopped.reply) == ("stop", "Stopping the team.")
     with pytest.raises(asyncio.CancelledError):
         await run.task  # type: ignore[misc]
@@ -395,20 +396,9 @@ def test_a_decision_summary_always_ends_with_an_offer() -> None:
     assert spoken.more and spoken.more[0].offer == "Want me to go through the costs?"
 
 
-async def test_a_listening_noise_after_the_summary_brings_the_offer_back(finance: Any) -> None:
-    """R5: "uh-huh" over the summary cut it off before the offer. The offer is said again."""
-    session, wire, _, _tts, manager = make(finance, [], approval_policy="never")
-    await session.start()
-    await session.control({"type": "text", "text": DUBAI})
-    await wait_for(lambda: bool(wire.of("turn")))
-    await finished(manager, wire.of("turn")[0]["outcome"]["run_id"])
-    await wait_for(lambda: any(m["text"].startswith("Want") for m in wire.of("say")))
-    before = len(wire.of("say"))
-    await session._interrupt("barge-in")  # as a barge-in does: what was still to be said is dropped
-    await session.control({"type": "text", "text": "Uh-huh."})
-    await wait_for(lambda: len(wire.of("say")) > before)
-    assert wire.of("say")[-1]["text"] == session.offers.more[0].offer == "Want the other options?"
-    await session.close()
+# R5's "a listening noise brings the offer back" now holds only for an offer that was never said (founder re-test S2,
+# 2026-11-14: each offer is said once): see `test_an_offer_that_a_barge_in_dropped_is_still_said_once` and
+# `test_an_offer_is_said_once_whatever_noises_follow_it` in test_voice_round4.
 
 
 # --- R6: transcription ------------------------------------------------------------------------------------------------
@@ -636,13 +626,13 @@ async def test_a_yes_spoken_over_the_end_of_the_question_is_still_an_answer(fina
     """ "Yes" while "Stop the team? Say yes to stop." is still playing must not be taken for a listening noise."""
     provider = slow_provider()
     session, wire, _, _tts, manager = make(
-        finance, ["Yes."], provider=provider, mode="duplex", approval_policy="never", still_working_s=0
+        finance, ["Stop.", "Yes."], provider=provider, mode="duplex", approval_policy="never", still_working_s=0
     )
     await session.start()
     await session.control({"type": "text", "text": TEAM_QUESTION})
     await wait_for(lambda: bool(wire.of("turn")))
     run = manager.orchestrator.runs[wire.of("turn")[0]["outcome"]["run_id"]]
-    await session.control({"type": "text", "text": "stop"})
+    await stream(session, wav_bytes("okay"))  # heard as "Stop.": spoken, so it is asked about
     await wait_for(lambda: any(m["text"] == STOP_QUESTION for m in wire.of("say")))
     session.speaking_until = session.clock() + 30  # the question is still being played
     await stream(session, wav_bytes("okay"))  # heard as "Yes."

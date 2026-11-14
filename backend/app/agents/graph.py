@@ -191,6 +191,8 @@ class RunContext:
     # Founder re-test R8: re-running one agent keeps the others' findings. Agent id (in this run's team) -> the
     # result that agent gave in the run this one replaces. An agent listed here does not run again.
     reuse: dict[str, AgentResult] = field(default_factory=dict)
+    # Founder re-test S1: the founder stopped this run. Whatever the graph still returns, it never becomes an answer.
+    cancel_requested: bool = False
 
 
 class TeamEdit(BaseModel):
@@ -497,6 +499,12 @@ class AgentOrchestrator:
             self.bus.emit("run.finished", run.run_id, status="failed", error=str(exc))
             await run.deltas.put(None)
             raise
+        if run.cancel_requested:
+            # Founder re-test S1: a run the founder stopped is cancelled even if the stop landed too late to interrupt
+            # the last step. It has no result, so nothing shows or speaks it as an answer.
+            self.bus.emit("run.finished", run.run_id, status="cancelled")
+            await run.deltas.put(None)
+            raise asyncio.CancelledError
         result = self._result(run, state, _ms(started))
         run.result = result
         self.bus.emit(
@@ -627,6 +635,7 @@ class AgentOrchestrator:
         run = self.runs.get(run_id)
         if run is None or run.task is None or run.task.done():
             return False
+        run.cancel_requested = True
         run.task.cancel()
         return True
 

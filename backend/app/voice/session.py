@@ -3,9 +3,12 @@
 The voice drives the existing conversation lane, never the agents directly:
 - a finished utterance goes through `ConversationManager.turn`, so a mid-run turn is classified as before (queue,
   amendment, stop, backchannel, answer now);
-- how the Advisor speaks (founder decision 2026-11-13, PRD §12, `app/voice/spoken.py`): one line on how the team is
-  organised, one line a stage on what its agents produced, then a summary of the outcome with an offer of more. The
-  on-screen answer is never read aloud, and every spoken number is rounded by code from the verified figure;
+- how the Advisor speaks (founder decisions 2026-11-13, PRD §12, `app/voice/spoken.py`): one opening turn on who is
+  on the team, silence while they work, then a summary of the outcome with an offer of more. The on-screen answer
+  is never read aloud, and every spoken number is rounded by code from the verified figure;
+- round 3 (2026-11-14): a run the founder stopped is never summarised or spoken; each offer is said once; after an
+  offer the voice waits (its own echo and a sound the recogniser was unsure of are never a yes); a typed "stop" stops
+  at once, a spoken one is asked about first;
 - a lane line with a figure in it is never spoken (the screen shows it);
 - the founder has the floor: nothing new is played while they are speaking or while their words are being
   understood, and a pause made for older speech is never resumed over newer speech (founder review V7);
@@ -31,8 +34,9 @@ from loguru import logger
 
 from app.agents.runtime import single_metric
 from app.agents.verifier import extract_figures
+from app.conversation.classifier import by_rules as lane_rules
 from app.conversation.classifier import is_filler
-from app.conversation.manager import ConversationManager
+from app.conversation.manager import CHANGE_STILL_OPEN, ConversationManager
 from app.voice.audio import FRAME_MS, IN_RATE, OUT_RATE, FrameBuffer, float_to_pcm16, pcm16_to_float, rms
 from app.voice.domain import corrected
 from app.voice.metrics import BargeIn, TurnMetric, VoiceMetrics
@@ -59,6 +63,14 @@ STILL_WORKING = "Still working on it."
 SAY_AGAIN = "Okay. Say it again."
 UNSURE = "I'm not sure I heard that right. If the words on screen are what you said, say yes. If not, say it again."
 MAX_ONSET_AGE_S = 2.0  # speech is noticed about 0.1 s after it starts: an older "start" is a clock that went stale
+# Founder re-test S3: after an offer the voice waits, and its own voice is never the answer. Sound that begins while
+# it plays, or this soon after (the loudspeaker's tail, and the client playing a little behind this clock), and whose
+# words are words it has just said, is its own echo.
+ECHO_TAIL_S = 1.0
+OWN_WORDS_S = 20.0  # how long a line it said stays "just said"
+GATE_TAIL_S = 0.3  # the echo gate stays on this long after the last audio
+# One word that is an answer in its own right is never taken for an echo ("yes" over the end of "Say yes to stop.").
+_PLAIN_ANSWER = re.compile(r"^(yes|yeah|yep|yup|no|nope|nah|stop|cancel|okay|ok|sure|restart)$", re.I)
 ACKS = (
     ACK_METRIC,
     ACK_TEAM,
@@ -136,6 +148,7 @@ class _Say:
     turn: TurnMetric | None
     epoch: int
     keep: bool = False  # a reply or an offer: not dropped as out-of-date narration when the answer begins
+    offer: Segment | None = None  # this line is that part's offer ("Want me to go through the risks?"): said once
 
 
 @dataclass
@@ -206,7 +219,16 @@ class VoiceSession:
         self._unsure: str | None = None  # words read back to the founder ("Did you say ...?"), awaiting yes or no
         self._barge_seq = -1  # the stretch of speech the current barge-in record is about
         self._still_said: set[str] = set()  # runs that have had their one "still working" line
-        self._offer_again: Segment | None = None  # the offer already repeated after a listening noise
+        # Founder re-test S2: each offer is said once. An offer is "said" when its first audio goes out; one that a
+        # barge-in dropped before that may still be said, once.
+        self._offers_said: deque[Segment] = deque(maxlen=64)  # the parts themselves, compared by identity
+        self._current: _Say | None = None  # the line being made or played
+        # Founder re-test S1: runs the founder stopped. Nothing of their answer is ever spoken.
+        self._stopped: set[str] = set()
+        # Founder re-test S3: what was said lately and when the audio last ended, to know its own echo.
+        self._own_words: deque[tuple[float, str]] = deque(maxlen=12)
+        self._audio_end = 0.0
+        self._overlapped = False  # the utterance being heard began while FounderOS was speaking, or just after
 
     # ------------------------------------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -326,8 +348,10 @@ class VoiceSession:
             self.interrupted_for_current = False
             self._speech_seq += 1
             self._update_floor()
+            onset = self._arrival(event.frame_index)
+            self._overlapped = self.speaking() or onset < self._audio_end + ECHO_TAIL_S
             if self.speaking():
-                await self._pause(self._arrival(event.frame_index))
+                await self._pause(onset)
             await self._emit({"type": "vad", "speech": True})
             return
         if event is not None and event.kind == "end":
@@ -338,7 +362,7 @@ class VoiceSession:
             speech_ms = samples.size * 1000 / IN_RATE
             paused = self.paused_at is not None and not self.interrupted_for_current
             await self._emit({"type": "vad", "speech": False})
-            self._hear(samples, end_t, speech_ms, paused=paused)
+            self._hear(samples, end_t, speech_ms, paused=paused, overlapped=self._overlapped)
             return
         self.utterance.append(frame)
         if sum(u.size for u in self.utterance) > MAX_UTTERANCE_S * IN_RATE:
@@ -361,7 +385,7 @@ class VoiceSession:
         hearing itself: not speech. While nothing is playing (and for a moment after, for the loudspeaker's tail),
         the founder's level is learnt from their own speech."""
         level = rms(frame)
-        playing = self.paused_at is None and now < self.speaking_until
+        playing = self.paused_at is None and now < self.speaking_until + GATE_TAIL_S
         if playing:
             quiet = self._voice_level is not None and level < self.config.echo_gate * self._voice_level
             return 0.0 if quiet and not self.endpointer.in_speech else probability
@@ -432,6 +456,7 @@ class VoiceSession:
         while not self._says.empty():
             self._says.get_nowait()
         was_speaking = self.speaking()
+        self._audio_end = min(self._audio_end, self.clock()) if was_speaking else self._audio_end
         self.speaking_until = 0.0
         self.paused_at = None
         if self.barge is not None and self.barge.stopped_ms is None and reason == "barge-in":
@@ -449,26 +474,51 @@ class VoiceSession:
             return
         if self.paused_at is not None:
             self.speaking_until += self.clock() - self.paused_at
+            self._audio_end = max(self._audio_end, self.speaking_until)
             self.paused_at = None
         await self._emit({"type": "resume"})
         await self._set_state("speaking")
 
     # ------------------------------------------------------------------------------------------------ turns
-    def _hear(self, samples: np.ndarray, end_t: float, speech_ms: float, *, paused: bool) -> None:
+    def _hear(
+        self, samples: np.ndarray, end_t: float, speech_ms: float, *, paused: bool, overlapped: bool = False
+    ) -> None:
         """The founder stopped speaking: their words keep the floor until they are understood and answered."""
         self._hearing += 1
         self._update_floor()
-        self._spawn(self._heard(samples, end_t, speech_ms, paused, self._speech_seq))
+        self._spawn(self._heard(samples, end_t, speech_ms, paused, self._speech_seq, overlapped))
 
-    async def _heard(self, samples: np.ndarray, end_t: float, speech_ms: float, paused: bool, seq: int) -> None:
+    async def _heard(
+        self, samples: np.ndarray, end_t: float, speech_ms: float, paused: bool, seq: int, overlapped: bool
+    ) -> None:
         try:
-            await self._utterance(samples, end_t, speech_ms, paused=paused, seq=seq)
+            await self._utterance(samples, end_t, speech_ms, paused=paused, seq=seq, overlapped=overlapped)
         finally:
             self._hearing -= 1
             self._update_floor()
 
+    def _own_echo(self, text: str) -> bool:
+        """Are these words FounderOS's own, just said (founder re-test S3)? "…go through the risks?" picked up from
+        the loudspeaker reads as a yes to its own offer. A plain one-word answer is never an echo."""
+        words = re.findall(r"[a-z0-9']+", text.lower())
+        if not words or (len(words) == 1 and _PLAIN_ANSWER.match(words[0])):
+            return False
+        now, n = self.clock(), len(words)
+        for at, line in self._own_words:
+            said = re.findall(r"[a-z0-9']+", line.lower())
+            if now - at <= OWN_WORDS_S and any(said[i : i + n] == words for i in range(len(said) - n + 1)):
+                return True
+        return False
+
     async def _utterance(
-        self, samples: np.ndarray, end_t: float, speech_ms: float, *, paused: bool, seq: int | None = None
+        self,
+        samples: np.ndarray,
+        end_t: float,
+        speech_ms: float,
+        *,
+        paused: bool,
+        seq: int | None = None,
+        overlapped: bool = False,
     ) -> None:
         if samples.size < IN_RATE // 10:  # under 100 ms: a click
             if paused:
@@ -490,10 +540,22 @@ class VoiceSession:
         )
         if not paused and self.barge is not None and seq == self._barge_seq and not self.barge.text:
             self.barge.text = heard.text  # a barge-in decided by its length: its words, once they are known
+        if overlapped and self._own_echo(heard.text):
+            # Founder re-test S3: its own words, heard back. Never a turn, never an answer to its own offer.
+            await self._emit({"type": "echo", "text": heard.text})
+            if paused:
+                if self.barge is not None:
+                    self.barge.verdict, self.barge.by, self.barge.text = "backchannel", "echo", heard.text
+                    self.metrics.barge_ins.append(self.barge)
+                await self._resume(seq)
+            else:
+                await self._set_state("listening" if self.config.mode == "duplex" else "idle")
+            return
         if paused:
-            if self._answers_a_question(heard.text):
+            if self._answers_a_question(heard.text) or lane_rules(heard.text) not in (None, "backchannel"):
                 # "Yes" said over the last words of "Stop the team? Say yes to stop." is an answer, not a listening
-                # noise: it must reach the lane, not just resume the speech.
+                # noise: it must reach the lane, not just resume the speech. So must a change, a question or a
+                # stop that the lane's own rules recognise (founder re-test S4): no model is asked about those.
                 verdict = TurnVerdict("barge_in", "rules")
             else:
                 verdict = await decide(
@@ -520,7 +582,15 @@ class VoiceSession:
             await self._set_state("listening" if self.config.mode == "duplex" else "idle")
             return
         self._missed_last = False
-        text = await self._sure_of(heard.text.strip(), heard.confidence)
+        words = heard.text.strip()
+        unclear = heard.confidence < self.config.confirm_below and bool(self.offers.more and _MORE.match(words))
+        if unclear and self._unsure is None and not self.manager.has_question(self.session_id, words):
+            # Founder re-test S3: after an offer the voice waits for the founder. A sound the recogniser was unsure
+            # of ("Okay." made out of a breath) is not a yes: nothing is said, and the note under the mic says so.
+            await self._emit({"type": "missed"})
+            await self._set_state("listening" if self.config.mode == "duplex" else "idle")
+            return
+        text = await self._sure_of(words, heard.confidence)
         if text:
             await self._turn(text, end_t, heard.ms, speech_ms)
         else:
@@ -576,13 +646,19 @@ class VoiceSession:
             self._ends.pop(next(iter(self._ends)))
         if await self._voice_command(text, turn):
             return
-        outcome = await self.manager.turn(self.session_id, text)
+        # Typed words (the panel's box, sent over this socket) have no recogniser time: a typed "stop" stops at once.
+        outcome = await self.manager.turn(self.session_id, text, spoken=stt_ms is not None)
         turn.turn_ms = (self.clock() - end_t) * 1000
         turn.kind = outcome.kind or "run"
         if outcome.answered:  # "yes" to an offer: recorded as what it did, like the offer's own words
             turn.kind = _ANSWERED[str(outcome.answered["what"]), bool(outcome.answered["accept"])]
         await self._emit({"type": "turn", "text": text, "outcome": outcome.model_dump(mode="json")})
         if outcome.kind == "stop":
+            # Founder re-test S1: a stopped run is never summarised or spoken. Its queued lines go now, nothing of
+            # its answer is said later, and no offer of an earlier summary is left to say yes to.
+            if outcome.run_id:
+                self._stopped.add(outcome.run_id)
+            self.offers.more = []
             await self._interrupt("stop")  # first, so that "Stopping the team." is said and not dropped with the rest
         if outcome.run_id and (outcome.started_run or outcome.kind is None):
             self.offers.approval_run = None
@@ -597,18 +673,27 @@ class VoiceSession:
         elif (
             outcome.kind == "backchannel"
             and self.offers.more
-            and self._offer_again is not self.offers.more[0]
+            and not self._offer_out(self.offers.more[0])
             and not self.manager.session(self.session_id).asked
             and self.manager.state(self.session_id)["running"] is False
         ):
-            # Founder re-test R5: "uh-huh" over the summary cut it off before its offer. The offer is said again
-            # (once), so the turn still ends with it.
-            self._offer_again = self.offers.more[0]
-            await self._say("answer", self.offers.more[0].offer, None, turn)
+            # Founder re-test R5: "uh-huh" over the summary cut it off before its offer, so the turn ended without
+            # one. Only an offer that was never said is said here (founder re-test S2: each offer is said once).
+            await self._say("answer", self.offers.more[0].offer, None, turn, offer=self.offers.more[0])
         if outcome.amendment_id:
             self.offers.amendment_id = outcome.amendment_id
         if outcome.answered:
             self.offers.amendment_id = self.offers.queue_id = None
+
+    def _offer_out(self, segment: Segment) -> bool:
+        """Has this offer been said, or is it on its way out (waiting to be said, or being made right now)?"""
+        if any(s is segment for s in self._offers_said):
+            return True
+        waiting = _drain(self._says)
+        for s in waiting:
+            self._says.put_nowait(s)
+        current = self._current
+        return any(s.offer is segment and s.epoch == self.epoch for s in [*waiting, *([current] if current else [])])
 
     async def _voice_command(self, text: str, turn: TurnMetric) -> bool:
         """Spoken answers to what is on offer: approve the team, ask a queued question, restart with a change."""
@@ -681,8 +766,10 @@ class VoiceSession:
         self.offers.more.remove(named)
         for line in named.lines:
             await self._say("answer", line, None, turn)
-        closing = self.offers.more[0].offer if self.offers.more else "That's the summary. The rest is on screen."
-        await self._say("answer", closing, None, turn)
+        if self.offers.more:
+            await self._say("answer", self.offers.more[0].offer, None, turn, offer=self.offers.more[0])
+        else:
+            await self._say("answer", "That's the summary. The rest is on screen.", None, turn)
 
     def _answer(self, run_id: str, turn: TurnMetric) -> None:
         self._answering += 1
@@ -737,6 +824,8 @@ class VoiceSession:
         result = run.result
         if run.task.cancelled() or run.task.exception() is not None or result is None or result.status != "done":
             return  # the lane says it was cancelled, failed or held back
+        if run_id in self._stopped or run.cancel_requested:
+            return  # founder re-test S1: a run the founder stopped is never summarised
         spoken = summarise(result)
         for line in spoken.lead:
             if line != said_early:
@@ -746,8 +835,19 @@ class VoiceSession:
         self.offers.more = spoken.more
         session = self.manager.sessions.get(self.session_id)
         waiting = session is not None and any(q.status in ("queued", "offered") for q in session.queue)
-        if spoken.more and not waiting:  # one question at a time: a queued question's offer comes first
-            await self._say("answer", spoken.more[0].offer, run_id, turn)
+        change = (
+            next((a for a in session.amendments.values() if a.status == "offered" and a.run_id == run_id), None)
+            if session is not None
+            else None
+        )
+        if change is not None:
+            # Founder re-test S4: a change said while the team worked and not yet answered. This answer does not have
+            # it, so the turn ends on that question and not on an offer of more.
+            self.offers.amendment_id = change.id
+            self.offers.more = []  # "yes" now means the restart, never "go through the risks"
+            await self._say("answer", CHANGE_STILL_OPEN, run_id, turn)
+        elif spoken.more and not waiting:  # one question at a time: a queued question's offer comes first
+            await self._say("answer", spoken.more[0].offer, run_id, turn, offer=spoken.more[0])
 
     async def _say(
         self,
@@ -758,16 +858,21 @@ class VoiceSession:
         *,
         keep: bool = False,
         first: bool = False,
+        offer: Segment | None = None,
     ) -> None:
         if self.quiet or not text.strip():
             return
+        if lane == "answer" and run_id is not None and run_id in self._stopped:
+            return  # founder re-test S1: nothing of a stopped run's answer is spoken
+        if offer is not None and self._offer_out(offer):
+            return  # founder re-test S2: each offer is said once
         if lane == "conversation" and extract_figures(text):
             text = ON_SCREEN  # the conversation lane never speaks a number; the screen has the checked one
         waiting = _drain(self._says)
         if lane == "answer":
             # The outcome has begun: older narration still waiting to be spoken is out of date.
             waiting = [s for s in waiting if s.lane == "answer" or s.keep]
-        item = _Say(lane, text, run_id, turn, self.epoch, keep or lane == "answer")
+        item = _Say(lane, text, run_id, turn, self.epoch, keep or lane == "answer", offer)
         # A reply to what the founder just said comes before narration that was waiting for them to finish.
         for s in [item, *waiting] if first else [*waiting, item]:
             self._says.put_nowait(s)
@@ -783,28 +888,42 @@ class VoiceSession:
                 if await self._floor_free():
                     continue
                 item = self._says.get_nowait()  # waited long enough: speak
-            if item.epoch != self.epoch or self.quiet:
+            if item.epoch != self.epoch or self.quiet or self._dropped(item):
                 continue
             spoken = for_speech(item.text)
             if not spoken:
                 continue
-            announced = False
-            for chunk in speech_chunks(spoken):
-                started = self.clock()
-                try:
-                    audio = await asyncio.to_thread(self.tts.synthesize, chunk)
-                except Exception as exc:
-                    logger.warning("TTS failed: {}", exc)
-                    await self._emit({"type": "error", "message": f"speech failed: {exc}"})
-                    break
-                await self._floor_free()
-                if item.epoch != self.epoch or self.quiet:
-                    break  # interrupted while it was being made
-                if not announced:
-                    announced = True
-                    await self._first_audio(item, started)
-                await self._set_state("speaking")
-                await self._play(audio, item.epoch)
+            self._current = item
+            try:
+                await self._speak(item, spoken)
+            finally:
+                self._current = None
+
+    def _dropped(self, item: _Say) -> bool:
+        """A line that must not be said after all: the answer of a run the founder stopped (S1), or an offer that
+        has already been said (S2)."""
+        if item.lane == "answer" and item.run_id is not None and item.run_id in self._stopped:
+            return True
+        return item.offer is not None and any(s is item.offer for s in self._offers_said)
+
+    async def _speak(self, item: _Say, spoken: str) -> None:
+        announced = False
+        for chunk in speech_chunks(spoken):
+            started = self.clock()
+            try:
+                audio = await asyncio.to_thread(self.tts.synthesize, chunk)
+            except Exception as exc:
+                logger.warning("TTS failed: {}", exc)
+                await self._emit({"type": "error", "message": f"speech failed: {exc}"})
+                break
+            await self._floor_free()
+            if item.epoch != self.epoch or self.quiet or (not announced and self._dropped(item)):
+                break  # interrupted, or stopped, while it was being made
+            if not announced:
+                announced = True
+                await self._first_audio(item, started)
+            await self._set_state("speaking")
+            await self._play(audio, item.epoch)
 
     async def _floor_free(self) -> bool:
         """Waits until the founder has finished and been answered. False: still not free after `FLOOR_WAIT_S`."""
@@ -821,6 +940,9 @@ class VoiceSession:
 
     async def _first_audio(self, item: _Say, started: float) -> None:
         now = self.clock()
+        if item.offer is not None:
+            self._offers_said.append(item.offer)
+        self._own_words.append((now, item.text))
         turn = item.turn
         if turn is not None:
             end_t = self._ends.get(turn.id, now)
@@ -842,6 +964,7 @@ class VoiceSession:
                 return
             await self._emit(pcm[i : i + step])
         self.speaking_until = max(self.speaking_until, now) + audio.size / OUT_RATE
+        self._audio_end = self.speaking_until
         self._spawn(self._idle_after(self.speaking_until, epoch))
 
     async def _idle_after(self, until: float, epoch: int) -> None:
@@ -872,6 +995,12 @@ class VoiceSession:
                 await self._answers_idle.wait()  # after the summary of the run that has just ended, not before it
                 await self._say("conversation", QUEUE_OFFER, None, None, keep=True)
                 continue
+            if event.type == "recap" and event.data.get("status") == "cancelled" and event.run_id:
+                # Founder re-test S1: however the run was stopped (by voice, by typing, by the Cancel button), any
+                # line of its answer still waiting to be said goes, and none is said later.
+                self._stopped.add(event.run_id)
+                for s in [s for s in _drain(self._says) if not self._dropped(s)]:
+                    self._says.put_nowait(s)
             text = self._spoken_line(event)
             if text:
                 keep = event.type == "recap" or event.data.get("kind") in ("approval", "held", "team")
