@@ -62,6 +62,14 @@
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RW1–RW10 after fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
+- Started (UTC): 2026-11-14 10:49 (local Windows session, third and final fix round for the M5 Major gate, time-box 60 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan:
+  - [x] Record the founder's RW1–RW10 results first
+  - [ ] S1 (a cancelled run is never spoken), S2 (each offer once), S3 (after an offer it waits), S4 (a change said mid-run), S5 (same goal, same memo, memo date)
+  - [ ] Typed "stop" stops at once; the answered open questions in PRD §12
+  - [ ] Tests, RX re-test steps, PR #10 updated, CI green
+
+Previous session (2026-11-13, M5 fix round 2):
 - Started (UTC): 2026-11-13 14:33 (local Windows session, second fix round for the M5 Major gate, time-box 2 hours), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan, in the founder's priority order:
   - [x] Record the founder's RV1–RV11 results first
@@ -1176,6 +1184,18 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M5] Re-test RW1–RW10: OPEN (fix session 2026-11-14, round 3)
+Founder's results (2026-11-14): **PASS** RW3, RW4, RW6, RW7, RW8 (`small.en`), RW9 (the rule). **PARTIAL** RW2. **FAIL** RW5.
+Founder's PC numbers (RW10): first words p50 **890 ms**, metric answer p50 **1738 ms**, barge-in pause **64 ms**, cancel **~990 ms**, STT p50 **291 ms**, TTS first **596 ms**, VRAM **7.43 / 12 GB**, Whisper **+0.70 GB**.
+Headphones or a headset give the best voice results.
+
+To fix (third and final round):
+- **S1.** Voice cancel: after "stop" + "yes" ("Stopping the team."), the Advisor still spoke the summary ("My proposal is Travel-led pilot…"). A cancelled run is never summarised or spoken: cancel also clears queued TTS and suppresses the final answer's speech.
+- **S2.** "Want me to go through the risks?" was asked twice in one turn. Each offer is said once.
+- **S3.** After the summary's offer and a silence, the Advisor carried on talking unprompted. After any offer it waits for the user; silence never continues it.
+- **S4.** "Assume three hires." said WHILE the team was running was lost: no restart offer, and the answer kept 2 hires. A mid-run amendment must show and say the restart offer (as after the answer, which works).
+- **S5.** The Dubai text answer repeats itself again: the goal line twice ("…which moves you away from your goal 'Extend runway…'" and "This moves you away from your goal 'Extend runway…'…") and the prior memo twice ("You already have a proposed memo on this from 2026-11-06…" and "You already proposed a Dubai office in 2027 with a Travel-led pilot…"); "in 2027" is also wrong (the memo is dated 2026-11-06). The near-duplicate pass must catch same-topic sentences (same goal, same memo), and a memo date that differs from the memo is never stated. Tests with these exact strings.
+- **Open questions answered** (PRD §12): keep `small.en` as the default STT, `large-v3-turbo` stays an option; keep barge-in at 1 s; a typed "stop" stops at once without confirmation (spoken "stop" still confirms; the Cancel button stays immediate); keep "On it." before the opening turn; keep the 0.45 read-back threshold.
 ### [M5] Re-test RV1–RV11: RESOLVED, awaiting re-test RW1–RW10 (fix session 2026-11-13, round 2)
 **Resolved (2026-11-13, PR #10):** R1 to R8, with tests in `tests/test_voice_round3.py` (79) and five new WAV fixtures (`ugh`, `mm`, `hmm`, `right`, `okay`). Causes and what changed:
 - **R1.** "Ugh!" matched no rule, so two models were asked. The barge-in check timed out ("fallback") and stopped the speech; the turn classifier's model then chose "stop", and the lane cancelled the team on that guess. Now a noise or one stray word is a backchannel by rule, a model's "stop" is ignored unless the words hold a stop word, and a stop is asked about first.
