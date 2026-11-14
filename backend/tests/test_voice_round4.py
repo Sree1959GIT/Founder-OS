@@ -150,9 +150,7 @@ async def test_a_cancelled_run_takes_its_waiting_lines_with_it(finance: Any) -> 
     await session._answers_idle.wait()
     waiting = [s for s in session._says._queue if s.lane == "answer"]  # type: ignore[attr-defined]
     assert any(s.text.startswith("My proposal is") for s in waiting)
-    manager.bus.emit(
-        "recap", run_id, session_id=session.session_id, text="That run was cancelled.", status="cancelled"
-    )
+    manager.bus.emit("recap", run_id, session_id=session.session_id, text="That run was cancelled.", status="cancelled")
     await wait_for(lambda: run_id in session._stopped)
     session._floor.set()
     await wait_for(lambda: "That run was cancelled." in said(wire))
