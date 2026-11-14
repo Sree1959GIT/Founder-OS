@@ -23,6 +23,7 @@ import {
   type Artifact,
   type ChatResult,
   type DecisionFrame,
+  type TurnOutcome,
 } from "@/lib/api";
 import { load, save, unfinished } from "@/lib/persist";
 import { runTitle } from "@/lib/format";
@@ -409,6 +410,8 @@ interface WorkspaceApi {
   toggleQuiet: () => Promise<void>;
   amendment: (id: string, accept: boolean) => Promise<void>;
   queued: (id: string, accept: boolean) => Promise<void>;
+  /** A turn the founder spoke: the voice socket already sent it to the lane, so only its outcome is shown. */
+  spoken: (text: string, outcome: TurnOutcome) => void;
   currentRun: RunView | null;
   /** The latest decision stays open on the canvas when a small question follows it. */
   decisionRun: RunView | null;
@@ -513,12 +516,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Turns are accepted at once, even while the first is still being planned, and sent in order: the second turn of a
   // new conversation must reach the session the first one opened.
   const chain = useRef<Promise<void>>(Promise.resolve());
-  const post = useCallback(
-    async (clean: string) => {
-      dispatch({ type: "sending", sending: true });
-      dispatch({ type: "error", error: null });
-      try {
-        const outcome = await postTurn(clean, stateRef.current.sessionId);
+  // What the lane decided about a turn, typed or spoken (M5: the voice socket sends the same outcome).
+  const adopt = useCallback(
+    async (clean: string, outcome: TurnOutcome) => {
         const isNewSession = stateRef.current.sessionId === null;
         // Set at once, not on the next render: a turn chained right behind this one must join the same session,
         // not open a second one (and a second run) of its own.
@@ -543,14 +543,54 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             turn: { id: `reply-${Date.now()}`, role: "lane", text: outcome.reply, kind: "reply" },
           });
         }
-        if (startedRun && outcome.run_id) follow(outcome.run_id, clean);
+        // An offer answered in words, typed or spoken (M5 re-test R8): its card shows the answer, and a restarted
+        // run is followed under the title its button would have given it, so the canvas shows the new figures.
+        const answered = outcome.answered ?? null;
+        let title = clean;
+        if (answered) {
+          const status = answered.accept ? "accepted" : "declined";
+          const turns = stateRef.current.turns;
+          if (answered.what === "amendment") {
+            dispatch({ type: "amendment", id: answered.id, status });
+            const offered = turns.find((t) => t.role === "amendment" && t.amendmentId === answered.id);
+            const change = offered && offered.role === "amendment" ? offered.text : "";
+            const before = stateRef.current.currentRunId
+              ? stateRef.current.runs[stateRef.current.currentRunId]?.message
+              : undefined;
+            const root = before ? runTitle(before).split(" · changed: ")[0] : "";
+            title = root && change ? `${root} · changed: ${change}` : change || clean;
+          } else {
+            dispatch({ type: "queue", id: answered.id, status });
+            const offered = turns.find((t) => t.role === "queued" && t.queueId === answered.id);
+            title = offered && offered.role === "queued" ? offered.text : clean;
+          }
+        }
+        if (startedRun && outcome.run_id) follow(outcome.run_id, title);
+    },
+    [follow],
+  );
+
+  const post = useCallback(
+    async (clean: string) => {
+      dispatch({ type: "sending", sending: true });
+      dispatch({ type: "error", error: null });
+      try {
+        await adopt(clean, await postTurn(clean, stateRef.current.sessionId));
       } catch (err) {
         dispatch({ type: "error", error: err instanceof Error ? err.message : "Backend not reachable" });
       } finally {
         dispatch({ type: "sending", sending: false });
       }
     },
-    [follow],
+    [adopt],
+  );
+
+  const spoken = useCallback(
+    (text: string, outcome: TurnOutcome) => {
+      dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text } });
+      void adopt(text, outcome);
+    },
+    [adopt],
   );
 
   const send = useCallback(
@@ -619,13 +659,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       toggleQuiet,
       amendment,
       queued,
+      spoken,
       currentRun: state.currentRunId ? (state.runs[state.currentRunId] ?? null) : null,
       decisionRun:
         Object.values(state.runs)
           .filter((run) => run.frame || run.decisionType)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
     }),
-    [state, send, follow, toggleQuiet, amendment, queued],
+    [state, send, follow, toggleQuiet, amendment, queued, spoken],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

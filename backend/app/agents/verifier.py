@@ -298,7 +298,8 @@ def verify_numbers(text: str, known: Iterable[Fact | float], context: str = "") 
 
 
 # --- does the claim around a figure agree with what the figure is? ------------------------------------------------
-_SENTENCE_RE = re.compile(r"(?<=[.!?])(\s+)")
+# Founder note 61: "vs." / "e.g." / "i.e." do not end a sentence, or a later pass can drop half of one.
+_SENTENCE_RE = re.compile(r"(?<=[.!?])(?<!\bvs\.)(?<!\bVs\.)(?<!\be\.g\.)(?<!\bi\.e\.)(?<!\bcf\.)(?<!\bapprox\.)(\s+)")
 
 
 def split_sentences(text: str) -> list[str]:

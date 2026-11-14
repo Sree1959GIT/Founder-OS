@@ -20,6 +20,7 @@ from app import __version__
 from app.agents.setup import build_conversation, build_orchestrator
 from app.api import chat, conversation, data, health, metrics, priorities, scenario, vault
 from app.api import settings as settings_api
+from app.api import voice as voice_api
 from app.api.settings import apply_saved
 from app.config import Settings, get_settings
 from app.deps import FinanceServices
@@ -34,6 +35,7 @@ from app.logging_setup import configure_logging
 from app.responses import Utf8JSONResponse
 from app.vault.manager import NoteExistsError, NoteNotFoundError, VaultError, VaultPathError
 from app.vault.service import VaultService
+from app.voice.service import VoiceService
 
 
 def load_sample_data_if_empty(settings: Settings, services: FinanceServices) -> None:
@@ -88,6 +90,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.orchestrator = orchestrator
         app.state.conversation = build_conversation(settings, orchestrator, services)
         app.state.base_settings = settings
+        app.state.voice = VoiceService(settings)
+        # Voice models load in a worker thread: the canvas never waits for them (R4).
+        voice_loading = (
+            asyncio.get_running_loop().run_in_executor(None, app.state.voice.load) if settings.voice_enabled else None
+        )
         apply_saved(app, settings)
         logger.info(
             "Agents ready: local LLM {}:{} (thinking {}), deep provider {}, team approval {}",
@@ -114,6 +121,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if warmup is not None:
                 warmup.cancel()
             await vault_service.stop_watcher()
+            if voice_loading is not None and not voice_loading.done():
+                logger.info("Shutting down while the voice models are still loading")
             if not indexing.done():
                 logger.info("Shutting down while the vault is still indexing")
             await app.state.http_client.aclose()
@@ -137,6 +146,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(conversation.router, prefix="/api")
     app.include_router(settings_api.router, prefix="/api")
     app.include_router(priorities.router, prefix="/api")
+    app.include_router(voice_api.router)
     _add_error_handlers(app)
     return app
 

@@ -20,19 +20,71 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from app.agents.decision_frame import inputs_question, parse_inputs
+from app.agents.decision_frame import inputs_question, parse_inputs, units_of
 from app.agents.events import AgentEvent, EventBus, EventType
 from app.agents.graph import AgentOrchestrator, RunContext
 from app.agents.registry import REGISTRY
-from app.agents.runtime import Plan
-from app.agents.verifier import extract_figures
+from app.agents.runtime import Plan, single_metric
+from app.agents.verifier import extract_figures, split_sentences
 from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.llm.base import LLMError, LLMProvider, Message
+from app.voice.domain import count_reading
 
 MAX_SESSIONS = 100
 ASSUMPTION_QUESTION = 'While the team works on "{request}": which assumption would change your mind if it were wrong?'
-INPUTS_REPLY = "Those are your figures. Cancel this run and start again with them?"
+RESTART_OFFER = "That changes the decision. Restart with your change?"
+RESTART_REQUEST = "That changes the request. Restart with your change?"
+# A change offered while the team worked and not answered by the time the answer was ready (founder re-test S4).
+CHANGE_STILL_OPEN = "You asked for a change while the team worked, and this answer does not have it. Restart with it?"
+# A follow-up names its subject only by reference: "and what about churn?", "how about burn?" (founder decision D).
+_WHAT_ABOUT = re.compile(
+    r"^(?:(?:and|so|ok|okay|then|also|now)[,\s]+)*(?:(?:what|how)\s+about|and)\s+(?:our\s+|the\s+|my\s+)?"
+    r"(?P<rest>[^?]+?)\s*\??$",
+    re.I,
+)
+# "Why that option?", "why this one?", "why not the full office?": answered from the open decision, by code.
+_WHY_OPTION = re.compile(
+    r"^(?:(?:and|but|so|ok|okay)[,\s]+)*why\b(?:\s*\??$|.*\b(?:that|this|the)\s+(?:option|one|proposal|choice|pick)\b|"
+    r"\s+(?:that|this|it)\s*\??$|\s+not\b)",
+    re.I,
+)
+# "Re-run the analyst, assume three hires", "redo the Devil's Advocate" (founder decision E).
+_RERUN = re.compile(
+    r"^(?:please\s+|can you\s+|could you\s+)?(?:re-?\s?run|redo|re-do)\s+(?:the\s+)?(?P<rest>.+)$", re.I
+)
+AGENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "financial_analyst": ("financial analyst", "finance analyst", "analyst", "financials", "finance"),
+    "librarian": ("librarian",),
+    "market_scout": ("market scout", "scout"),
+    "revenue_customer": ("revenue and customer", "revenue & customer", "revenue"),
+    "people_ops": ("people and ops", "people & ops", "people and operations", "people ops", "people"),
+    "regulatory_tax": ("regulatory and tax", "regulatory & tax", "regulatory", "tax"),
+    "prioritiser": ("prioritiser", "prioritizer"),
+    "perspective_lens": ("perspective lens", "lens"),
+    "devils_advocate": ("devil's advocate", "devils advocate", "advocate"),
+    "memo_writer": ("memo writer", "memo"),
+}
+STOP_QUESTION = "Stop the team? Say yes to stop."
+# Answers to the one yes/no question the lane has open (founder re-test R1, R3, R8). Naming the action again counts
+# as yes ("stop", "restart"); "keep going" counts as no.
+_YES = re.compile(
+    r"^(?:(?:yes|yeah|yep|yup|sure|ok|okay|correct|right|exactly|that's right|that is right|do it|go ahead|"
+    r"please do|confirm|i did|i do)\b[\s.!,]*)+(?:please|stop(?: it| the team)?|restart(?: it)?|ask it|i did)?"
+    r"[\s.!]*$",
+    re.I,
+)
+_NO = re.compile(
+    r"^(?:(?:no|nope|nah|no thanks|no thank you|don't|do not|leave it|keep (?:it )?going|carry on|not that|"
+    r"that's wrong|wrong)\b[\s.!,]*)+(?:keep (?:it )?going|carry on|drop it|don't stop)?[\s.!]*$",
+    re.I,
+)
+_YES_BY_KIND = {
+    "stop": re.compile(r"^(?:please\s+)?(?:stop|cancel|halt)(?:\s+(?:it|the team|now|please))*[\s.!]*$", re.I),
+    "amendment": re.compile(r"^(?:restart|restart (?:it|with my change))[\s.!]*$", re.I),
+    "queue": re.compile(r"^ask it(?: now)?[\s.!]*$", re.I),
+}
+_NO_BY_KIND = {"queue": re.compile(r"^(?:drop|skip) it[\s.!]*$", re.I)}
 FAST_SYSTEM = (
     "You are the quick voice of FounderOS, speaking while a team of agents works. Reply in one short sentence, to "
     '"you", the founder. Use only what you are given. Never state a number, amount or date.'
@@ -53,6 +105,14 @@ class QueuedQuestion(BaseModel):
     status: str = "queued"
 
 
+class Asked(BaseModel):
+    """The one yes/no question the lane has open. The next turn answers it, or it lapses."""
+
+    kind: str  # stop | amendment | queue | number
+    ref: str = ""  # the run to stop, the amendment or the queued question on offer
+    text: str = ""  # number: the founder's turn as it will be read if they say yes
+
+
 class TurnOutcome(BaseModel):
     session_id: str
     kind: TurnKind | None = Field(default=None, description="Empty when the turn started a run with nothing running")
@@ -61,6 +121,11 @@ class TurnOutcome(BaseModel):
     run_id: str | None = Field(default=None, description="The run this turn started, or the one still running")
     amendment_id: str | None = None
     queue_id: str | None = None
+    started_run: bool = Field(default=False, description="This turn started the run in `run_id`")
+    answered: dict[str, Any] | None = Field(
+        default=None,
+        description='This turn answered an offer on screen: {"what": "amendment" | "queue", "id": ..., "accept": ...}',
+    )
 
 
 class Session:
@@ -74,6 +139,9 @@ class Session:
         self.narration: list[str] = []
         self.narrators: set[asyncio.Task[None]] = set()
         self.finished: dict[str, list[tuple[str, bool]]] = {}
+        self.last_wave: list[dict[str, Any]] = []  # the stage the last grouped line reported, for the voice
+        self.decision_run_id: str | None = None  # the last decision answered: what "that option" refers to
+        self.asked: Asked | None = None
 
 
 _LEFT_IN_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
@@ -166,13 +234,14 @@ class ConversationManager:
     def _emit(self, session: Session, type_: EventType, **data: Any) -> None:
         self.bus.emit(type_, session.run_id or session.id, session_id=session.id, **data)
 
-    def _say(self, session: Session, text: str, type_: EventType = "narration") -> None:
-        """Narration, unless the founder asked for quiet."""
+    def _say(self, session: Session, text: str, type_: EventType = "narration", **extra: Any) -> None:
+        """Narration, unless the founder asked for quiet. `extra` says what kind of line it is (the voice speaks a
+        team line and one line a stage, not every step)."""
         if session.quiet:
             return
         session.narration.append(text)
         session.local.add("lane", text)
-        self._emit(session, type_, text=text)
+        self._emit(session, type_, text=text, **extra)
 
     # --- runs ------------------------------------------------------------------------------------------------------
     def _same_decision(self, run_id: str) -> Plan | None:
@@ -187,8 +256,14 @@ class ConversationManager:
         return old.model_copy(update={"team": team, "frame": frame})
 
     def _start_run(
-        self, session: Session, message: str, amendment_of: str | None = None, plan_override: Plan | None = None
+        self,
+        session: Session,
+        message: str,
+        amendment_of: str | None = None,
+        plan_override: Plan | None = None,
+        reuse: dict[str, Any] | None = None,
     ) -> RunContext:
+        session.asked = None  # a new run: whatever was being asked about the old one is over
         snapshot = RunSnapshot(
             session_id=session.id,
             message=message,
@@ -196,7 +271,7 @@ class ConversationManager:
             recent_turns=session.local.recent(),
             amendment_of=amendment_of,
         )
-        run = self.orchestrator.start(message, context=snapshot, plan_override=plan_override)
+        run = self.orchestrator.start(message, context=snapshot, plan_override=plan_override, reuse=reuse)
         session.run_id = run.run_id
         task = asyncio.create_task(self._narrate(session, run.run_id))
         session.narrators.add(task)
@@ -215,10 +290,11 @@ class ConversationManager:
                     asked = True
                     # A metric lookup rests on no assumption to question (founder review 9): only a decision is asked.
                     if self._is_decision(run_id):
-                        self._say(session, await self._assumption_question(session, run_id))
+                        self._say(session, await self._assumption_question(session, run_id), kind="question")
+                session.last_wave = []
                 text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
                 if text.strip():
-                    self._say(session, text)
+                    self._say(session, text, **self._line_kind(session, run_id, event))
         except Exception:  # the lane must never disturb the run it is describing
             logger.exception("Narration of {} stopped", run_id)
 
@@ -230,6 +306,9 @@ class ConversationManager:
         inst = next((i for i in team if i.id == event.agent_id), None)
         if not ended or inst is None:
             return ""
+        # Founder note 60: a held-back team's agents are "cancelled" without ever starting. That is not "done".
+        if not any(e.type == "agent.spawned" and e.agent_id == inst.id for e in self.bus.history(run_id)):
+            return " "
         verified = bool(event.data.get("verified")) and event.data.get("status", "done") == "done"
         ended_so_far = session.finished.setdefault(run_id, [])
         ended_so_far.append((inst.id, verified))
@@ -244,8 +323,34 @@ class ConversationManager:
         next_step = "writing your answer now" if not left else f"{_in_words(left)} to go"
         verb = "is" if len(names) == 1 else "are"
         doubts = [i.name for i in wave if not dict(ended_so_far).get(i.id)]
+        outcome = {e.agent_id: e.data.get("status", "done") for e in self.bus.history(run_id) if e.type == "agent.done"}
+        session.last_wave = [
+            {
+                "type": i.type,
+                "name": i.name,
+                "status": outcome.get(i.id, "cancelled"),
+                "verified": bool(dict(ended_so_far).get(i.id)),
+            }
+            for i in wave
+        ]
         caveat = f" Something from {' and '.join(doubts)} is unverified." if doubts else ""
         return f"{joined} {verb} done; {next_step}.{caveat}"
+
+    def _line_kind(self, session: Session, run_id: str, event: AgentEvent) -> dict[str, Any]:
+        """What a narration line is about, for a listener that says less than the screen shows."""
+        run = self.orchestrator.runs.get(run_id)
+        size = len(run.plan.team) if run is not None and run.plan is not None else 0
+        if session.last_wave:
+            return {"kind": "wave", "wave": session.last_wave, "team_size": size}
+        if event.type == "team.proposed" and run is not None and run.reuse:
+            return {"kind": "step"}  # one agent is redoing its part: the team was introduced the first time
+        if event.type == "team.proposed":
+            topic = run.plan.frame.subject if run is not None and run.plan is not None and run.plan.frame else ""
+            team = [{"type": i.get("type"), "name": i.get("name")} for i in event.data.get("team", [])]
+            return {"kind": "approval" if event.data.get("needs_approval") else "team", "team": team, "topic": topic}
+        if event.type == "team.rejected":
+            return {"kind": "held"}
+        return {"kind": "step"}
 
     def _agent_name(self, run_id: str, agent_id: str | None) -> str:
         run = self.orchestrator.runs.get(run_id)
@@ -262,6 +367,8 @@ class ConversationManager:
             return (
                 f"Waiting for your approval of this team: {names}." if data.get("needs_approval") else f"Team: {names}."
             )
+        if event.type == "team.rejected":
+            return "I held the team back: no agent ran."
         name = self._agent_name(run_id, event.agent_id)
         if event.type == "agent.status" and data.get("status") == "waiting_cloud":
             return f"{name} is waiting for a cloud model."
@@ -281,12 +388,39 @@ class ConversationManager:
             str(status),
             _ready_line(event.data),
         )
-        self._say(session, recap, "recap")
+        self._say(session, recap, "recap", status=str(status or "done"))
+        self._remember_answer(session, run_id)
+        # Founder re-test S4: a change the founder asked for while the team worked, and never answered, is not lost
+        # when the answer arrives without it. Its offer stays open on this finished run and is asked again.
+        unanswered = next(
+            (
+                a
+                for a in session.amendments.values()
+                if a.status == "offered" and a.run_id == run_id == session.run_id and status in (None, "done")
+            ),
+            None,
+        )
+        if unanswered is not None:
+            session.asked = Asked(kind="amendment", ref=unanswered.id)
+            self._say(session, CHANGE_STILL_OPEN, kind="change_open", amendment_id=unanswered.id)
         # Founder re-test 56: every queued question is offered, one at a time, once nothing is running, whichever run
         # ended (the session may have moved on to a restarted run that has already finished).
         if session.run_id == run_id or not self._active(session):
             self._offer_next(session)
-        self._close_offers(session, keep=session.run_id if session.run_id != run_id else None)
+        keep = run_id if unanswered is not None else (session.run_id if session.run_id != run_id else None)
+        self._close_offers(session, keep=keep)
+
+    def _remember_answer(self, session: Session, run_id: str) -> None:
+        """Founder decision D: a follow-up is answered in context, so the session keeps what was answered (its first
+        sentences; the figures stay checked text, and the Advisor is told to restate none of them unsourced)."""
+        run = self.orchestrator.runs.get(run_id)
+        result = run.result if run is not None else None
+        if result is None or result.status != "done" or not result.answer.strip():
+            return
+        first = [p.strip() for p in split_sentences(result.answer) if p.strip()][:2]
+        session.local.add("advisor", " ".join(first)[:500])
+        if result.decision_frame is not None:
+            session.decision_run_id = run_id
 
     @staticmethod
     def _close_offers(session: Session, keep: str | None = None) -> None:
@@ -300,6 +434,8 @@ class ConversationManager:
         if head is None or head.status == "offered":
             return
         head.status = "offered"
+        if session.asked is None:
+            session.asked = Asked(kind="queue", ref=head.id)
         self._emit(session, "queue.offered", queue_id=head.id, text=head.text)
 
     async def _fast_line(self, instruction: str, fallback: str, session: Session) -> str:
@@ -351,16 +487,26 @@ class ConversationManager:
         return " ".join(p for p in parts if p)
 
     # --- turns -----------------------------------------------------------------------------------------------------
-    async def turn(self, session_id: str | None, text: str) -> TurnOutcome:
+    async def turn(self, session_id: str | None, text: str, *, spoken: bool = False) -> TurnOutcome:
+        """`spoken`: the words came from the recogniser, not the keyboard. Only that changes how "stop" is taken
+        (founder decision 2026-11-14): a typed "stop" stops the team at once, a spoken one is asked about first,
+        because a recogniser can hear "stop" in a noise."""
         session = self.session(session_id)
         running = self._running(session)
         session.local.add("founder", text)
+        answered = await self._answer_asked(session, text, spoken)
+        if answered is not None:
+            return answered
+        unclear = self._unclear_number(session, running, text)
+        if unclear is not None:
+            return unclear
+        rerun = self._rerun(session, text)
+        if rerun is not None:
+            return rerun
         if running is None:
             return await self._turn_when_idle(session, text)
         if self._gives_inputs(running, text):
-            classified = Classified(kind="amendment", by="rules")
-            outcome = self._offer_amendment(session, classified, running, text)
-            return outcome.model_copy(update={"reply": INPUTS_REPLY})
+            return self._offer_amendment(session, Classified(kind="amendment", by="rules"), running, text)
         classified = await self.classifier.classify(text, running.message)
         running = self._running(session)  # the run may have ended while the classifier was thinking
         if running is None:
@@ -376,14 +522,103 @@ class ConversationManager:
                     session,
                 )
                 outcome = self._reply(session, classified, reply, running.run_id)
-            case "stop":
+            case "stop" if not spoken:
+                # Founder decision 2026-11-14: typed words are what the founder meant, so a typed "stop" stops at
+                # once, like the Cancel button.
                 self.orchestrator.cancel(running.run_id)
                 outcome = self._reply(session, classified, "Stopping the team.", running.run_id)
+            case "stop":
+                # Founder re-test R1: a team is never cancelled on one hearing of one word. Ask, then stop on yes.
+                session.asked = Asked(kind="stop", ref=running.run_id)
+                asking = Classified(kind="confirm", by=classified.by)
+                outcome = self._reply(session, asking, STOP_QUESTION, running.run_id)
             case "amendment":
                 outcome = self._offer_amendment(session, classified, running, text)
             case _:
                 outcome = self._enqueue(session, classified, running, text)
         return outcome
+
+    # --- the lane's own yes/no questions (founder re-test R1, R3, R8) ----------------------------------------------
+    def has_question(self, session_id: str, text: str) -> bool:
+        """True when `text` answers the question the lane has open, so no other listener should take it."""
+        session = self.sessions.get(session_id)
+        asked = session.asked if session is not None else None
+        return asked is not None and self._yes_no(asked, text) is not None
+
+    @staticmethod
+    def _yes_no(asked: Asked, text: str) -> bool | None:
+        words = text.strip()
+        yes_too, no_too = _YES_BY_KIND.get(asked.kind), _NO_BY_KIND.get(asked.kind)
+        if _YES.match(words) or (yes_too is not None and yes_too.match(words)):
+            return True
+        if _NO.match(words) or (no_too is not None and no_too.match(words)):
+            return False
+        return None
+
+    async def _answer_asked(self, session: Session, text: str, spoken: bool = False) -> TurnOutcome | None:
+        """Yes or no to what the lane asked. Any other turn is taken as itself: a stop or a number that was not
+        confirmed lapses (nothing changed), while an offer with a card on screen stays on its card."""
+        asked, session.asked = session.asked, None
+        if asked is None:
+            return None
+        yes = self._yes_no(asked, text)
+        if yes is None:
+            return None
+        by = Classified(kind="answerable_now", by="rules")
+        if asked.kind == "stop":
+            running = self._running(session)
+            if running is None or running.run_id != asked.ref:
+                return None
+            if not yes:
+                return self._reply(session, by, "Okay, the team carries on.", running.run_id)
+            self.orchestrator.cancel(running.run_id)
+            return self._reply(session, Classified(kind="stop", by="rules"), "Stopping the team.", running.run_id)
+        if asked.kind == "number":
+            if not yes:
+                reply = "Okay, nothing has changed. Say the number with what it counts, for example three hires."
+                return self._reply(session, by, reply, session.run_id)
+            outcome = await self.turn(session.id, asked.text, spoken=spoken)
+            if outcome.amendment_id:  # already confirmed once: the change is applied without a second question
+                return self._accept(session, "amendment", outcome.amendment_id, True) or outcome
+            return outcome
+        return self._accept(session, asked.kind, asked.ref, yes)
+
+    def answer_offer(self, session_id: str, what: str, ref: str, accept: bool) -> TurnOutcome | None:
+        """For a listener that heard the answer itself (the voice: "restart", "ask it"). None: the offer has gone."""
+        session = self.sessions.get(session_id)
+        return self._accept(session, what, ref, accept) if session is not None else None
+
+    def _accept(self, session: Session, what: str, ref: str, accept: bool) -> TurnOutcome | None:
+        """An offer answered in words, typed or spoken: the same paths as its buttons, and the screen is told."""
+        try:
+            if what == "amendment":
+                answer = self.answer_amendment(session.id, ref, accept)
+                reply = "Restarting with your change." if accept else "Okay, I'll leave it as it is."
+            else:
+                answer = self.answer_queue(session.id, ref, accept)
+                reply = "Running it now." if accept else "Dropped."
+        except ConversationError:
+            return None  # the offer has closed: the turn is taken as itself
+        kind: TurnKind = "amendment" if what == "amendment" else "new_question"
+        outcome = self._reply(session, Classified(kind=kind, by="rules"), reply, answer.get("run_id"))
+        return outcome.model_copy(
+            update={"started_run": accept, "answered": {"what": what, "id": ref, "accept": accept}}
+        )
+
+    def _unclear_number(self, session: Session, running: RunContext | None, text: str) -> TurnOutcome | None:
+        """Founder re-test R3: "2%" where the decision counts people, or "two" with no unit, is asked about before
+        it changes anything ("Did you mean two people?")."""
+        run = running or (self.orchestrator.runs.get(session.run_id) if session.run_id else None)
+        frame = run.plan.frame if run is not None and run.plan is not None else None
+        if run is None or frame is None:
+            return None
+        counts, percents = units_of(frame.type)
+        reading = count_reading(text, counts=counts, percents=percents)
+        if reading is None:
+            return None
+        question, meant = reading
+        session.asked = Asked(kind="number", text=meant)
+        return self._reply(session, Classified(kind="confirm", by="rules"), question, run.run_id)
 
     @staticmethod
     def _gives_inputs(run: RunContext | None, text: str) -> bool:
@@ -396,6 +631,10 @@ class ConversationManager:
     async def _turn_when_idle(self, session: Session, text: str) -> TurnOutcome:
         """Rules only. With nothing to protect, an unclear turn is simply a request: no model call before the run."""
         last = self.orchestrator.runs.get(session.run_id) if session.run_id else None
+        why = self._why_reply(session, text)
+        if why:
+            return self._reply(session, Classified(kind="answerable_now", by="rules"), why, session.run_id)
+        text = self._in_context(text)
         kind = by_rules(text)
         # A decision is still open on screen: a follow-up ("also…", "make it…", "what if…") changes that decision,
         # once the founder says yes (founder re-test 40). Plain figures in reply to the lane's question re-run at once.
@@ -412,13 +651,150 @@ class ConversationManager:
                 classified_by="rules",
                 reply="Running it again with your figures.",
                 run_id=run.run_id,
+                started_run=True,
             )
         if kind == "backchannel":
             return self._reply(session, Classified(kind=kind, by="rules"), "", session.run_id)
         if kind == "stop":
             return self._reply(session, Classified(kind=kind, by="rules"), "Nothing is running.", session.run_id)
         run = self._start_run(session, text)
-        return TurnOutcome(session_id=session.id, reply="", run_id=run.run_id)
+        return TurnOutcome(session_id=session.id, reply="", run_id=run.run_id, started_run=True)
+
+    # --- follow-ups in context (founder decision D) ----------------------------------------------------------------
+    @staticmethod
+    def _in_context(text: str) -> str:
+        """ "And what about churn?" names a metric by reference: it becomes the plain question, so the same checked
+        routine answers it. Anything else is left as the founder said it; the Advisor gets the earlier turns."""
+        match = _WHAT_ABOUT.match(text.strip())
+        if match is None:
+            return text
+        plain = f"What is our {match['rest'].strip()}?"
+        return plain if single_metric(plain) else text
+
+    def _open_decision(self, session: Session) -> RunContext | None:
+        """The last decision this session got an answer to, even if a metric was looked up since: what "that
+        option" and "the Devil's Advocate" refer to."""
+        run = self.orchestrator.runs.get(session.decision_run_id) if session.decision_run_id else None
+        if run is None or run.result is None or run.result.decision_frame is None:
+            return None
+        return run
+
+    def _why_reply(self, session: Session, text: str) -> str:
+        """Why the proposed option, from the open decision's own frame. Code's words, and no figure: the lane states
+        none (the costs are on the card)."""
+        run = self._open_decision(session)
+        if run is None or run.result is None or not _WHY_OPTION.match(text.strip()):
+            return ""
+        frame = run.result.decision_frame
+        if frame is None or not frame.options:
+            return ""
+        proposed = next((o for o in frame.options if o.name == frame.default_option), frame.options[0])
+        full = next((o for o in frame.options if o.is_full and o.name != proposed.name), None)
+        away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
+        # An option's name may carry a figure ("Change prices by +10 %"): then it is named by its role.
+        name = "that option" if extract_figures(proposed.name) else proposed.name
+        reason = "it is the smallest step that tests the decision"
+        if full is not None:
+            other = "the full option" if extract_figures(full.name) else full.name
+            both = proposed.modelled and full.modelled
+            cheaper = both and (proposed.monthly, proposed.one_off) != (full.monthly, full.one_off)
+            cheaper = cheaper and proposed.monthly <= full.monthly and proposed.one_off <= full.one_off
+            if away and not extract_figures(away):
+                reason = f'{other} moves you away from your goal "{away}"'
+            elif away:
+                reason = f"{other} moves you away from one of your goals"
+            elif cheaper:
+                reason = f"it costs less than {other} and is easier to undo"
+            else:
+                reason = f"it is easier to undo than {other}"
+        # `trade_off` is what the proposal gives up: said as that, never as a reason for it.
+        gives_up = proposed.trade_off.strip().rstrip(".")
+        trade_off = f" The trade-off: {gives_up}." if gives_up and not extract_figures(gives_up) else ""
+        return f"I proposed {name} because {reason}.{trade_off} The costs of each option are on screen."
+
+    # --- re-run one agent (founder decision E) ---------------------------------------------------------------------
+    def _rerun(self, session: Session, text: str) -> TurnOutcome | None:
+        """ "Re-run the analyst, assume three hires": the existing re-run path while that agent works, the amendment
+        path once its findings have moved on, and a fresh run of the same team after the answer. None: not a re-run
+        request, or it names no agent (then it is an ordinary turn)."""
+        match = _RERUN.match(text.strip())
+        if match is None:
+            return None
+        said = match["rest"].strip().replace("\u2019", "'")
+        found = next(
+            (
+                (kind, alias)
+                for kind, names in AGENT_ALIASES.items()
+                for alias in names
+                if re.match(rf"{re.escape(alias)}\b", said, re.I)
+            ),
+            None,
+        )
+        if found is None:
+            return None
+        kind, alias = found
+        change = re.sub(r"^(?:\s*again)?[\s,;:.!]*(?:and\s+|but\s+)?", "", said[len(alias) :]).strip().rstrip(".! ")
+        by = Classified(kind="amendment", by="rules")
+        run = self._running(session) or (self.orchestrator.runs.get(session.run_id) if session.run_id else None)
+        if run is None or run.plan is None:
+            return self._reply(session, by, "There is no team to re-run yet. Ask me something first.", session.run_id)
+        title = REGISTRY[kind].title
+        inst = next((i for i in run.plan.team if i.type == kind), None)
+        decision = self._open_decision(session)
+        if inst is None and decision is not None and decision.plan is not None and not self._active(session):
+            # A metric was looked up since: "redo the Devil's Advocate" still means the open decision's team.
+            run = decision
+            inst = next((i for i in decision.plan.team if i.type == kind), None)
+        if inst is None or run.plan is None:
+            return self._reply(session, by, f"The {title} is not on this team.", run.run_id)
+        brief = f"{inst.brief}\nThe founder then added: {change}" if change else inst.brief
+        if run.task is not None and not run.task.done():
+            outcome = self.orchestrator.rerun_agent(run.run_id, inst.id, brief)
+            if outcome is not None and outcome.restarted:
+                how = "with your change" if change else "from the start"
+                return self._reply(session, by, f"Re-running the {inst.name} {how}.", run.run_id)
+            if change:  # its findings have gone to the next stage: only a restart of the run can take the change
+                return self._offer_amendment(session, by, run, change)
+            reply = f"The {inst.name} has handed its findings on. I can redo it when this run finishes."
+            return self._reply(session, by, reply, run.run_id)
+        # After the answer (founder re-test R8): only this agent runs again. The rest of the team's findings are kept
+        # as they were, and the Advisor writes the answer again from all of them.
+        frame = run.plan.frame
+        changes_inputs = bool(change) and (
+            bool(parse_inputs(change, frame.type if frame is not None else "")) or self._gives_inputs(run, change)
+        )
+        if changes_inputs:
+            # "Assume three hires" changes the decision itself: every agent's findings rest on the old cost model,
+            # so the whole team runs again with the change, as for any amendment.
+            plan = self._same_decision(run.run_id) or run.plan
+            team = [i.model_copy(update={"brief": brief}) if i.type == kind else i for i in plan.team]
+            new = self._start_run(
+                session,
+                f"{run.message}\nThe founder then added: {change}",
+                amendment_of=run.run_id,
+                plan_override=plan.model_copy(update={"team": team}),
+            )
+            reply = f"That changes the decision, so the whole team runs again with it, the {inst.name} included."
+            return self._reply(session, by, reply, new.run_id).model_copy(update={"started_run": True})
+        earlier = {r.agent_id: r for r in (run.result.agents if run.result is not None else [])}
+        team, reuse = [], {}
+        for old in run.plan.team:
+            fresh = old.model_copy(update={"id": f"agt_{uuid.uuid4().hex[:8]}"})
+            if old.id == inst.id:
+                fresh = fresh.model_copy(update={"brief": brief})
+            elif old.id in earlier and earlier[old.id].status == "done":
+                reuse[fresh.id] = earlier[old.id]
+            team.append(fresh)
+        new = self._start_run(
+            session,
+            run.message,
+            amendment_of=run.run_id,
+            plan_override=run.plan.model_copy(update={"team": team}),
+            reuse=reuse,
+        )
+        how = "with your change" if change else "again"
+        reply = f"Re-running only the {inst.name} {how}. The rest of the team's findings stand."
+        return self._reply(session, by, reply, new.run_id).model_copy(update={"started_run": True})
 
     def _reply(self, session: Session, classified: Classified, reply: str, run_id: str | None) -> TurnOutcome:
         if reply:
@@ -435,12 +811,12 @@ class ConversationManager:
             edited_message=f"{running.message}\nThe founder then added: {text}",
         )
         session.amendments[amendment.id] = amendment
-        finished = running.task is not None and running.task.done()
-        reply = (
-            "That changes the decision. Restart with your change?"
-            if finished
-            else "That changes the request. Cancel this run and start again with your change?"
-        )
+        session.asked = Asked(kind="amendment", ref=amendment.id)  # "yes" answers it, as the card's button does
+        # Founder re-test S4: the same offer, in the same words, while the team works as after the answer.
+        # A run whose team is still being chosen has no plan yet: only a run known not to be a decision is a
+        # "request".
+        known_other = running.plan is not None and not self._is_decision(running.run_id)
+        reply = RESTART_REQUEST if known_other else RESTART_OFFER
         self._emit(session, "amendment.offered", amendment_id=amendment.id, text=text, reply=reply)
         outcome = self._reply(session, classified, reply, running.run_id)
         return outcome.model_copy(update={"amendment_id": amendment.id})
@@ -495,4 +871,4 @@ class ConversationManager:
         if not accept:
             self._offer_next(session)
             return {"accepted": False, "run_id": None}
-        return {"accepted": True, "run_id": self._start_run(session, item.text).run_id}
+        return {"accepted": True, "run_id": self._start_run(session, self._in_context(item.text)).run_id}

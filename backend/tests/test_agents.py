@@ -391,7 +391,7 @@ async def test_fan_out_respects_the_local_cap(finance: Any) -> None:
 
 async def test_team_approval_policy(finance: Any) -> None:
     orch = orchestrator(FakeProvider(), finance, None, approval_policy="always", approval_timeout_s=5)
-    run = orch.start("What's our runway?")
+    run = orch.start("Walk me through our runway trend over the last year.")  # 63: a plain lookup needs no approval
     for _ in range(100):
         if any(e.type == "team.proposed" for e in orch.bus.history(run.run_id)):
             break
@@ -418,7 +418,7 @@ async def test_cloud_only_policy_waits_only_for_cloud_teams(finance: Any) -> Non
 
 async def test_approval_timeout_rejects(finance: Any) -> None:
     orch = orchestrator(FakeProvider(), finance, None, approval_policy="always", approval_timeout_s=0.05)
-    run = orch.start("What's our runway?")
+    run = orch.start("Walk me through our runway trend over the last year.")  # 63: a plain lookup needs no approval
     result = await run.task  # type: ignore[misc]
     assert result.status == "rejected"
     # Review finding: a timed-out approval still looked open and /approve answered 200.

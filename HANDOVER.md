@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M4: Canvas UI** (built, awaiting the founder's Major gate, branch `claude/m4-canvas-ui`). Then M5. P1–P7 are decided (PRD §12). M0, M1, M2, M3a, M3b and M3c are ACCEPTED and merged.
+- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: re-test RX1–RX7, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-06 (M4 session)
+- **Last updated:** 2026-11-14 (M5 fix round 3, after the founder's RW1–RW10 re-test)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -18,8 +18,8 @@
 | M3a | LLM layer, agent framework & core agents | DONE (merged, PR #6; Medium gate ACCEPTED 2026-11-04) | |
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
-| M4 | Canvas UI (first demoable build) | DONE, awaiting Major gate | All of PRD §8 for M4. Voice controls stay disabled until M5 |
-| M5 | Voice pipeline | NOT STARTED | |
+| M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
+| M5 | Voice pipeline | DONE, awaiting Major gate (re-test RX1–RX7) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
 ## Review gates (every PR passes all four)
@@ -59,9 +59,48 @@
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
+| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RX1–RX7 after fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
-- Started (UTC): 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate, time-box 60 minutes), branch `claude/m4-canvas-ui`, PR #9 (open, not merged). Bug-fix only; M5 not started.
+- Started (UTC): 2026-11-14 10:49 (local Windows session, third and final fix round for the M5 Major gate, time-box 60 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan:
+  - [x] Record the founder's RW1–RW10 results first
+  - [x] S1 (a cancelled run is never spoken), S2 (each offer once), S3 (after an offer it waits), S4 (a change said mid-run), S5 (same goal, same memo, memo date)
+  - [x] Typed "stop" stops at once; the answered open questions in PRD §12
+  - [x] Tests, RX re-test steps, PR #10 updated, CI green
+
+Previous session (2026-11-13, M5 fix round 2):
+- Started (UTC): 2026-11-13 14:33 (local Windows session, second fix round for the M5 Major gate, time-box 2 hours), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan, in the founder's priority order:
+  - [x] Record the founder's RV1–RV11 results first
+  - [x] P1: R1 (a filler is never stop; stop is confirmed), R8 (re-run one agent only; an accepted change is applied), R2 (barge-in timings)
+  - [x] P2: R4 and R5 (one opening turn, silence, summary that ends with an offer), R6 (transcription), R3 (ambiguous numbers confirmed), R7 (a proposed memo gets one question)
+  - [x] Tests, PRD §12, RW re-test steps, PR #10 updated, CI green
+
+Previous session (2026-11-13, M5 fix round 1):
+- Started (UTC): 2026-11-13 03:17 (local Windows bug-fix and voice-behaviour session for the M5 Major gate, time-box 2 hours), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan, in the founder's priority order:
+  - [x] Record the founder feedback first
+  - [x] P1: V7, the spoken mid-run question that was lost; WAV-fixture test of a question spoken over narration
+  - [x] P2 B: spoken-number normaliser (money, %, months, dates, lakh/crore) with tests
+  - [x] P2 A, C: team line at the start, one line per stage, a short spoken summary with an offer of more; the answer text is no longer read aloud
+  - [x] P2 D: conversation context in voice; P2 E: re-run an agent by voice
+  - [x] Cash warning double full stop
+  - [x] (added) Echo gate: FounderOS no longer hears itself (found with the real engines and a simulated echo)
+  - [x] PRD §12 (A–E; M6 F, G, Kokoro licence, TTS latency; v1.1 H, I, J); RV re-test steps; PR #10 updated; CI green
+
+Previous session (2026-11-08, M5):
+- Started (UTC): 2026-11-08 09:39 (local Windows session, time-box 2 hours), branch `claude/m5-voice` from `origin/main`, target **M5: Voice** (gate tier: **Major**).
+- Plan, in the founder's priority order (an "M5 (partial)" PR is fine if time runs out):
+  - [x] Tidy the stale "Next milestone" and M4 table lines
+  - [x] (1) Carried items 60 (test: no agent before approval), 61, 62, 63, 55, 7
+  - [x] (2) Hardware recorded; versions, Windows wheels and licences re-checked; VRAM measured before and after loading
+  - [x] (3) `/ws/voice`, VAD, STT, Kokoro TTS, push-to-talk, hands-free with barge-in and backchannel detection, two lanes spoken, quiet, latency metrics in API and UI
+  - [x] (4) Tests with WAV fixtures and fake STT/TTS
+  - [x] Latency measured on this PC; Windows checklist; self-review; PR; CI green
+
+Previous session (2026-11-08, M4 fix round 3):
+- 2026-11-08 03:42 (local Windows bug-fix session, round 3 and final for the M4 Major gate), branch `claude/m4-canvas-ui`, PR #9.
 - Plan:
   - [x] Record the RX results first
   - [x] 58 metric routing (and 45 periods), 51 no badge when nothing ran, 54 de-dup sentences, 54b amendment clause
@@ -175,6 +214,105 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Voice (M5)
+**Round 3 (2026-11-14, after your RW1–RW10 re-test; this replaces everything below where they differ)**
+- **Headphones or a headset give the best voice results.** Your numbers (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms, cancel about 990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB.
+- **A stopped run is never spoken (S1).** After "stop" and "yes" you hear "Stopping the team." and "That run was cancelled.", and nothing else: no summary, no offer. The lines waiting to be said are dropped, nothing of that run's answer is said later, and a run whose stop arrived too late to interrupt its last step is still ended as cancelled, with no answer on screen. The same holds for the Cancel button and a typed "stop".
+- **A typed "stop" stops at once (your decision).** No question. A spoken "stop" is still asked about ("Stop the team? Say yes to stop."), and the Cancel button is immediate as before.
+- **Each offer is said once (S2).** "Want me to go through the risks?" is not said again after "uh-huh" or any other noise. The one exception is R5's: an offer that a barge-in dropped before it was ever said is said afterwards, once.
+- **After an offer it waits for you (S3).** Silence never continues it. Three things that could have been taken for a yes no longer are: its own words coming back through the microphone ("…go through the risks?" read as a yes to its own offer), heard while it plays or within a second after; an "okay" or "yes" that Whisper was less sure of than 0.45 (a breath or a click); and a noise that used to bring the offer back (S2). The echo gate now also stays on for 0.3 s after the last audio.
+- **A change said while the team works (S4)** gets the same offer, in the same words, as after the answer: "That changes the decision. Restart with your change?", aloud and as a card with Restart and Keep going. Say "yes" or "restart". **If you do not answer and the answer arrives without your change, it is not lost:** the card stays open, the panel says "You asked for a change while the team worked, and this answer does not have it. Restart with it?", and the spoken summary ends on that question in place of "Want me to go through the risks?".
+- **One telling per topic in the text answer (S5).** The goal a decision moves away from is named once, even when the second sentence has other figures in it. A proposed memo on record is named once: "You already proposed a Dubai office …" now counts as the memo again. No sentence says a memo or decision on record was written on a date other than its own ("in 2027" for a memo of 2026-11-06 is removed), or gives it a full date the record does not state.
+
+**Round 2 (2026-11-13, after your RV1–RV11 re-test; round 3 above replaces it where they differ)**
+- **Headphones or a headset give the best voice results.** Your own numbers (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms, barge-in pause 62–71 ms, cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB.
+- **A listening noise never stops a team (R1).** "Uh-huh", "mm", "hmm", "right", "okay", and what the recogniser makes of them ("Ugh!", "Huh.", "Oh."), or any one stray word, change nothing while a team works. Only **stop, cancel, halt, hold it** (also abort, never mind, forget it) ask to stop, and then you are asked: **"Stop the team? Say yes to stop."** Yes (or "stop" again) stops it; no, or anything else, and it carries on. Typed "stop" is asked about too; the Cancel button on the Activity tab still stops at once.
+- **During a team run the voice says one opening turn, then is silent (R4).** "On it.", then: "I've put together a team of six: the Librarian, Market Scout, Financial Analyst, People and Ops, Regulatory and Tax and a Devil's Advocate. They're looking at the Dubai office from different angles so the decision holds up." Nothing per agent or stage, no Verifier line, no figure, no assumption question: those are on screen. One "Still working on it." if the run passes 30 s (`VOICE_STILL_WORKING_S`).
+- **The summary: findings, outcome, offer (R4, R5).** Two or three findings built by code (what the full model costs and does to runway, a goal it moves away from, the cash warning, what is unverified or assumed), then "My proposal is …" and "The trade-off: …", then always an offer ("Want me to go through the risks?"), then silence. If a noise cuts the summary short, the offer is said again. Spoken risks are statements only.
+- **Yes and no work (R8).** "Yes" (or "restart") answers "Restart with your change?"; "yes" answers "Did you mean two people?"; "ask it" or "yes" a queued question. Typed or spoken. **The screen now follows a run that was restarted by voice**: before, the run restarted but the canvas kept showing the old answer, which is why you still saw two hires.
+- **Re-run one agent (R8).** After the answer, "re-run the analyst" runs only the Financial Analyst; the other agents show "kept from the last run" and finish at once, and the answer and summary are written again. "Re-run the analyst, assume three hires" changes the decision itself, so there the whole team runs again and the reply says so.
+- **An unclear number is asked about first (R3).** "Make it a 2% team" or "two" on a decision that counts people: "Did you mean two people?" Yes applies it and restarts; no changes nothing. A percentage on a price decision is taken as said.
+- **Transcription (R6).** Whisper is told the words it is likely to hear (agent and metric names, Dubai, hires, runway, churn). Code repairs "should be open …" to "should we open …" and "Freerun the …" to "Re-run the …". A turn Whisper is less sure of than `VOICE_CONFIRM_BELOW` (0.45) is read back first ("Did you say: …? Say yes, or say it again."), with a note under the mic. No LLM correction pass.
+- **A proposed memo on record gets one question (R7):** "what has changed since you drafted it?". No question about its targets, forecasts or kill criteria, and the memo is named once.
+- **Barge-in timings (R2) were wrong, not the audio.** The rows with `paused_ms` of 35,000 to 168,000 came from a clock fault: after a switch between Hold to talk and Hands-free (or 30 s of unbroken sound) the speech detector counted its frames from zero again, but the list of arrival times did not, so a later barge-in read its start from a frame that had arrived minutes before. The pause itself was sent at once, as your 62–71 ms rows show. Both now reset together, an onset older than 2 s is never reported, and a barge-in decided by its length now gets its words once they are known (no more empty text).
+- **Speech over FounderOS for 1 s stops it (was 0.6 s; `VOICE_BARGE_IN_MS`).** Shorter speech pauses it at once and waits for the words: a filler resumes it, a question or three words stop it. So "cancel" in RV11 will now read about 1,000 ms for long speech; the pause is unchanged. **If your `.env` has `VOICE_BARGE_IN_MS=600`, change it to 1000 or delete the line.**
+
+**Whisper model, measured on this PC with qwen3:8b loaded** (2026-11-13, `scripts/stt_bakeoff.py`: 16 phrases in 3 Kokoro voices with room noise, 48 clips)
+| Model | Heard right | p50 | Slowest | VRAM added |
+|---|---|---|---|---|
+| `small.en` int8_float16 (the default), plain | 43/48 | 211 ms | 313 ms | +0.52 GB |
+| `small.en` int8_float16, with the FounderOS vocabulary | 44/48 | 212 ms | 305 ms | +0.52 GB |
+| `small.en` int8 | 43/48, 44/48 | 214, 219 ms | 324 ms | +0.35 GB |
+| `large-v3-turbo` int8_float16, plain | 43/48 | 186 ms | 275 ms | +1.07 GB |
+| `large-v3-turbo` int8_float16, with the vocabulary | 43/48 | 190 ms | 247 ms | +1.07 GB |
+| `large-v3-turbo` int8 | 43/48 | 192, 225 ms | 280 ms | +1.07 GB |
+- **It fits and it is no slower:** 6.4 GB in use before, about 7.5 GB with `large-v3-turbo`, of 12 GB.
+- **This test cannot tell you which hears you better.** Every miss, for both models, was a spelling variant the scorer counted as wrong ("advisor" for "adviser", "&" for "and") or "net burns" for "net burn". Synthetic speech is too clean to reproduce "should be open" or "Freerun". The vocabulary's visible effect on `small.en`: it writes "Re-run" and the agents' names as the app does, and its confidence on right answers rose (lowest 0.62 to 0.83).
+- `small.en` stays the default. `large-v3-turbo` is already downloaded on this PC (1.6 GB in `data/models/whisper`); RW8 says how to try it. See Open questions.
+
+**How the Advisor speaks (fix round 2026-11-13; this replaces the lines below where they differ)**
+- **It says less.** A new question gets "On it." (or "Checking that now." for one metric). A team run then gets one or two sentences on who is on the team and each one's focus, one short line a stage on what its agents produced, and a summary: the outcome, the one thing that matters, then an offer ("Want me to go through the risks?"). Say **yes** (or "go through the risks", "the other options") for the next part, **no thanks** to stop. The on-screen answer is never read aloud, and the assumption question and the "… are done; two to go" lines are on screen only.
+- **Spoken numbers are rounded by code** from the verified figure (`app/voice/spoken.py`): "around 170 thousand dollars a month", "about 1.8 million dollars", "about ten and a half months", "about four in five". Exact figures and lineage stay on the card. Money (USD, EUR, GBP, AED; INR in lakh and crore), percent, months and dates. A share "of" something may be said as a fraction; a rate or a price change never is.
+- **You have the floor.** Nothing new is played while you are speaking or while your words are being transcribed and answered; the reply to you comes before narration that was waiting. Speech it could not make out gets "Sorry, I didn't catch that." and a note under the mic.
+- **It does not hear itself.** While it plays audio, sound below `VOICE_ECHO_GATE` (0.3) of your own speech level is treated as its echo. Your level is learnt from what you say while it is silent.
+- **Follow-ups in context** (typed or spoken): "and what about churn?" is answered as that metric; "why that option?" from the open decision's own frame, at once; anything else goes to the Advisor together with your earlier questions and the first sentences of its earlier answers.
+- **Re-run an agent** (typed or spoken): "re-run the analyst, assume three hires", "redo the Devil's Advocate". While that agent is working it restarts with your change; if its findings have already moved on, you are offered a restart of the run; after the answer the same team runs again with that agent's new brief (and your change added to the request, so code rebuilds the cost model).
+
+**What you can do now**
+- In the Advisor panel, press the microphone (it asks for the microphone once). **Hold to talk**: hold the mic button, speak, let go. **Hands-free**: just talk; FounderOS finds the end of your sentence after 400 ms of quiet.
+- FounderOS answers out loud: first a short acknowledgement ("Checking that now." / "On it. I'll tell you how the team is doing as it works."), then the team's narration, then the checked answer, sentence by sentence. Everything also appears in the panel, as typed turns do.
+- **Barge-in:** talk over it and it pauses at once (65 ms measured); speech of 600 ms or more, or words that are not a backchannel, stop it. "Uh-huh", "right", "ok" while it speaks: it carries on.
+- **Mid-run turns** go through the same classifier as typed ones: a new question is queued, a change offers a restart, "stop" stops. Spoken answers to offers: "approve" / "hold it" (team approval), "ask it" / "drop it" (queued question), "restart" / "keep going" (a change).
+- **Quiet** (the bell) silences all speech; transcripts and the canvas carry on.
+- Latency per turn under the mic ("first words · answer · STT · barge-in stop"), and in `/api/voice/metrics` (p50s); engines, devices, fallbacks and VRAM in `/api/voice/status`.
+
+**How it works** (`backend/app/voice/`, `backend/app/api/voice.py`, `frontend/src/lib/voice.ts`, `components/chat/VoiceControls.tsx`)
+- Browser: AudioWorklet to 16 kHz mono int16, 32 ms frames over `/ws/voice`; 24 kHz int16 back, scheduled gap-free; `pause` suspends playback, `interrupt` flushes it and reports the flush time. Echo cancellation is on in `getUserMedia`.
+- `vad.py`: Silero VAD v6 ONNX (bundled in faster-whisper, run with onnxruntime on CPU; no torch), 512-sample frames, own state per connection; energy detector as the fallback. `Endpointer`: start after 96 ms of speech, end after `VOICE_END_SILENCE_MS` (400).
+- `stt.py`: faster-whisper `small.en` on CUDA `int8_float16`, falling back to `base.en` int8 on CPU at start-up if CUDA cannot load **or cannot run** (a test transcription catches missing DLLs). On Windows the CUDA DLLs come from the `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` wheels, added to the DLL path by `add_cuda_dll_dirs`.
+- `tts.py`: Kokoro-82M ONNX (`kokoro-v1.0.onnx`, voice `af_heart`) on CPU, 8 threads; long sentences are made clause by clause so the first words play sooner; short fixed lines are cached. `for_speech` drops `[source]` brackets and says "%" as "percent".
+- `turn_taking.py`: barge-in or backchannel, rules first (duration, a backchannel list, question words, three or more words), then the decision model (`yes_no`, 0.4 s timeout, confidence threshold); unsure or slow means barge-in.
+- `session.py`: one connection. Utterance to `ConversationManager.turn`; the conversation lane's lines are spoken, **but a lane line with a figure is replaced by "I've put that on screen."**; the answer is spoken from a `tap()` of the run's text (the canvas keeps reading the queue itself: a new `DeltaQueue` broadcasts, so two readers never split an answer). An interrupt drops queued lines and audio being made.
+- `spoken.py` (2026-11-13): `say_money`, `say_percent`, `say_months`, `say_date`, `spoken_text` (any sentence, numbers only), `team_line`, `produced_line`, `summarise` (a `ChatResult` to lead lines plus offers). `session.py` now speaks from lane events by `kind` (`team`, `approval`, `held`, `wave`) and from `summarise`; a one-metric line is said as soon as the routine's `metric_card` exists. `_floor`, `_speech_seq` and `_gated` are the floor, the stale-verdict guard and the echo gate.
+- `service.py`: loads the engines in a worker thread at start-up (the canvas never waits, R4), records fallbacks and VRAM; `metrics.py`: per-turn and per-barge-in timings.
+- Models: `python scripts/download_voice_models.py` puts Whisper (small.en, base.en) and Kokoro into `data/models` (git-ignored). GitHub release downloads failed here with 504s, so Kokoro and its voices come from the Hugging Face mirror `fastrtc/kokoro-onnx` when GitHub fails.
+
+**Hardware (founder's PC, recorded 2026-11-08)**
+- RTX 4080 Laptop GPU, 12 GB VRAM (11.99 GiB usable), driver 617.14; i9-13900HX (24 cores); Python 3.12.7 venv.
+- The GPU is shared with qwen3:8b (Q4_K_M, 8k context: **5.86 GiB**) in the Docker `ollama` container, which other apps use too. With qwen3:8b loaded: 6.38 GiB in use, about 5.6 GiB free.
+- Measured: Whisper `small.en` int8_float16 on CUDA adds **0.52 GB** (6.38 → 6.90 GiB). Silero VAD and Kokoro run on the CPU and add nothing. Headroom left: about 5 GB. `small.en` FP16 (PRD §2 budget) would roughly double Whisper's share; `int8_float16` was chosen to keep headroom for other apps' models.
+
+**Measured on this PC** (2026-11-08, `scripts/voice_bench.py`, hands-free, the fixtures played in real time; qwen3:8b warm)
+| What | Result | Target |
+|---|---|---|
+| STT (small.en, CUDA), warm | 260–420 ms per utterance (p50 293 ms) | |
+| End of speech to first spoken word | p50 **932 ms** (755, 932, 960) | narration within 1 s: met |
+| End of speech to the first sentence of a metric answer | p50 **3.8 s** (8.4 s cold first turn, 3.8, 2.4) | about 3 s: close, not met on p50 |
+| Barge-in: speech onset to audio paused | **65 ms** | client flush within 100 ms |
+| Barge-in: speech onset to speech cancelled (long speech) | **576 ms** (the 600 ms rule) | |
+| Kokoro on CPU | about 1 s per second of speech (1.2 s for "Checking that now." uncached) | |
+| Whisper on CPU (fallback, base.en) | about 1.5 s per utterance | |
+
+**Limits**
+- **Round 3 was not tested with a microphone, and I could not reproduce S1, S3 or S4 as you saw them.** What I did check for S1, live on this PC (Ollama, qwen3:8b, a scratch backend on port 8011): five Dubai runs stopped by "stop" and "yes" at 20, 28, 33, 37 and 40 seconds, the last two while the answer was being written. All five ended cancelled, with no answer. So the cancel itself works, and I do not know which path spoke the summary on your run. Round 3 closes every path I could find (see the feedback item), and RX2 to RX4 are the check with your voice.
+- **Your own words can be taken for an echo** if you repeat the offer's words within a second of it ("go through the risks" right as "…go through the risks?" ends). "Yes" is never taken for an echo. Wait a moment, or say "yes".
+- **A quiet "okay" after an offer may be ignored** (below the 0.45 threshold): the note under the mic says it was not caught. Say it again.
+- A change left unanswered stays open only until the next run starts. Its card on a finished run can now be clicked (before, it had expired by then).
+- The S5 date rule checks when a memo is said to have been written (its year, or the full date) and any full date such as 2026-12-06. A wrong month in words with the right year ("March 2026" for a memo of November 2026) is not caught, and a bare year elsewhere in the sentence is left alone.
+- **Not tested with a real microphone in round 1.** V7 was reproduced and fixed in code, in tests with WAV fixtures, and with the real engines (Silero, Whisper on CUDA, Kokoro) against a *simulated* loudspeaker echo. Your room, loudspeakers and the browser's echo canceller are what RV2 and RV3 check.
+- The echo gate compares loudness only. Very loud loudspeakers close to the microphone can still get through (raise `VOICE_ECHO_GATE`); a founder who speaks much more quietly over the answer than they usually do may not stop it (lower it, or 0 turns it off). Until you have spoken once while it is silent, there is no level to compare with and the gate is off.
+- "Why that option?" gives code's reasons (cost, easier to undo, a goal it moves away from), with no figure. A different "why" goes to the team as a new question.
+- When you accept "go through the risks", up to three of the Devil's Advocate's checked sentences are said, with rounded numbers. That is the one place an agent's own words are spoken.
+- After the answer, a re-run runs only that agent (round 2). The other agents' findings are kept as they were, even though a later stage read the old findings of the one that ran again.
+- Round 2 was **not tested with a microphone**. R1, R3, R4, R5, R7 and R8 are tested with WAV fixtures and fakes (`tests/test_voice_round3.py`); the vocabulary and both Whisper models ran for real on synthetic speech. Your voice is RW2 to RW9.
+- The read-back threshold (0.45) is a guess: on clean synthetic speech nothing fell below 0.6, right or wrong, so I could not tune it. If it asks too often, lower `VOICE_CONFIRM_BELOW`; if garbled turns get through, raise it (0.6).
+- A run restarted from the on-screen **Restart** button is not summarised aloud (the voice says only "The answer is ready."). Restarted by voice, it is.
+- One stray word typed while a team works ("Dubai") is now ignored as a backchannel, like a spoken one.
+- Kokoro on the CPU is the slow part of an answer. Kokoro on the GPU needs `onnxruntime-gpu`, which replaces the `onnxruntime` package that faster-whisper depends on: left for M6 tuning (Next steps).
+- The figures above come from synthesised speech (the fixtures), not your microphone; the checklist below measures your voice.
+- Hands-free with loudspeakers relies on the browser's echo cancellation; with headphones barge-in is cleanest. A false barge-in only pauses: short noise resumes.
+- The first turn after start-up is slower (Ollama and Kokoro warm up).
+
 ### Canvas UI (M4)
 **What you can do now**
 - Open `http://127.0.0.1:3000` and run the whole product in the browser: ask, watch the team, approve or edit it, read the answer with its sources, try scenarios, read and export the memo.
@@ -601,15 +739,103 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M5 session)
-0. **Gate check:** M4 is a **Major** gate. The founder runs W0 to W15 below and merges the PR. Act on any "Founder feedback" first.
-1. M5 (PRD §8): the voice pipeline. The microphone and voice controls in the Advisor panel are the hook. It must test GPU sharing.
-2. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
+## Next steps (for the M6 session)
+0. **Gate check:** M5 is a **Major** gate. The founder runs RX1 to RX7 below (RW3, RW4, RW6, RW7, RW8 and RW9 passed on 2026-11-14) and merges the PR. Act on any "Founder feedback" first.
+0b. M6 also carries the founder's decisions of 2026-11-13 (PRD §12): F expandable left and right panels with a collapsible left panel; G a movable pop-up agent window with a graphical view of each agent's work (time-boxed); the Kokoro licence point; TTS latency. v1.1: H, I, J.
+1. M6 (PRD §8): final `setup.bat`/`run.bat` (they now install the `voice` extra and download the voice models), README and the demo script, VRAM/latency tuning notes.
+2. Voice latency: try Kokoro on the GPU (`onnxruntime-gpu` in place of `onnxruntime`, checked against faster-whisper's Silero use) or `kokoro-v1.0.int8.onnx` (GitHub only); measure with `scripts/voice_bench.py`. Target: metric answer p50 under 3 s.
+3. Voice: Laya for the backchannel decision once fine-tuned (C8); a spoken "Ask it now" for the RY5 queue offer already works ("ask it").
+4. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
 3. Dubai verification: let a figure quoted from a decision on record carry that record as its source (Current state, M4 limits).
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M4 re-test after round 3 (Major gate, about 15 minutes). Run this one first: RY1 to RY7.** It covers 58, 51, 54, 56 and 57 of "[M4] Re-test RX1–RX12", plus the RX12 popover check. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+**M5 re-test after fix round 3 of 2026-11-14. Run this one first: RX1 to RX7 (about 15 minutes).** Headphones or a headset give the best results. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data.
+
+- **RX1. Get the code.** Close the backend and frontend windows. Then:
+  `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`
+  No new packages and no new settings. Gear > **Ask before a team runs** > **Never** > **Save**. Press the microphone, choose **Hands-free**.
+- **RX2. A stopped run is never spoken (S1).** Say **"Should we open a Dubai office?"**. After the opening turn, while the team works, say **"stop"**. **Hear:** "Stop the team? Say yes to stop." Say **"yes"**. **Hear:** "Stopping the team.", then "That run was cancelled." Then stay quiet for a minute. **Not heard:** "My proposal is …", any finding, any offer. **See:** the run marked cancelled, with no answer.
+  Do it once more and say "stop" late, when the Activity tab shows the Devil's Advocate done (the answer is being written): the same result.
+  Then typed: ask the Dubai question again and type **stop** in the box. **See / hear:** "Stopping the team." at once, with no question.
+- **RX3. Each offer once, and then it waits (S2, S3).** Ask the Dubai question and stay quiet until the summary ends with **"Want me to go through the risks?"**. Stay silent for 20 seconds. **Hear:** nothing. Say **"mm"**, then **"uh-huh"**. **Hear:** nothing (the offer is not said again). Say **"yes"**. **Hear:** up to three risks, then **"Want the other options?"** once. Stay silent for 20 seconds. **Hear:** nothing. Say **"no thanks"**. **Hear:** "Okay. The rest is on screen."
+  If you can, run RX3 once on loudspeakers too: that is where its own voice could be taken for your answer.
+- **RX4. A change said while the team works (S4).** Ask the Dubai question. After the opening turn, while the team works, say **"Assume three hires."** **Hear:** "That changes the decision. Restart with your change?" **See:** the change as a card with **Restart** and **Keep going**. Say **"yes"**. **Hear:** "Restarting with your change." **See:** a new run, and in its answer "… with three local hires, as you asked, is $30,000.00 up front and **$43,770.86** a month, moving projected runway from 11.23 to 8.65 months (**-2.58**)".
+- **RX5. A change you do not answer is not lost (S4).** Ask the Dubai question again, say **"Assume three hires."** while the team works, hear the offer, and say nothing. **Hear**, when the team is done: the findings and the proposal (still two hires: $32,347.24 is on screen), then **"You asked for a change while the team worked, and this answer does not have it. Restart with it?"** in place of the offer of risks. Say **"yes"**. **See:** $43,770.86 and -2.58.
+- **RX6. Re-run one agent (RW5 again), and the text answer (S5).** After a Dubai summary, say **"Re-run the analyst."** **Hear:** "Re-running only the Financial Analyst again. The rest of the team's findings stand.", no second team introduction, then the summary, ending with its offer **once**. **See:** only the Financial Analyst working in the new run. RW5 failed for you and S1 to S5 do not say how; if it fails again, please write what you heard and saw.
+  Then read the Dubai text answer. **See:** "moves you away from your goal "Extend runway …"" **once**; the earlier memo named **once** ("You already have a proposed memo on this from 2026-11-06 …: what has changed since you drafted it?"); no "You already proposed a Dubai office …", and no "in 2027".
+- **RX7. Barge-in timings and the tests.** After your own turns:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,client_flush_ms,verdict,by,text`
+  **Expect:** first words p50 about 0.9 s; metric answer p50 about 1.8 s; every `paused_ms` under 150; `stopped_ms` about 1,000 for a barge-in by "duration". New: a row with `by` "echo" is FounderOS hearing its own words (it resumed and took no turn); tell me if one of those rows holds words you said.
+  The tests, without a microphone: `.\.venv\Scripts\python.exe -m pytest backend\tests\test_voice_round4.py -q`. **Expect:** all pass.
+
+**Superseded by RX above (done: results under "Founder feedback"; kept for reference): RW1 to RW10.** Two things RW says are no longer so: a typed "stop" is not asked about (RW2), and a change said mid-run is offered as "That changes the decision. Restart with your change?". Headphones or a headset give the best results. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data.
+
+- **RW1. Get the code.** Close the backend and frontend windows. If your `.env` has a line `VOICE_BARGE_IN_MS=600`, change it to `1000` or delete it. Then:
+  `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`
+  No new packages. Gear > **Ask before a team runs** > **Never** > **Save**. Press the microphone, choose **Hands-free**.
+- **RW2. A filler never stops the team (R1).** Say **"Should we open a Dubai office?"**. After the opening turn, while the team works in silence, say **"uh-huh"**, then **"mm"**, **"right"**, **"okay"**, a few seconds apart. **Hear:** nothing. **See:** the team still working; no "Stopping the team." Then say **"stop"**. **Hear:** "Stop the team? Say yes to stop." Say **"no"**. **Hear:** "Okay, the team carries on." Say **"stop"** again, then **"yes"**. **Hear:** "Stopping the team.", then "That run was cancelled."
+  Then, during any spoken answer, say a short **"uh-huh"**: a tiny pause, and it carries on.
+- **RW3. One opening turn, then silence (R4).** Ask the Dubai question again and stay quiet. **Hear:** "On it.", then once: "I've put together a team of six: the Librarian, Market Scout, … and a Devil's Advocate. They're looking at the Dubai office from different angles so the decision holds up." Then silence, with at most one "Still working on it." after about 30 seconds. **Not heard:** any line about an agent, a stage or the Verifier, any figure, the assumption question. **See:** all of those in the panel as before.
+- **RW4. Findings, outcome, offer (R4, R5).** When the team is done, **hear** in this order: "The full office would cost 30 thousand dollars up front and around 32 thousand dollars a month, which shortens your runway by about two months." (then, if they apply: the goal it moves away from, the cash warning, "The costs are assumptions for you to confirm." or "Part of this is unverified, so check the screen.") "My proposal is Travel-led pilot: 3 thousand dollars a month, which shortens your runway by about a week." "The trade-off: you learn more slowly from trips than from a local presence, and win customers later." **"Want me to go through the risks?"** Then silence.
+  Say **"yes"**. **Hear:** up to three risks, none of them a question, then "Want the other options?". Say **"no thanks"**. **Hear:** "Okay. The rest is on screen."
+- **RW5. Re-run one agent (R8).** After the summary, say **"Re-run the analyst."** **Hear:** "Re-running only the Financial Analyst again. The rest of the team's findings stand." **See:** a new run in which only the Financial Analyst works; the others are done at once. **Hear:** no second team introduction, then the summary again, ending with its offer.
+- **RW6. An accepted change is applied (R8).** Say **"Assume three hires."** **Hear:** "That changes the decision. Restart with your change?" Say **"yes"**. **Hear:** "Restarting with your change." **See:** the offer's card marked accepted, a new run, and in its answer "… with three local hires, as you asked, is $30,000.00 up front and **$43,770.86** a month, moving projected runway from 11.23 to 8.65 months (**-2.58**)". **Hear** in the summary: "… around 44 thousand dollars a month, which shortens your runway by about two and a half months."
+  Then the button: type or say **"Assume two hires."** and click **Restart** on the card. **See:** $32,347.24 and -2.07 again.
+- **RW7. An unclear number is asked about (R3).** After a Dubai answer, type **make it a 2% team** (or say "make it a two percent team"). **Hear / see:** "Did you mean two people?" and no restart yet. Say **"yes"**. **Hear:** "Restarting with your change." Then type **three**. **See:** "Did you mean three people?" Type **no**. **See:** "Okay, nothing has changed. Say the number with what it counts, for example three hires."
+- **RW8. Transcription (R6).** Say each of these and read your turn in the panel: **"Should we open a Dubai office?"**, **"Re-run the analyst, assume three hires."**, **"Make it a two person team."** **See:** the words as you said them (or, if "two person" still comes out as "2%", the question of RW7 instead of a wrong change). If a turn is read back ("Did you say: …? Say yes, or say it again."), answer it; tell me if that happens on clear speech.
+  Optional, the larger model (already on this PC): add `VOICE_STT_MODEL=large-v3-turbo` to `.env`, restart, and repeat RW8. It uses about 0.55 GB more VRAM and was no slower here. Check: `(Invoke-RestMethod http://127.0.0.1:8000/api/voice/status).stt`. The comparison itself: `.\.venv\Scripts\python.exe scripts\stt_bakeoff.py` (about 6 minutes).
+- **RW9. A proposed memo gets one question (R7).** With a proposed Dubai memo in the vault (your earlier runs left one), ask the Dubai question. **See** in the answer exactly one question: "You already have a proposed memo on this from … : what has changed since you drafted it?" **Not seen or heard:** "Is the runway still above …, as predicted?", "Is the risk of runway falling below … acceptable?", or the memo mentioned a second time.
+- **RW10. Latency and barge-in timings (R2).** `.\.venv\Scripts\python.exe scripts\voice_bench.py` (about 2 minutes), then after your own turns:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,client_flush_ms,verdict,by,text`
+  **Expect:** first words p50 about 1 s; metric answer p50 about 2 s; every `paused_ms` under 150, also after you switch between Hold to talk and Hands-free and back; `stopped_ms` about 1,000 for a barge-in by "duration" (it was about 575 with the old 0.6 s rule); rows by "duration" now carry their text.
+  The tests, without a microphone: `.\.venv\Scripts\python.exe -m pytest backend\tests\test_voice_round3.py -q`. **Expect:** all pass.
+
+**Superseded by RW above (kept for reference): RV1 to RV11.** What RV2, RV5, RV6 and RV9 say you hear ("Five on this: …", a line a stage, "Running it again, with the Devil's Advocate redoing its part.") is no longer said.
+**M5 re-test after the fix round of 2026-11-13. Run this one first: RV1 to RV11 (about 20 minutes).** Use the same microphone and loudspeakers as in your V7 test: that set-up is what failed. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures below follow the sample data; yours follow your data.
+
+- **RV1. Get the code.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`
+  No new packages or models. Gear > **Ask before a team runs** > **Never** > **Save**. Press the microphone, choose **Hands-free**.
+- **RV2. A question spoken over the narration (V7).** Say **"Should we open a Dubai office?"**. **Hear:** "On it.", then "Five on this: the Financial Analyst on the numbers, …". While it is saying that, say **"What is our churn?"**. **Hear:** it stops within a moment, then "I'll keep that for when this run finishes." **See:** "What is our churn?" as your turn, and a "Queued" card. Stay quiet. **Hear:** the stage lines and the summary (RV5, RV6), then "Your next question is ready. Say ask it, or drop it." **See:** **Ask it now** / **Drop it**. Say **"ask it"**. **Hear:** "Running it now.", then "Your logo churn is about … percent a month."
+  Repeat once, asking **"What's our current churn?"** in a gap between two of its lines instead of over one.
+- **RV3. It does not hear itself.** Ask the Dubai question again and say nothing until the summary ends. **Hear:** no stutter, no pause in the middle of a line. **See:** no turn that you did not say, and the state never reads "Interrupted". Then:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,verdict,by,text`
+  **Expect:** no rows from this run. If it does pause itself, put `VOICE_ECHO_GATE=0.5` in `.env`, restart and try again; if it is slow to stop when you talk over it (RV2, or V5), try `0.2`.
+- **RV4. Barge-in and backchannel still work (V5, V6 again, because of the echo gate).** While it speaks the summary, say **"Wait, make it a two person team instead."**: it stops, and offers the restart. During another answer say a short **"uh-huh"**: a tiny pause, then it carries on.
+- **RV5. The team, once; one line a stage (A, B).** In RV2 or RV3, **hear** who is on the team once, in one or two sentences. Then one line as each stage ends: "The Financial Analyst has priced it, the Librarian has checked your notes and the Market Scout has looked at the market." **Not heard:** "… are done; two to go", the assumption question, or any figure. **See:** all of those still in the panel.
+- **RV6. A summary and an offer, not the text card (B, C).** After the stages, **hear** two or three sentences and a question, then silence:
+  "My proposal is Travel-led pilot: 3 thousand dollars a month, which shortens your runway by about a week." "One warning: in about four in five of the simulated futures, cash runs out within a year." (only if your data's risk is 50 % or more) "The costs are assumptions for you to confirm." "Want me to go through the risks?"
+  **See:** the exact figures ($3,000.00, -0.21 months) on the card, not spoken. Say **"yes"**. **Hear:** up to three risk sentences, then "Want the other options?". Say **"no thanks"**. **Hear:** "Okay. The rest is on screen."
+- **RV7. Rounded numbers (B).** Say **"What is our runway?"**. **Hear:** "Checking that now.", "Your runway is about ten and a half months.", the warning if it applies, "Want the detail?". **See:** 10.65 months on the card. Say **"yes"**. **Hear:** "Closing cash is about 1.8 million dollars, with a net burn of around 170 thousand dollars per month, so cash reaches zero in September 2027." Then ask **"What is our net burn?"** ("around 170 thousand dollars a month") and **"What is our gross margin?"** ("about 72 percent").
+  The normaliser's table, without a microphone: `.\.venv\Scripts\python.exe -m pytest backend\tests\test_voice_round2.py -q -k "said or spoken or sentence or metric_is_led"`. **Expect:** all pass (INR lakh and crore are in it).
+- **RV8. Follow-ups in context (D).** After the Dubai summary, say **"Why that option?"**. **Hear, at once:** "I proposed Travel-led pilot because it costs less than Full office and is easier to undo. The trade-off: you learn more slowly from trips than from a local presence, and win customers later. The costs of each option are on screen." No new run. Ask it again after the churn answer: the same reply (the decision stays open). Then say **"And what about churn?"**. **Hear:** "Checking that now.", "Your logo churn is about … percent a month." **See:** the run's title is "What is our churn?".
+- **RV9. Re-run an agent by voice (E).** Ask the Dubai question; right after the team line say **"Re-run the analyst, assume three hires."** **Hear:** "Re-running the Financial Analyst with your change." (if the analyst had already finished: the restart offer; say **"restart"**). After the summary, say **"Redo the Devil's Advocate."** **Hear:** "Running it again, with the Devil's Advocate redoing its part.", then the team line, the stage lines and a summary again. **See:** a new run with the same team. Typed, both sentences do the same.
+- **RV10. One full stop.** In the runway answer of RV7, **see** the warning end "… so protecting runway comes first." with one full stop. If you still see two, tell me where (the answer card, the memo, or another panel): I could not make the backend produce it.
+- **RV11. Your latency numbers (V10).** With approval at **Never**: `.\.venv\Scripts\python.exe scripts\voice_bench.py` (about 2 minutes), then after your own turns:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,client_flush_ms,verdict,by`
+  **Expect:** first words p50 about 1 s or less; first answer audio p50 about 3 to 4 s (a metric's line is now made as soon as the routine has the figure); barge-in pause under 150 ms; client flush a few ms. Write the p50s in the Gate log row or under Founder feedback.
+
+**M5 Voice (Major gate; V3 to V6, V8 and V9 passed on 2026-11-13; reference). V1 to V10.** V7 and V10 are replaced by RV2 and RV11 above, and what you hear in V3 to V8 is now the shorter speech of RV5 to RV7. You need your microphone (headphones make barge-in cleanest). Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **V1. Get the code and the voice packages.** Close the backend and frontend windows, then:
+  `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\.venv\Scripts\python.exe -m pip install -e "backend[dev,gpu,voice]"; .\.venv\Scripts\python.exe scripts\download_voice_models.py`
+  **Expect:** "have small.en", "have base.en", Kokoro and voices saved (about 900 MB the first time). Then `.\run.bat`.
+- **V2. Engines and VRAM.** Wait about 30 s after start-up, then:
+  `$s = Invoke-RestMethod http://127.0.0.1:8000/api/voice/status; $s.stt; $s.tts; $s.vad; $s.notes; $s.vram_gb`
+  **Expect:** `stt` small.en on `cuda`, `tts` kokoro on `cpu`, `vad` silero, no notes, `vram_gb.whisper` about 0.5. Also `docker exec ollama ollama ps` (qwen3:8b about 5.9 GB) and `nvidia-smi --query-gpu=memory.used,memory.total --format=csv`. Write the three numbers down.
+- **V3. Push-to-talk, a metric.** Open `http://127.0.0.1:3000`, press the microphone button (allow the microphone). Hold the mic, say **"What is our runway?"**, let go. **Hear:** "Checking that now." within about a second, then "Runway (actual burn) is ... months ...". **See:** your words in the panel, the answer card, and under the mic "first words … ms · answer … ms · STT … ms".
+- **V4. Hands-free.** In the mode box choose **Hands-free**. Say **"What is our gross margin?"** and stop talking. **Hear:** the answer without pressing anything. The state reads Listening, Thinking, Speaking.
+- **V5. Barge-in.** Hands-free, Gear > **Ask before a team runs** > **Never** > **Save**. Say **"Should we open a Dubai office?"**. While it is still narrating (the team is working; "On it…" or "… are done"), say **"Wait, make it a two person team instead."**. **Hear:** it stops within a moment of your first word. **See:** "Interrupted", then your words as a turn and the restart offer ("Restart with my change"). Say **"restart"**: the new run starts, and its answer says "with two local hires, as you asked". (Said after the answer has started, the team is done, so it becomes a new question instead.)
+- **V6. Backchannel.** While it speaks a long answer (ask **"Should we raise our prices by 10%?"**), say a short **"uh-huh"** or **"right"**. **Hear:** a tiny pause, then it carries on from where it was. The latency line shows "(backchannel)".
+- **V7. Mid-run question.** While the Dubai team works, say **"What is our churn?"**. **Hear:** that it is queued; when the answer is done, "Your next question is ready. Say ask it, or drop it." Say **"ask it"**: the churn answer is spoken.
+- **V8. Approval by voice.** Gear > **Ask before a team runs** > **Always** > **Save**. Say **"Should we open a Dubai office?"**. **Hear:** "Waiting for your approval of this team: … Say approve, or hold it." Say **"approve"**: the team runs. Set approval back and **Save**.
+- **V9. No unverified number spoken; quiet.** In V5 to V8 the narration never says a figure (figures come only in the answer). Press the bell (**Quiet on**) and ask by voice: nothing is spoken, the transcript and the answer still appear.
+- **V10. Your latency numbers.** With approval at **Never**, run `.\.venv\Scripts\python.exe scripts\voice_bench.py` (about 2 minutes; it plays recorded questions into the backend, including the Dubai decision with an interruption), then after your own V3 to V6 turns:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,client_flush_ms,verdict,by`
+  **Expect:** first words p50 about 1 s or less; first answer audio p50 about 3 to 4 s; barge-in pause under 150 ms; client flush a few ms. Write the p50s in the Gate log row or under Founder feedback.
+
+**M4 re-test after round 3 (done: M4 ACCEPTED; reference). RY1 to RY7.** It covers 58, 51, 54, 56 and 57 of "[M4] Re-test RX1–RX12", plus the RX12 popover check. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
 
 - **RY1. Get the code.** Close the backend and frontend windows, then:
   `git fetch origin; git checkout claude/m4-canvas-ui; git pull origin claude/m4-canvas-ui; .\run.bat`
@@ -991,7 +1217,88 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M4 → M5, first task] Carried from the M4 review (not blocking)
+### [M5] Re-test RW1–RW10: RESOLVED, awaiting re-test RX1–RX7 (fix session 2026-11-14, round 3)
+**Resolved (2026-11-14, PR #10):** S1 to S5 and the typed "stop", with tests in `tests/test_voice_round4.py` (39), the S5 tests on your exact strings. **I could not reproduce S1, S3 or S4 as you saw them**, so for those three this is what I found and what is now closed, not a proven cause:
+- **S1.** Stopping does cancel the run: with fakes at 40 points of a run, and live on this PC at 20, 28, 33, 37 and 40 seconds (the last two while the answer was being written), every run ended cancelled with no answer. So I do not know which path spoke "My proposal is …" for you. Closed now: the voice keeps a list of stopped runs and says nothing of their answers, whatever state they end in (tested with a cancel that is made to miss); a cancelled run's waiting lines are dropped; a stop also clears an earlier summary's offer; and the orchestrator ends a run as cancelled if its stop arrived too late to interrupt the last step.
+- **S2.** Cause found. After the summary, any listening noise ("mm", a breath heard as "Huh.") was a backchannel turn, and round 2's rule "a noise brings the offer back" said the offer again although it had already been said. Now an offer is said again only if it was dropped before it was ever said.
+- **S3.** Not reproduced; three paths closed. (1) Its own offer heard back: "…go through the risks?" matches the pattern for a yes to that offer, and round 2 made such words an answer even while it was still speaking. (2) A noise that Whisper writes as "Okay." or "Yeah." counted as yes whatever its confidence. (3) S2's repeat. With headphones (1) is unlikely, so (2) or (3) is my guess for your run.
+- **S4.** Not reproduced: with fakes the change was offered and said every time, typed or spoken, in silence or over the opening turn. But the words were different from the ones you know ("Those are your figures. Cancel this run and start again with them?"), and an offer you did not answer expired when the run ended, so the answer came with two hires and the change was gone. Now: the same words as after the answer, an unanswered change is asked again with the answer, a short change said over the voice is no longer left to a model that may call it a noise, and three words or more are never dropped as a noise.
+- **S5.** Cause found. The pass that removes repeats never compared two sentences with different figures, so the goal line with other numbers in it passed; and "You already proposed a Dubai office …" does not contain the word "memo", which the memo rule looked for. Both fixed, and a date the memo does not have is removed.
+- **RW5 failed, and S1 to S5 do not say how.** The test of a one-agent re-run still passes. I took S2 and S3 (the offer twice, talking on) as what you saw there; RX6 asks you to check.
+
+Founder's results (2026-11-14): **PASS** RW3, RW4, RW6, RW7, RW8 (`small.en`), RW9 (the rule). **PARTIAL** RW2. **FAIL** RW5.
+Founder's PC numbers (RW10): first words p50 **890 ms**, metric answer p50 **1738 ms**, barge-in pause **64 ms**, cancel **~990 ms**, STT p50 **291 ms**, TTS first **596 ms**, VRAM **7.43 / 12 GB**, Whisper **+0.70 GB**.
+Headphones or a headset give the best voice results.
+
+To fix (third and final round):
+- **S1.** Voice cancel: after "stop" + "yes" ("Stopping the team."), the Advisor still spoke the summary ("My proposal is Travel-led pilot…"). A cancelled run is never summarised or spoken: cancel also clears queued TTS and suppresses the final answer's speech.
+- **S2.** "Want me to go through the risks?" was asked twice in one turn. Each offer is said once.
+- **S3.** After the summary's offer and a silence, the Advisor carried on talking unprompted. After any offer it waits for the user; silence never continues it.
+- **S4.** "Assume three hires." said WHILE the team was running was lost: no restart offer, and the answer kept 2 hires. A mid-run amendment must show and say the restart offer (as after the answer, which works).
+- **S5.** The Dubai text answer repeats itself again: the goal line twice ("…which moves you away from your goal 'Extend runway…'" and "This moves you away from your goal 'Extend runway…'…") and the prior memo twice ("You already have a proposed memo on this from 2026-11-06…" and "You already proposed a Dubai office in 2027 with a Travel-led pilot…"); "in 2027" is also wrong (the memo is dated 2026-11-06). The near-duplicate pass must catch same-topic sentences (same goal, same memo), and a memo date that differs from the memo is never stated. Tests with these exact strings.
+- **Open questions answered** (PRD §12): keep `small.en` as the default STT, `large-v3-turbo` stays an option; keep barge-in at 1 s; a typed "stop" stops at once without confirmation (spoken "stop" still confirms; the Cancel button stays immediate); keep "On it." before the opening turn; keep the 0.45 read-back threshold.
+### [M5] Re-test RV1–RV11: RESOLVED, awaiting re-test RW1–RW10 (fix session 2026-11-13, round 2)
+**Resolved (2026-11-13, PR #10):** R1 to R8, with tests in `tests/test_voice_round3.py` (79) and five new WAV fixtures (`ugh`, `mm`, `hmm`, `right`, `okay`). Causes and what changed:
+- **R1.** "Ugh!" matched no rule, so two models were asked. The barge-in check timed out ("fallback") and stopped the speech; the turn classifier's model then chose "stop", and the lane cancelled the team on that guess. Now a noise or one stray word is a backchannel by rule, a model's "stop" is ignored unless the words hold a stop word, and a stop is asked about first.
+- **R8, the change that was not applied.** The backend did apply it: "Assume 3 hires." accepted gives $43,770.86 and -2.58 (test). Two things kept it from you. Saying "yes" to "Restart with your change?" was not understood (only "restart" was). And when the restart was accepted by voice, the run started but the screen was never told, so the canvas kept showing the two-hire answer. Both fixed; the on-screen button path is tested too.
+- **R8, the re-run.** After the answer the whole team was started again by design. Now only the named agent runs and the others' findings are kept (`RunContext.reuse`).
+- **R2.** The timing was wrong; the audio was not paused that long. See Current state.
+- **R4, R5.** One opening turn, silence, one optional "Still working on it.", then findings, outcome and an offer. Why your run ended without the offer: I could not reproduce it with fakes. The likely cause is R1's: a short sound during the summary was judged a barge-in, which drops everything still to be said, the offer included. Fillers no longer do that, the offer is said again after a listening noise, and a decision summary now always has an offer to end on.
+- **R6.** Vocabulary for Whisper, code's repairs, read-back of unsure turns, and the model measurement (Current state).
+- **R3.** `count_reading` in `app/voice/domain.py`; the lane asks before it offers or applies.
+- **R7.** The two strings you quoted are questions the model wrote; the old filter only caught "expected to meet" and "kill criteria" wordings. With a proposed memo on record, code now removes every question but its own, and any second mention of the memo. The spoken risks no longer include questions.
+
+Founder's results (2026-11-13): **PASS** RV2 (headphones), RV3 (speakers), RV7, RV8, RV10. **RV9 partly.** **FAIL** RV4, RV5, RV6.
+Founder's PC numbers (RV11, headphones): first words p50 **931 ms**, metric answer p50 **1869 ms**, barge-in pause **62–71 ms**, cancel **574–582 ms**, STT p50 **396 ms**, TTS first **591 ms**, VRAM **7.4 / 12 GB**, Whisper **+0.52 GB**.
+Headphones or a headset give the best voice results.
+
+P1
+- **R1 (important).** While a team ran, the founder said "uh-huh"; STT gave "Ugh!", the barge-in verdict came from "fallback", and the turn was taken as stop ("Stopping the team."). A short non-command utterance (filler, one word, no question, under about 1 s) while a team runs is a backchannel, never stop. Stop only on explicit words (stop, cancel, halt, hold it), and confirm before cancelling a running team ("Stop the team? Say yes to stop."). WAV/text fixtures for "uh-huh", "ugh", "mm", "hmm", "right", "okay".
+- **R8.** Voice re-run: "re-run the analyst" re-ran the whole team; re-running one agent must re-run only that agent, then rewrite the summary. "Assume 3 hires." offered a restart, but the answers afterwards still showed 2 hires ($32,347.24, -2.07). Check that an accepted change is applied (3 hires: $43,770.86 a month, -2.58) and that the spoken and on-screen restart offers both work.
+- **R2.** `/api/voice/metrics` `recent_barge_ins` has rows with `paused_ms` 35,000–168,000 ms, empty text and verdict by "duration": find whether the timing is wrong or audio really stayed paused that long, and fix.
+
+P2, founder design decision: voice during a team run (PRD §12, replacing round 1's per-stage lines)
+- **R4.** Speak ONE opening turn only, e.g. "I've put together a team of six: the Librarian, Market Scout, Financial Analyst, People & Ops, Regulatory & Tax and a Devil's Advocate. They're looking at the Dubai office from different angles so the decision holds up." Then stay silent while they work; at most one short "still working on it" if the run passes about 30 s. No per-agent lines, no Verifier lines, no figures, no assumption question; all of that stays on screen. When done: a short spoken summary of the team's two or three key findings (rounded numbers by code), then the outcome (the proposal and the main trade-off).
+- **R5.** The spoken summary must always end with an offer ("Want me to go through the risks?") and then stop. On the founder's run it ended after the proposal with no offer.
+- **R6.** Smarter transcription: "Should we open a Dubai office" came out "should be open a Dubai office", "Re-run the analyst, assume three hires" as "Freerun the another test assume 3 hires", and "two person" as "2%". Add a domain prompt / hotwords for faster-whisper (FounderOS terms, agent names, metric names, Dubai, hires, runway, churn), measure whether a larger model (e.g. large-v3-turbo int8) fits the VRAM with qwen3:8b loaded and what it costs in latency, normalise numbers with context, and confirm low-confidence or ambiguous turns ("Did you mean two people?"). No slow LLM correction pass unless measured to add under about 300 ms.
+- **R3.** Ambiguous numbers in amendments ("2%" when the decision has hires, "two" with no unit) are confirmed before they are applied.
+- **R7.** The Dubai text and spoken answers still ask target or kill-criterion questions about a PROPOSED memo ("Is the runway still above 10.44 months by 2027-05-06, as predicted?", "Is the risk of runway falling below 6 months by March 2027 acceptable?") and once repeated the prior-memo point twice. For a proposed memo on record, ask only "what has changed since you drafted it?". Tests with these strings.
+### [M5] Founder review V1–V10: RESOLVED, awaiting re-test RV1–RV11 (fix session 2026-11-13)
+**Resolved (2026-11-13, PR #10):** V7, A to E, the number normaliser and the full stop, with tests in `tests/test_voice_round2.py` (44) and the fixture `churn.wav`. Causes and what changed:
+- **V7, where the spoken turn was lost.** Not in the queue or the classifier: once the words "What is our churn?" reach the lane they are queued and offered (test with fixtures). They were lost before that, in three ways, all in `app/voice/session.py`:
+  1. **A stale verdict resumed the narration over you.** Any sound paused playback; its verdict ("backchannel, carry on") arrived after transcription, by which time you had started your question. The resume played the narration over your question, the 600 ms barge-in rule no longer applied (nothing was "paused"), and Whisper got your voice mixed with the narration. Now a verdict about older speech never resumes over newer speech.
+  2. **New lines started while you were speaking.** The speaker did not check whether you were mid-sentence, so the next narration line played over the rest of your question. Now nothing new is played while you speak or while your words are being understood, and the reply to you is said first.
+  3. **An unreadable transcript was dropped in silence.** Now it says "Sorry, I didn't catch that." and shows a note.
+  4. **(found while testing) FounderOS heard itself.** Your `decision_log.jsonl` from 8 and 9 November has turns nobody said during speech ("See?", "date.", "Please continue.", "You can go."): fragments of its own voice from the loudspeakers. With the real engines and a simulated echo this gave 20 self-made pauses and several invented turns in one Dubai run. The echo gate (`VOICE_ECHO_GATE`) stops that: none in the same run.
+  Evidence: the WAV-fixture test `test_a_question_spoken_over_narration_is_queued_shown_and_offered`, three tests for 1 to 3, one for the gate, and the real-engine run (question heard as "What is our churn?", queued, offered after the summary). **Not tested with your microphone and room:** RV2 and RV3 are that test.
+- **A.** `team_line`: one or two sentences, said once; the voice no longer speaks every lane line (the lane tags each line with a `kind`).
+- **B.** `produced_line` a stage; `summarise` for the outcome; `spoken.py` normaliser with a table of tests.
+- **C.** Two or three sentences, then one offer; "yes" / "no thanks" (or naming the part) answers it. With a queued question waiting, its offer is the only question asked.
+- **D.** Earlier questions and answers go to the Advisor (`conversation_block`); "and what about churn?" and "why that option?" are resolved in code.
+- **E.** `ConversationManager._rerun`, typed or spoken.
+- **Double full stop: not reproduced.** The backend's answer ends with one full stop in every run I made (runway, net burn, Dubai; fake model). Code now guarantees one after the warning and collapses a doubled one in any answer, with a test. If you see it again, RV10 asks where.
+
+Founder's results (2026-11-13): **PASS** V3, V4, V5, V6, V8, V9. **FAIL** V7. **V10** to re-measure.
+- **V7 (P1 bug).** Hands-free, approval Never: asked "Should we open a Dubai office?", and while the team worked said "What is our churn?" (and later "What's our current churn?"). The app kept narrating Dubai; the question was not shown, nothing said or showed "queued", and after the answer there was no "Your next question is ready. Say ask it, or drop it." and no Ask it now / Drop it. In text mode the same flow works (M4 RY5).
+- **P2, founder design decision: how the Advisor speaks** (PRD §12):
+  - A. At the start of a team run, say briefly how the team is organised: who is on it and each one's focus, in one or two sentences. No running commentary of every step.
+  - B. Never read the on-screen text or an agent's output aloud. One short line on what each agent produced, and the outcome. Spoken numbers are rounded and colloquial, produced by code from the verified figure, never by the model ("around 10 thousand dollars", "about 1.8 million", "about ten and a half months", "about four in five"). Exact figures and lineage stay on screen. A spoken-number normaliser (money, %, months, dates; ready for INR lakh/crore), with tests.
+  - C. Not a non-stop speaker: lead with the outcome and the one thing that matters, about 2–3 sentences a turn, then pause and offer more ("Want me to go through the risks?").
+  - D. Use the full conversation context in voice (the open decision, earlier answers, earlier questions), so follow-ups are answered in context.
+  - E. Re-run an agent by voice ("re-run the analyst, assume three hires", "redo the Devil's Advocate") through the existing re-run and amendment paths; the Advisor then resumes where it was.
+- Also: the cash warning ends with a double full stop ("comes first..").
+- Priority: V7 high; A–E medium
+### [M4 → M5, first task] Carried from the M4 review: RESOLVED in M5 (re-test in V5 to V9 and RZ below)
+**Resolved (2026-11-08, M5 PR):** with tests in `tests/test_m5_carried.py` and `tests/test_decision_frame.py`. Causes:
+- 60: no agent ran. The new test patches `AgentRunner.run` and shows no call before approval and none after a rejection. But a rejection marks each planned agent "cancelled", and the narration counted a cancelled agent as finished ("… are done"). Agents that never started are now left out, and the lane says "I held the team back: no agent ran." The 5.7 s was planning (Planner and decision frame), which runs before approval by design.
+- 61: the sentence splitter split after "vs.", and the near-duplicate pass dropped the second half. "vs.", "e.g.", "i.e.", "cf." and "approx." no longer end a sentence.
+- 62: "as you asked" is said only when the request carries the founder's change ("The founder then added: …").
+- 63: every one-metric lookup waited for approval under "Always". A local, code-answered lookup now needs no approval; a team still does.
+- 55: the live tuner (`scripts/tune_prompts.py --agents devils_advocate --apply`) applied **v3** (3/5 against 0/5 for the old live v1 today; failures were the risk-line format). The tuning rubric now also fails an answer whose figures the source check removed. A stricter v4 scored 0/5 and is kept as a recorded version.
+- 7: code runs the seeded Monte Carlo (1,000 runs, no change to the plan) for decisions and runway or burn questions, and at `CASH_RISK_WARN_AT` (default 0.5) or more adds: "A warning: in N % of 1,000 simulated futures with no change to your plan, cash runs out within 12 months, so protecting runway comes first." Figures with lineage; verified. `ChatResult.cash_risk` carries it.
+- **RZ re-test (2 minutes):** approval **Always**: ask **What is our gross revenue churn?**: answered at once, no approval card (63). Ask **Should we open a Dubai office?** and **Hold the team back**: the lane says no agent ran, no "done" (60). Ask **Should we raise our prices by 10%?** with approval Never: no "as you asked" (62); a runway answer ends with the cash warning if your data's risk is 50 % or more (7).
+
+Original items:
 - 60: Check that "Hold the team back" really stops the agents. In held-back runs the narration still said "Librarian, Market Scout and Financial Analyst are done…" with about 5.7 s of work. Add a test that no agent runs before approval; fix if they do.
 - 61: The near-duplicate pass cut a sentence in half: "The main trade-off is runway reduction vs. Your goal 'Decide whether…'".
 - 62: "with price change of +10 %, as you asked" appeared when no change was asked. Acknowledge only real amendments.
@@ -1215,6 +1522,21 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
+0b. **From M5 fix round 3 (2026-11-14), none blocking:**
+   - **What failed in RW5?** (Re-run the analyst.) See the feedback item and RX6.
+   - **An unanswered change is asked again with the answer** ("You asked for a change while the team worked, and this answer does not have it. Restart with it?"), in place of the offer of risks. That is my addition, to stop a change being lost. Say if you would rather it restarted by itself, or stayed silent.
+   - **A quiet "okay" after an offer is ignored** below the 0.45 threshold, which you kept for the read-back. If real answers get ignored, lower `VOICE_CONFIRM_BELOW`.
+0a. **From M5 fix round 2 (2026-11-13): answered by the founder on 2026-11-14** (PRD §12): keep `small.en`; keep 1 s; a typed "stop" does not ask; keep "On it."; keep 0.45. The last point below (a re-run with a change runs the whole team) was not answered and stands as built.
+   - **Whisper model.** `large-v3-turbo` fits beside qwen3:8b (+1.07 GB against +0.52 GB) and is no slower, but my test could not show that it hears you better. Try it in RW8 and say whether to make it the default (PRD §2 names `small.en`).
+   - **Barge-in after 1 s, not 0.6 s.** Your R1 rule (a filler under about 1 s is a backchannel) needs it: under the old rule a 0.7 s "right" stopped the speech before its words were known. The cost: long speech over FounderOS cancels it after about 1 s; it is paused from the first 70 ms either way. Say if you want 0.6 s back.
+   - **Typed "stop" is asked about too.** The Cancel button still stops at once. Say if typed stop should not ask.
+   - **"On it." is still said before the opening turn**, because the team line needs the plan (several seconds) and your first-words target is 1 s. I read "one opening turn" as the team line.
+   - **"Re-run the analyst, assume three hires" runs the whole team**, because the change alters the cost model every agent used. "Re-run the analyst" alone runs only the analyst.
+0. **From the M5 fix round (2026-11-13), none blocking:**
+   - **The echo gate is my addition** (default 0.3, `VOICE_ECHO_GATE`; 0 is off). It came from your decision log and a simulation, not from your room. RV3 and RV4 tell you whether to keep 0.3.
+   - **The assumption question is no longer spoken** ("which assumption would change your mind?"); it is on screen. Your rule A says no running commentary, and I read the question as part of it. Say if you want it spoken.
+   - **"Go through the risks" says the Devil's Advocate's own sentences** (up to three, numbers rounded). Rule B says never to read an agent's output aloud; I kept this because you ask for it explicitly. An alternative is a code-written count ("three risks, the first about …").
+   - **Where did you see "comes first.."?** (RV10)
 1. ~~Ollama model storage~~: **resolved 2026-11-06**: moved to a Docker named volume at your request; the Windows folder was kept. Old text: **Ollama model storage (performance, optional).** Your `ollama` container mounts its models from `C:/Dev_Tools/LLM Models/ollama` (a Windows bind mount). Every Ollama request spends ~3.7 s before inference (`/api/tags` alone ~1.2 s), and a cold load of qwen3:8b takes ~3.5 min. A Docker named volume (or a folder inside WSL) usually cuts both to seconds, which would make answers 2–3x faster (runway: ~15–20 s now, likely ~5 s). It is your n8n stack, so I changed nothing. FounderOS works either way: it preloads the model at startup and loads it before a call when needed. Your call whether to move it.
 
 Answered (2026-11-03, founder note at the start of the M1 session):
@@ -1237,6 +1559,25 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M5 fix session, round 3 (2026-11-14)
+- Recorded the founder's RW1–RW10 results first (commit `2971096`). Then S1 to S5, the typed "stop" and the answered open questions.
+- New: `tests/test_voice_round4.py`. Changed: `agents/graph.py` (`RunContext.cancel_requested`), `agents/dedupe.py` (`same_goal`), `agents/runtime.py` (`misdates_a_record`, the memo told again), `conversation/manager.py` (`turn(..., spoken=)`, one restart offer, an unanswered change kept open), `conversation/classifier.py`, `voice/session.py` (stopped runs, offers said once, own echo, unclear yes), `.env.example` (comments only), and the older tests that held the replaced behaviour.
+- Live on this PC: five Dubai runs stopped by words on a scratch backend (port 8011, workspace `probe3`, removed afterwards). No microphone test.
+
+### M5 fix session, round 2 (2026-11-13)
+- Recorded the founder's RV1–RV11 results first (commit `eb06dd2`). Then R1, R8, R2 (P1) and R4, R5, R6, R3, R7 (P2).
+- New: `app/voice/domain.py` (vocabulary, repairs, `count_reading`), `scripts/stt_bakeoff.py`, `tests/test_voice_round3.py`, fixtures `ugh`, `mm`, `hmm`, `right`, `okay`. Changed: `conversation/classifier.py` (fillers, stop words), `conversation/manager.py` (`Asked`, yes/no answers, `answered` on the outcome, re-run with `reuse`), `agents/graph.py` (`RunContext.reuse`, kept agents), `agents/runtime.py` (one question with a draft on record), `voice/session.py`, `voice/spoken.py`, `voice/stt.py`, `voice/turn_taking.py`, config and `.env.example` (`VOICE_STT_VOCABULARY`, `VOICE_CONFIRM_BELOW`, `VOICE_STILL_WORKING_S`, `VOICE_BARGE_IN_MS` 1000), frontend `workspace.tsx`, `voice.ts`, `VoiceControls.tsx`, `api.ts`.
+- Real engines on this PC: `scripts/stt_bakeoff.py` only (Whisper `small.en` and `large-v3-turbo` on CUDA with qwen3:8b loaded). No microphone test and no live Ollama run in this round.
+
+### M5 fix session (2026-11-13)
+- Recorded the founder's V1–V10 review first (commit `957f0ed`). Then V7, A to E, the normaliser, the full stop (commit `90b8aa6`), then the echo gate, the metric "detail" line, the frontend "didn't catch that" note and the docs.
+- New: `app/voice/spoken.py`, `tests/test_voice_round2.py`, `tests/fixtures/voice/churn.wav` (Kokoro, 16 kHz, like the others). Changed: `voice/session.py`, `conversation/manager.py` (`kind` on narration, `_rerun`, `_why_reply`, `_in_context`, `started_run`), `conversation/contexts.py` (`conversation_block`), `agents/graph.py` and `runtime.py` (`earlier` for the Advisor; one full stop), `config.py` and `.env.example` (`VOICE_ECHO_GATE`), `frontend/src/lib/voice.ts` and `VoiceControls.tsx`.
+- Real-engine check on this PC (Silero, Whisper small.en on CUDA, Kokoro; a slow fake model holding the team; the microphone signal is the fixture plus 8 % of what is being played): with the gate, "What is our churn?" spoken over the team line is heard, queued, said to be queued, and offered after the summary, with one pause and no invented turn; without the gate, 20 pauses and invented turns ("No.", "it.") that start runs.
+
+### M5 session (2026-11-08)
+- First task: 60 (test and narration fix), 61, 62, 63, 55 (v3 applied by the live tuner), 7 (Monte Carlo warning). Commit `bf918e6`.
+- Voice pipeline: `app/voice/` (audio, vad, stt, tts, turn_taking, session, service, metrics), `app/api/voice.py`, `DeltaQueue.tap()`, `scripts/download_voice_models.py`, `scripts/voice_bench.py`, frontend `lib/voice.ts` and `VoiceControls`. Real models loaded and measured on this PC (Current state). Tests: `tests/test_voice.py` (30) with four WAV fixtures made with Kokoro.
+
 ### M4 fix session, round 3 (2026-11-08)
 - Recorded the RX1–RX12 results, then fixed 58, 51, 54/54b, 56, 57, 52, 53, 59 (see the feedback item). New: `app/agents/dedupe.py`, `tests/test_m4_round3.py`; `Verification.state` gains `not_run`; `Projection.zero_cash_month`.
 
@@ -1317,6 +1658,41 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M5 fix session, round 3, 2026-11-14)
+- The founder's answers to the open questions, and the rules for S1 to S5, are in PRD §12.
+- Mine, within those: `turn(..., spoken=True)` is how the lane knows a turn came from the recogniser; the HTTP API and text typed over the voice socket are typed. A stopped run is tracked in two places on purpose (the orchestrator's `cancel_requested` and the voice session's own list), so neither depends on the other.
+- An echo is judged by words and timing, not loudness: words FounderOS said in the last 20 s, heard while it plays or within 1 s after. One plain word ("yes", "no", "stop", "okay") is never an echo.
+- A second sentence on the same goal is dropped even when its figures differ; the figures are on the card.
+- An unanswered change stays open on the finished run and is asked again (open question 0b).
+
+## Decisions made (M5 fix session, round 2, 2026-11-13)
+- The founder's decisions R4 and R5, and the rules for R1, R3, R6, R7 and R8, are in PRD §12.
+- Mine, within those: the lane keeps one open yes/no question at a time (`Session.asked`); the next turn answers it or it lapses, and a stop or a number that was not confirmed changes nothing. A number confirmed with "yes" is applied without the second "Restart?" question.
+- The summary's findings are code-built from the decision frame and the cash-risk check, not agents' sentences. The note on what is unverified or assumed is always one of them.
+- A filler is decided by rules in both places (barge-in and turn classifier), so no model is asked and nothing waits on the GPU.
+- The opening turn is not said again for a one-agent re-run.
+- `VOICE_BARGE_IN_MS` 1000; `small.en` kept as the default STT model; no LLM correction pass.
+
+## Decisions made (M5 fix session, 2026-11-13)
+- The founder's decisions A to E, F and G, H to J, the Kokoro licence point and TTS latency are in PRD §12.
+- Mine, within those: the summary is built from the run's structured result (metrics, decision frame, cash-risk check), not from the answer text; only an answer with neither a metric nor a frame is taken from the checked text, and then only its first two sentences.
+- A spoken share is a fraction only when it is a share "of" something and within 2.5 points of a simple fraction; "around" for thousands, "about" for millions; a round figure is said without either.
+- The floor rule: speech in progress or being understood holds back all new audio; replies go ahead of waiting narration.
+- The echo gate (see Open questions).
+- CI caught what this PC could not: the venv here is Python 3.12, CI is 3.11. On 3.11 `asyncio.wait_for` can swallow a cancellation, so the speaker's floor wait outlived `close()` and the Windows job hung for 28 minutes (cancelled by hand). The floor wait now uses `asyncio.timeout`, the speaker stops when the session closes, and `close()` waits at most 5 s. The fake STT now takes its script line when the audio arrives, so two utterances transcribed at once cannot swap words (the other Windows failure). Avoid `asyncio.wait_for` around a wait that a task cancel must end.
+- "Re-run" after the answer re-runs the team with that agent's new brief, through the amendment path when there is a change. A re-run request that names no agent is an ordinary turn.
+- The Advisor's context is the founder's turns and the first two sentences of each earlier answer (last 12 turns), never the lane's narration. It goes through the privacy filter like any cloud payload.
+
+## Decisions made (M5 session, 2026-11-08)
+- STT: faster-whisper `small.en`, `int8_float16` on CUDA (0.52 GB measured), `base.en` int8 on CPU as the fallback, chosen at start-up by a test transcription. CUDA DLLs from the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (`gpu` extra).
+- VAD: Silero v6 ONNX as bundled in faster-whisper, run with onnxruntime; the `silero-vad` package is not used (it needs torch). Frames are 512 samples (32 ms), the window Silero v5+ expects, not 30 ms.
+- TTS: Kokoro-82M ONNX on CPU (fp32 `kokoro-v1.0.onnx`, 8 threads), so the shared GPU keeps headroom; clause-by-clause synthesis; cached short lines.
+- Barge-in: any speech while speaking pauses at once; 600 ms of speech or non-backchannel words cancel; backchannel by rules first, then the decision model, unsure means barge-in.
+- The conversation lane never speaks a figure: such a line becomes "I've put that on screen." Quiet mode silences all speech.
+- A run's text is broadcast (`DeltaQueue.tap()`): the canvas and the voice each get all of it.
+- A one-metric lookup needs no team approval, even under "Always" (63).
+- The Advisor's cash warning is code-written from the Monte Carlo at `CASH_RISK_WARN_AT` = 0.5 (7).
 
 ## Decisions made (M4 fix round 3, 2026-11-08)
 - A finance answer that does not give every metric the question names is "not verified", whatever else checks out.

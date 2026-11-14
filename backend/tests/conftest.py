@@ -41,6 +41,10 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "AUTO_LOAD_SAMPLE_VAULT": "false",
         "LLM_PROVIDER": "fake",
         "DECISION_PROVIDER": "fake",
+        # Never Whisper or Kokoro in a test (each app start would load or download the real models).
+        "VOICE_STT": "fake",
+        "VOICE_TTS": "fake",
+        "VOICE_VAD": "energy",
     }.items():
         monkeypatch.setenv(name, value)
 
@@ -61,6 +65,10 @@ def settings(tmp_path: Path) -> Settings:
         vault_watch=False,
         llm_provider="fake",
         decision_provider="fake",
+        cash_risk_warn_at=2.0,
+        voice_stt="fake",
+        voice_tts="fake",
+        voice_vad="energy",  # off; tests/test_m5_carried.py turns it on
     )
 
 

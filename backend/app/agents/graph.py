@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import operator
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -29,6 +30,7 @@ from langgraph.types import Send
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agents.cash_risk import CashRisk, cash_risk, wants_warning
 from app.agents.decision_frame import DecisionFrame, build_frame
 from app.agents.events import Artifact, Citation, EventBus
 from app.agents.horizon import beyond, beyond_issue
@@ -126,6 +128,7 @@ class ChatResult(BaseModel):
     )
     assumptions_to_confirm: int = Field(0, description="Placeholder inputs the answer rests on")
     memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
+    cash_risk: CashRisk | None = Field(default=None, description="Monte Carlo cash-out warning, when it was given")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     verified: bool
     verification: Verification = Field(
@@ -141,11 +144,36 @@ class ChatResult(BaseModel):
     status: str = "done"
 
 
+class DeltaQueue(asyncio.Queue["str | None"]):
+    """The Advisor's text as it is let out. The canvas reads this queue; the voice reads a `tap()` of it (M5).
+
+    A tap starts with everything said so far, then gets each new piece, so two readers never split one answer.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.said: list[str | None] = []
+        self.taps: list[asyncio.Queue[str | None]] = []
+
+    def put_nowait(self, item: str | None) -> None:
+        self.said.append(item)
+        for tap in self.taps:
+            tap.put_nowait(item)
+        super().put_nowait(item)
+
+    def tap(self) -> asyncio.Queue[str | None]:
+        copy: asyncio.Queue[str | None] = asyncio.Queue()
+        for item in self.said:
+            copy.put_nowait(item)
+        self.taps.append(copy)
+        return copy
+
+
 @dataclass
 class RunContext:
     run_id: str
     message: str
-    deltas: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue)
+    deltas: DeltaQueue = field(default_factory=lambda: DeltaQueue())
     approval: asyncio.Event = field(default_factory=asyncio.Event)
     approved: bool | None = None
     timings: dict[str, float] = field(default_factory=dict)
@@ -158,7 +186,13 @@ class RunContext:
     stop_agents: set[str] = field(default_factory=set)
     new_briefs: dict[str, str] = field(default_factory=dict)
     context: Any = None  # the conversation lane's frozen run snapshot
+    cash_risk: CashRisk | None = None
     streamed: bool = False  # someone is reading `deltas`: each piece of text goes to one reader
+    # Founder re-test R8: re-running one agent keeps the others' findings. Agent id (in this run's team) -> the
+    # result that agent gave in the run this one replaces. An agent listed here does not run again.
+    reuse: dict[str, AgentResult] = field(default_factory=dict)
+    # Founder re-test S1: the founder stopped this run. Whatever the graph still returns, it never becomes an answer.
+    cancel_requested: bool = False
 
 
 class TeamEdit(BaseModel):
@@ -191,6 +225,7 @@ class AgentOrchestrator:
         max_local: int = 2,
         max_cloud: int = 6,
         max_steps: int = 4,
+        cash_risk_warn_at: float = 2.0,
     ) -> None:
         self.router = router
         self.decisions = decisions
@@ -202,6 +237,7 @@ class AgentOrchestrator:
         self.local_slots = asyncio.Semaphore(max_local)
         self.cloud_slots = asyncio.Semaphore(max_cloud)
         self.max_steps = max_steps
+        self.cash_risk_warn_at = cash_risk_warn_at  # above 1: never warn
         self.runs: dict[str, RunContext] = {}
         self.graph = self._build()
 
@@ -221,6 +257,9 @@ class AgentOrchestrator:
 
     def needs_approval(self, team: list[AgentInstance]) -> bool:
         if not team or self.approval_policy == "never":
+            return False
+        # Founder note 63: a one-metric lookup is a local routine whose answer code writes; there is no team to approve.
+        if all(i.fast_metric is not None and not i.is_cloud for i in team):
             return False
         return self.approval_policy == "always" or any(i.is_cloud for i in team)
 
@@ -315,6 +354,9 @@ class AgentOrchestrator:
         """One instance, as its own task, so the founder can cancel or re-run it without touching the rest."""
         run = self.runs[state["run_id"]]
         inst = state["instance"]
+        kept = run.reuse.get(inst.id)
+        if kept is not None:
+            return {"results": [self._kept(run, inst, kept)]}
         while True:
             task = asyncio.create_task(self._in_a_slot(inst, state))
             run.agent_tasks[inst.id] = task
@@ -351,6 +393,31 @@ class AgentOrchestrator:
                 run.agent_tasks.pop(inst.id, None)
             return {"results": [result]}
 
+    def _kept(self, run: RunContext, inst: AgentInstance, earlier: AgentResult) -> AgentResult:
+        """An agent whose findings stand from the run before: shown as done, with its cards, at no new cost."""
+        artifacts = [a.model_copy(update={"agent_id": inst.id}) for a in earlier.artifacts]
+        result = earlier.model_copy(
+            update={"agent_id": inst.id, "artifacts": artifacts, "usage": Usage(), "est_cost_usd": 0.0}
+        )
+        self.bus.emit("agent.step", run.run_id, inst.id, step="kept from the last run")
+        for artifact in artifacts:
+            self.bus.emit("agent.artifact", run.run_id, inst.id, artifact=artifact.model_dump(mode="json"))
+        self.bus.emit(
+            "agent.done",
+            run.run_id,
+            inst.id,
+            status=result.status,
+            verified=result.verified,
+            issues=result.issues,
+            elapsed_ms=0.0,
+            provider=result.provider,
+            model=result.model,
+            tokens=Usage().model_dump(),
+            est_cost_usd=0.0,
+            kept=True,
+        )
+        return result
+
     async def _verify_node(self, state: GraphState) -> dict[str, Any]:
         run = self.runs[state["run_id"]]
         started = run.timings.get("agents_start", time.perf_counter())
@@ -370,7 +437,10 @@ class AgentOrchestrator:
         meta: dict[str, Any] = {"provider": "", "model": "", "usage": Usage()}
         claim_issues: list[str] = []
         exists = vault_checker(self.ctx_factory(""))
-        async for chunk in advise(self.router, state["message"], state["plan"], results, claim_issues, exists):
+        earlier = _earlier_turns(run.context)
+        async for chunk in advise(
+            self.router, state["message"], state["plan"], results, claim_issues, exists, earlier=earlier
+        ):
             if chunk.delta:
                 parts.append(chunk.delta)
                 await run.deltas.put(chunk.delta)
@@ -380,14 +450,35 @@ class AgentOrchestrator:
                     "model": chunk.completion.model,
                     "usage": chunk.completion.usage,
                 }
+        # Founder note 7: the Advisor speaks up when cash may run out within a year. Code writes it, last.
+        asked_for = [m for _, m in metrics_named(state["message"])]
+        if results and wants_warning(state["plan"].intent, asked_for):
+            finance = getattr(self.ctx_factory(""), "finance", None)
+            run.cash_risk = await asyncio.to_thread(cash_risk, finance, self.cash_risk_warn_at)
+            if run.cash_risk is not None:
+                # One full stop, whatever came before (founder review of M5: "comes first..").
+                warning = f" {run.cash_risk.sentence.rstrip('. ')}."
+                parts.append(warning)
+                await run.deltas.put(warning)
         run.timings["advise"] = _ms(started)
         meta["claim_issues"] = claim_issues
         return {"answer": "".join(parts).strip(), "advisor": meta}
 
     # ---------------------------------------------------------------- runs
-    def start(self, message: str, *, plan_override: Plan | None = None, context: Any = None) -> RunContext:
+    def start(
+        self,
+        message: str,
+        *,
+        plan_override: Plan | None = None,
+        context: Any = None,
+        reuse: dict[str, AgentResult] | None = None,
+    ) -> RunContext:
         run = RunContext(
-            run_id=f"run_{uuid.uuid4().hex[:10]}", message=message, plan_override=plan_override, context=context
+            run_id=f"run_{uuid.uuid4().hex[:10]}",
+            message=message,
+            plan_override=plan_override,
+            context=context,
+            reuse=dict(reuse or {}),
         )
         self.runs[run.run_id] = run
         self._trim()
@@ -408,6 +499,12 @@ class AgentOrchestrator:
             self.bus.emit("run.finished", run.run_id, status="failed", error=str(exc))
             await run.deltas.put(None)
             raise
+        if run.cancel_requested:
+            # Founder re-test S1: a run the founder stopped is cancelled even if the stop landed too late to interrupt
+            # the last step. It has no result, so nothing shows or speaks it as an answer.
+            self.bus.emit("run.finished", run.run_id, status="cancelled")
+            await run.deltas.put(None)
+            raise asyncio.CancelledError
         result = self._result(run, state, _ms(started))
         run.result = result
         self.bus.emit(
@@ -442,12 +539,13 @@ class AgentOrchestrator:
         citations: list[Citation] = []
         for r in results:
             citations.extend(c for c in r.citations if c not in citations)
-        answer = state.get("answer", "")
+        answer = _DOUBLE_STOP.sub(".", state.get("answer", ""))
         frame = the_plan.frame
         known = [
             *(n for r in results for n in r.numbers),
             *(f.value for f in (frame.facts if frame else [])),
             *(f.value for r in results for f in r.record_facts),  # cited to the memo by the source check
+            *(run.cash_risk.figures if run.cash_risk is not None else []),
         ]
         cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
@@ -508,6 +606,7 @@ class AgentOrchestrator:
             decision_frame=frame,
             assumptions_to_confirm=assumptions,
             memo=next((r.memo for r in results if r.memo is not None), None),
+            cash_risk=run.cash_risk,
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             verified=not issues and all_done,
             # Nothing ran (held back, or a greeting): no check to report, so the badge is a neutral "not run".
@@ -536,6 +635,7 @@ class AgentOrchestrator:
         run = self.runs.get(run_id)
         if run is None or run.task is None or run.task.done():
             return False
+        run.cancel_requested = True
         run.task.cancel()
         return True
 
@@ -581,6 +681,20 @@ class AgentOrchestrator:
         finished = [rid for rid, r in self.runs.items() if r.task is not None and r.task.done()]
         for rid in finished[: max(0, len(self.runs) - keep)]:
             self.runs.pop(rid, None)
+
+
+# A sentence that ends twice: ".." but never an ellipsis.
+_DOUBLE_STOP = re.compile(r"(?<![.])\.\.(?![.])")
+
+
+def _earlier_turns(context: Any) -> str:
+    """What was asked and answered before in this conversation (founder decision D), or nothing."""
+    turns = getattr(context, "recent_turns", None)
+    if not turns:
+        return ""
+    from app.conversation.contexts import conversation_block  # the lane imports this module
+
+    return conversation_block(turns)
 
 
 def _new_agent_id() -> str:
