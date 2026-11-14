@@ -264,7 +264,8 @@ async def test_its_own_offer_heard_back_is_not_a_yes(finance: Any, still_playing
     before = len(wire.of("say"))
     now = session.clock()
     session.speaking_until = now + 30 if still_playing else 0.0
-    session._audio_end = now + 30 if still_playing else now  # the offer is playing, or ended this instant
+    # The offer is still playing, or its last audio is just ending (the client plays a little behind this clock).
+    session._audio_end = now + 30 if still_playing else now + 0.8
     await stream(session, wav_bytes("okay"))
     await wait_for(lambda: bool(wire.of("echo")))
     await asyncio.sleep(0.3)
