@@ -102,7 +102,8 @@ _REQUEST = re.compile(
 _DECIDE = re.compile(r"\bshould (?:we|i)\b", re.I)
 
 
-_NOISE_TOO = re.compile(r"^(?:uh[- ]?huh|mm+[- ]?hm+|mhm+|hmm+)[\s.!,?]*$", re.I)
+# Founder RZ re-test S3 (scripted runner): Whisper wrote a spoken "hmm" as "Ahem." and "uh-huh" as "Ahoy.".
+_NOISE_TOO = re.compile(r"^(?:uh[- ]?huh|mm+[- ]?hm+|mhm+|hmm+|hm|ahem|ahoy|aha+|ah[- ]ha)[\s.!,?]*$", re.I)
 
 
 def is_noise(text: str) -> bool:

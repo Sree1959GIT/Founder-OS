@@ -211,6 +211,35 @@ async def test_the_founders_rerun_the_analyt_reruns_only_the_analyst(finance: An
     assert old.answer and new.answer
 
 
+async def test_sounds_whisper_wrote_as_words_leave_the_change_open_and_okay_restarts(finance: Any) -> None:
+    """RZ re-test S3 (scripted runner, Kokoro into Whisper): "hmm" came out as "Ahem." and "uh-huh" as "Ahoy.";
+    they closed the open change, and "Okay." then did nothing."""
+    manager, sid, amendment_id = await answered_with_change_open(finance)
+    runs = len(manager.orchestrator.runs)
+    for heard in ("MM.", "Ahem.", "Ahoy."):
+        quiet_turn = await manager.turn(sid, heard, spoken=True)
+        assert not quiet_turn.started_run and not quiet_turn.reply and len(manager.orchestrator.runs) == runs
+    okay = await manager.turn(sid, "Okay.", spoken=True)
+    assert okay.started_run and okay.reply == "Restarting with your change."
+    assert okay.answered == {"what": "amendment", "id": amendment_id, "accept": True}
+    await finished(manager, okay.run_id)
+
+
+async def test_a_one_agent_rerun_repeats_no_team_or_stage_line(finance: Any) -> None:
+    """RZ re-test S6 (scripted runner): a re-run's panel repeated "Team: …", the inputs question and the stage line."""
+    manager = lane(finance)
+    first = await manager.turn(None, DUBAI)
+    await finished(manager, first.run_id)
+    session = manager.sessions[first.session_id]
+    before = len(session.narration)
+    again = await manager.turn(first.session_id, "Re-run the analyst", spoken=True)
+    await finished(manager, again.run_id)
+    await asyncio.sleep(0.05)
+    lines = session.narration[before:]
+    assert not [t for t in lines if t.startswith("Team:") or " done; " in t or t.startswith("While the team works")]
+    assert lines and lines[-1].startswith("The answer is ready")
+
+
 def old_team(manager: Any, first: Any) -> list[Any]:
     plan = manager.orchestrator.runs[first.run_id].plan
     return list(plan.team)

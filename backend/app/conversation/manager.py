@@ -346,6 +346,10 @@ class ConversationManager:
     async def _narrate(self, session: Session, run_id: str) -> None:
         """Follows one run's real events until it finishes."""
         asked = False
+        run = self.orchestrator.runs.get(run_id)
+        # Founder RZ re-test S6: a re-run of one agent was announced like a new team ("Team: …", the inputs question,
+        # "Financial Analyst is done; writing your answer now."). Its reply already said who redoes what.
+        redo = run is not None and bool(run.reuse)
         try:
             async for event in self.bus.subscribe(run_id):
                 if event.type == "run.finished":
@@ -354,10 +358,12 @@ class ConversationManager:
                 if event.type == "team.approved" and not asked:
                     asked = True
                     # A metric lookup rests on no assumption to question (founder review 9): only a decision is asked.
-                    if self._is_decision(run_id):
+                    if self._is_decision(run_id) and not redo:
                         self._say(session, await self._assumption_question(session, run_id), kind="question")
                 session.last_wave = []
                 text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
+                if redo and (event.type == "team.proposed" or session.last_wave):
+                    continue
                 if text.strip():
                     self._say(session, text, **self._line_kind(session, run_id, event))
         except Exception:  # the lane must never disturb the run it is describing
@@ -609,8 +615,22 @@ class ConversationManager:
     def has_question(self, session_id: str, text: str) -> bool:
         """True when `text` answers the question the lane has open, so no other listener should take it."""
         session = self.sessions.get(session_id)
-        asked = session.asked if session is not None else None
+        asked = (session.asked or self._open_change(session, text)) if session is not None else None
         return asked is not None and self._yes_no(asked, text) is not None
+
+    def _open_change(self, session: Session, text: str) -> Asked | None:
+        """Founder RZ re-test S3: a change still on its card after the answer is the open question, even when a
+        turn in between (a sound the recogniser wrote as a word) closed the lane's question. A plain yes or no
+        answers it; nothing else does."""
+        if self._active(session):
+            return None
+        change = next(
+            (a for a in session.amendments.values() if a.status == "offered" and a.run_id == session.run_id), None
+        )
+        if change is None:
+            return None
+        asked = Asked(kind="amendment", ref=change.id)
+        return asked if self._yes_no(asked, text) is not None else None
 
     @staticmethod
     def _yes_no(asked: Asked, text: str) -> bool | None:
@@ -627,7 +647,7 @@ class ConversationManager:
     async def _answer_asked(self, session: Session, text: str, spoken: bool = False) -> TurnOutcome | None:
         """Yes or no to what the lane asked. Any other turn is taken as itself: a stop or a number that was not
         confirmed lapses (nothing changed), while an offer with a card on screen stays on its card."""
-        asked, session.asked = session.asked, None
+        asked, session.asked = session.asked or self._open_change(session, text), None
         if asked is None:
             return None
         yes = self._yes_no(asked, text)
