@@ -1250,6 +1250,17 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M5] Re-test RY1–RY7: OPEN (fix session 2026-11-15, round 5)
+Founder's results (2026-11-15, about 14:00–15:05 IST): **PASS** restart after the answer with "Yes." ($43,770.86, -2.58), T4 (no unverified line on Not run), T5 (code trade-off). **FAIL** RY4, RY6. **PARTIAL** RY2, RY5.
+
+To fix (method: the founder's real logged turns are the regression fixtures):
+- **U0 rule (PRD §12).** An unclear, very short or unrecognised turn never starts a team. It does nothing (fillers), asks "Did you say …?", or answers directly without a team. Only a clear question or decision request starts a team.
+- **U1.** RY2 first try: "Assume three hires." said while the Devil's Advocate (last stage) worked got no offer and no card; the answer kept 2 hires. Find where that turn went; the offer is said and shown at once in the last stage too.
+- **U2.** RY4: "mm" transcribed "Ugh." was taken as "no" ("Okay, I will leave it as it is.") and as a new question that started a team (Financial Analyst, Librarian, Perspective lens: Customer, Devil's Advocate). Fillers (ugh, mm, hmm, uh, uh-huh, ah, oh) do nothing, before or after an offer.
+- **U3.** RY6: "Re-run the analyst" came out "Re-run the Analyt.", was not recognised, and a new team started (Perspective lens: Investor) whose answer had 13 metric chips with duplicates. Match commands and agent names fuzzily; if unsure, ask "Did you mean re-run the Financial Analyst?".
+- **U4.** RY5: "Hello? Yes?" got a reply repeating the previous answer's text. A greeting gets a short greeting; a "yes" with nothing on offer does nothing; never reuse an earlier answer's text.
+- **U5.** A restarted run showed "Not verified" with no visible reason: make the reasons visible (click) and correct; de-duplicate metric chips; a vague turn never lists every metric.
+- **Reminder (founder decision).** After an unanswered change offer, end the summary with one short spoken reminder, e.g. "Your change to three hires isn't in this answer yet. Say yes to restart with it."
 ### [M5] Re-test RX1–RX7: RESOLVED, awaiting re-test RY1–RY7 of M5 (fix session 2026-11-15, round 4)
 **Resolved (2026-11-15, PR #10):** T1 to T5, with tests in `tests/test_voice_round5.py` (44) and one in `frontend/src/lib/workspace.test.ts`. What I found, from the code and from this PC's own logs of your run (`data/default/decision_log.jsonl` and `llm_calls.jsonl`: times and model names only):
 - **T2. Cause found.** The lane's pattern for "yes" allowed ".", "!" and "," after the word, not "?". So "Yes?" was no answer, the open offer lapsed, and with nothing running the words became a new request: the log shows `"message": "Yes?"` classed as chit-chat at 07:09:57 UTC. Fixed by matching answers without case or punctuation, in the lane and in the voice (approve, ask it, restart, the read-back, the offer of more). Also closed: a listening noise before the yes used to close the offer.
