@@ -317,7 +317,11 @@ async def test_an_idle_turn_never_waits_for_a_model_and_old_idle_sessions_make_r
     manager, provider = lane(finance)
     manager.classifier = TurnClassifier(DecisionService(Slow()), timeout_s=30)
     provider.release.set()
-    outcome = await asyncio.wait_for(manager.turn("s", "The Dubai thing worries me"), timeout=2)
+    # Founder rule U0 (2026-11-15): an unclear turn is read back, at once, and only a yes starts the team.
+    asked = await asyncio.wait_for(manager.turn("s", "The Dubai thing worries me"), timeout=2)
+    assert asked.reply.startswith("Did you say: The Dubai thing worries me?") and not asked.started_run
+    outcome = await asyncio.wait_for(manager.turn("s", "Yes."), timeout=2)
+    assert outcome.started_run
     await manager.orchestrator.runs[outcome.run_id or ""].task
     for i in range(MAX_SESSIONS + 5):
         manager.session(f"other{i}")
@@ -375,7 +379,8 @@ async def test_a_run_ending_while_the_classifier_thinks_does_not_lose_the_turn(f
             return Classified(kind="new_question", by="default")
 
     manager.classifier = EndsTheRun()
-    outcome = await manager.turn(session_id, "The Dubai thing worries me")
+    # A clear question (founder rule U0: an unclear one would be read back, not run).
+    outcome = await manager.turn(session_id, "What does the Dubai office cost us?")
     assert outcome.run_id != run.run_id and manager.sessions[session_id].queue == []
     await manager.orchestrator.runs[outcome.run_id or ""].task
 

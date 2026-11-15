@@ -141,7 +141,8 @@ async def test_stop_is_asked_about_and_only_yes_stops_the_team(finance: Any) -> 
     assert kept.reply == "Okay, the team carries on." and not run.task.done()  # type: ignore[union-attr]
     # A question that was not answered lapses: a later "yes" stops nothing.
     await manager.turn(first.session_id, "stop", spoken=True)
-    await manager.turn(first.session_id, "Hmm.", spoken=True)
+    # (Round 5, U2: a listening noise like "Hmm." leaves the question open; another turn lapses it.)
+    await manager.turn(first.session_id, "How far along is it?", spoken=True)
     stray = await manager.turn(first.session_id, "yes", spoken=True)
     assert stray.kind == "backchannel" and not run.task.done()  # type: ignore[union-attr]
     await manager.turn(first.session_id, "hold it", spoken=True)

@@ -26,7 +26,17 @@ from app.agents.graph import AgentOrchestrator, RunContext
 from app.agents.registry import REGISTRY
 from app.agents.runtime import Plan, single_metric
 from app.agents.verifier import extract_figures, split_sentences
-from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules, is_filler, plain
+from app.conversation.classifier import (
+    Classified,
+    TurnClassifier,
+    TurnKind,
+    by_rules,
+    clear_request,
+    is_filler,
+    is_greeting,
+    is_noise,
+    plain,
+)
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.llm.base import LLMError, LLMProvider, Message
 from app.voice.domain import count_reading
@@ -37,6 +47,55 @@ RESTART_OFFER = "That changes the decision. Restart with your change?"
 RESTART_REQUEST = "That changes the request. Restart with your change?"
 # A change offered while the team worked and not answered by the time the answer was ready (founder re-test S4).
 CHANGE_STILL_OPEN = "You asked for a change while the team worked, and this answer does not have it. Restart with it?"
+GREETING = "Hello. What would you like to look at?"
+UNCLEAR = "I'm not sure what you'd like me to look at. Ask it as a question, or name the decision."
+_CHANGE_WORDS = re.compile(
+    r"^(?:(?:actually|also|and|so|wait|ok|okay|please|sorry)[,\s]+)*(?:assume|assuming|make it|change it to|use)\s+",
+    re.I,
+)
+
+
+def change_reminder(change: str) -> str:
+    """The one spoken reminder after an answer that does not have the founder's change (founder decision
+    2026-11-15): "Your change to three hires isn't in this answer yet. Say yes to restart with it." """
+    what = change.strip().rstrip(".!? ")
+    short = _CHANGE_WORDS.sub("", what)
+    named = f"to {short}" if short != what else f'"{what}"'
+    return f"Your change {named} isn't in this answer yet. Say yes to restart with it."
+
+
+def _distance(a: str, b: str) -> int:
+    """Edit distance, for an agent's name as the recogniser heard it ("Analyt" for "analyst")."""
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[-1]
+
+
+def fuzzy_agent(said: str) -> tuple[str, str, int, bool] | None:
+    """The agent a re-run names, heard imperfectly (founder re-test U3): (kind, alias, words used, sure). Sure: the
+    heard words are a prefix of the name ("analyt", "devil") or one letter off; unsure: two letters off."""
+    words = re.findall(r"[a-z']+", said.lower().replace("\u2019", "'"))
+    best: tuple[int, str, str, int] | None = None
+    for kind, names in AGENT_ALIASES.items():
+        for alias in names:
+            parts = alias.split()
+            for n in {1, len(parts)}:
+                head = " ".join(words[:n])
+                target = " ".join(parts[:n])
+                if len(head) < 4:
+                    continue
+                score = 0 if target.startswith(head) or head.startswith(target) else _distance(head, target)
+                if score <= 2 and (best is None or score < best[0]):
+                    best = (score, kind, alias, n)
+    if best is None:
+        return None
+    score, kind, alias, n = best
+    return kind, alias, n, score <= 1
+
+
 # A follow-up names its subject only by reference: "and what about churn?", "how about burn?" (founder decision D).
 _WHAT_ABOUT = re.compile(
     r"^(?:(?:and|so|ok|okay|then|also|now)[,\s]+)*(?:(?:what|how)\s+about|and)\s+(?:our\s+|the\s+|my\s+)?"
@@ -51,7 +110,7 @@ _WHY_OPTION = re.compile(
 )
 # "Re-run the analyst, assume three hires", "redo the Devil's Advocate" (founder decision E).
 _RERUN = re.compile(
-    r"^(?:please\s+|can you\s+|could you\s+)?(?:re-?\s?run|redo|re-do)\s+(?:the\s+)?(?P<rest>.+)$", re.I
+    r"^(?:please\s+|can you\s+|could you\s+)?(?:re-?\s?run|re-?\s?ran|redo|re-do)\s+(?:the\s+)?(?P<rest>.+)$", re.I
 )
 AGENT_ALIASES: dict[str, tuple[str, ...]] = {
     "financial_analyst": ("financial analyst", "finance analyst", "analyst", "financials", "finance"),
@@ -112,7 +171,7 @@ class QueuedQuestion(BaseModel):
 class Asked(BaseModel):
     """The one yes/no question the lane has open. The next turn answers it, or it lapses."""
 
-    kind: str  # stop | amendment | queue | number
+    kind: str  # stop | amendment | queue | number | said
     ref: str = ""  # the run to stop, the amendment or the queued question on offer
     text: str = ""  # number: the founder's turn as it will be read if they say yes
 
@@ -573,8 +632,10 @@ class ConversationManager:
             return None
         yes = self._yes_no(asked, text)
         if yes is None:
-            if asked.kind in ("amendment", "queue") and is_filler(text):
-                session.asked = asked  # a listening noise is no answer: the offer is still the open question
+            if is_noise(text):
+                # Founder re-test U2: a listening noise ("Ugh.", "mm") is never an answer, neither yes nor no:
+                # whatever was asked is still the open question.
+                session.asked = asked
             return None
         by = Classified(kind="answerable_now", by="rules")
         if asked.kind == "stop":
@@ -585,6 +646,12 @@ class ConversationManager:
                 return self._reply(session, by, "Okay, the team carries on.", running.run_id)
             self.orchestrator.cancel(running.run_id)
             return self._reply(session, Classified(kind="stop", by="rules"), "Stopping the team.", running.run_id)
+        if asked.kind == "said":
+            # Founder rule U0: an unclear turn was read back ("Did you say …?"). Yes runs it as it was said.
+            if not yes:
+                return self._reply(session, by, "Okay. Say it again.", session.run_id)
+            run = self._start_run(session, asked.text)
+            return TurnOutcome(session_id=session.id, reply="", run_id=run.run_id, started_run=True)
         if asked.kind == "number":
             if not yes:
                 reply = "Okay, nothing has changed. Say the number with what it counts, for example three hires."
@@ -665,10 +732,22 @@ class ConversationManager:
                 run_id=run.run_id,
                 started_run=True,
             )
-        if kind == "backchannel":
-            return self._reply(session, Classified(kind=kind, by="rules"), "", session.run_id)
+        rules = Classified(kind="answerable_now", by="rules")
+        if is_greeting(text):
+            # Founder re-test U4: "Hello? Yes?" got the earlier answer's text back. A greeting gets a greeting.
+            return self._reply(session, rules, GREETING, session.run_id)
+        if kind == "backchannel" or is_filler(text):
+            return self._reply(session, Classified(kind="backchannel", by="rules"), "", session.run_id)
         if kind == "stop":
             return self._reply(session, Classified(kind=kind, by="rules"), "Nothing is running.", session.run_id)
+        if not (clear_request(text) or single_metric(text)):
+            # Founder rule U0: an unclear, very short or unrecognised turn never starts a team. It is read back,
+            # and only a yes runs it.
+            if extract_figures(text):
+                return self._reply(session, rules, UNCLEAR, session.run_id)
+            session.asked = Asked(kind="said", text=text)
+            asking = f"Did you say: {text.strip().rstrip('.!? ')}? Say yes to look into it, or say it again."
+            return self._reply(session, Classified(kind="confirm", by="rules"), asking, session.run_id)
         run = self._start_run(session, text)
         return TurnOutcome(session_id=session.id, reply="", run_id=run.run_id, started_run=True)
 
@@ -743,7 +822,17 @@ class ConversationManager:
             None,
         )
         if found is None:
-            return None
+            fuzzy = fuzzy_agent(said)
+            by_ = Classified(kind="confirm", by="rules")
+            if fuzzy is None:
+                return None  # "Redo the forecast": no agent named, an ordinary turn (rule U0 still applies)
+            kind, alias, used, sure = fuzzy
+            rest = " ".join(said.split()[used:])
+            if not sure:
+                session.asked = Asked(kind="number", text=f"Re-run the {alias} {rest}".strip())
+                return self._reply(session, by_, f"Did you mean re-run the {REGISTRY[kind].title}?", session.run_id)
+            said = f"{alias} {rest}".strip()
+            found = (kind, alias)
         kind, alias = found
         change = re.sub(r"^(?:\s*again)?[\s,;:.!]*(?:and\s+|but\s+)?", "", said[len(alias) :]).strip().rstrip(".! ")
         by = Classified(kind="amendment", by="rules")

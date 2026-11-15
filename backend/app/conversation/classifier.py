@@ -80,6 +80,53 @@ def plain(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[?!.,;:…]+", " ", text)).strip().lower()
 
 
+# Founder rule U0 (2026-11-15): only a clear question or decision request starts a team.
+_GREETING = re.compile(
+    r"^(?:(?:hi|hello|hey|hiya|hallo|good (?:morning|afternoon|evening))\b[\s,.!?]*)+"
+    r"(?:(?:there|yes|yeah|yep|ok|okay|again|founderos|everyone)\b[\s,.!?]*)*$",
+    re.I,
+)
+_LEAD_IN = r"^(?:(?:and|so|ok|okay|also|now|then|but|please|hey|right)[,\s]+)*"
+_ASKS = re.compile(
+    _LEAD_IN + r"(?:what|how|why|when|where|which|who|whose|should|shall|can|could|would|will|is|are|do|does|did|"
+    r"has|have|tell me|show me|give me)\b",
+    re.I,
+)
+_REQUEST = re.compile(
+    _LEAD_IN + r"(?:(?:can|could|would) you\s+)?(?:analy[sz]e|compare|model|forecast|project|draft|write|"
+    r"summari[sz]e|show|explain|estimate|calculate|review|check|find|list|plan|evaluate|assess|help|simulate|"
+    r"prioriti[sz]e|rank|look (?:at|into)|search|break down|walk me through|i want|i'd like|i would like|we want|"
+    r"we need|i need|we're (?:thinking|considering)|we are (?:thinking|considering)|we plan|let's|let us)\b",
+    re.I,
+)
+_DECIDE = re.compile(r"\bshould (?:we|i)\b", re.I)
+
+
+_NOISE_TOO = re.compile(r"^(?:uh[- ]?huh|mm+[- ]?hm+|mhm+|hmm+)[\s.!,?]*$", re.I)
+
+
+def is_noise(text: str) -> bool:
+    """A sound, not a word (founder re-test U2): "Ugh.", "mm", "hmm", "uh", "uh-huh", "ah", "oh". Never yes or no."""
+    words = text.strip()
+    return bool(words) and bool(FILLER.match(words) or _NOISE_TOO.match(words))
+
+
+def is_greeting(text: str) -> bool:
+    """ "Hello", "Hi there", "Hello? Yes?" (founder re-test U4): a greeting, answered with one, never a team."""
+    return bool(_GREETING.match(text.strip()))
+
+
+def clear_request(text: str) -> bool:
+    """A clear question or decision request: three words or more, asked as a question or made as a request
+    ("Should we open a Dubai office?", "Compare the two pricing options"). "Okay, I will leave it as it is." is
+    not one (founder re-test U2), and nor is any turn of one or two words."""
+    words = plain(text).split()
+    if len(words) < 3:
+        return False
+    t = text.strip()
+    return bool(_ASKS.match(t) or _REQUEST.match(t) or _DECIDE.search(t) or (t.endswith("?") and len(words) >= 4))
+
+
 def is_filler(text: str) -> bool:
     """A listening noise or a single stray word that asks nothing and orders nothing (founder re-test R1): "Ugh!",
     "mm", "hmm", "right", "okay", "Thanks." Never a question, never a command."""

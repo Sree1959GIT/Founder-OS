@@ -5,7 +5,7 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: re-test RY1–RY7 of M5, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
+- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: re-test RZ1–RZ7, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-14 (M5 fix round 3, after the founder's RW1–RW10 re-test)
 
@@ -19,7 +19,7 @@
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
-| M5 | Voice pipeline | DONE, awaiting Major gate (re-test RY1–RY7 of M5) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
+| M5 | Voice pipeline | DONE, awaiting Major gate (re-test RZ1–RZ7) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
 ## Review gates (every PR passes all four)
@@ -59,9 +59,13 @@
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
-| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RY1–RY7 (M5) after fix round 4 of 2026-11-15 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
+| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RZ1–RZ7 after fix round 5 of 2026-11-15 (U0–U5, reminder). Founder re-test of RY, 2026-11-15: restart with "Yes.", T4 and T5 pass; RY4 and RY6 failed; RY2 and RY5 partly. Before that, fix round 4 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
+- Started (UTC): 2026-11-15 09:43 (local Windows session, fix round 5 for the M5 Major gate, time-box 60 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan: [x] record RY results; [x] U0–U5 and the reminder, tests from the founder's logged turns; [x] RZ steps, PRD §12, PR #10, CI.
+
+Previous session (2026-11-15, round 4):
 - Started (UTC): 2026-11-15 07:22 (local Windows session, small fix round 4 for the M5 Major gate, time-box 45 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan:
   - [x] Record the founder's RX1–RX7 results first
@@ -767,7 +771,18 @@ Known issues / notes:
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M5 re-test after fix round 4 of 2026-11-15. Run this one first: RY1 to RY7 of M5 (about 10 minutes).** Headphones or a headset. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data. (The older "RY1 to RY7" further down are M4's.)
+**M5 re-test after fix round 5 of 2026-11-15. Run this one first: RZ1 to RZ7 (about 10 minutes).** Headphones or a headset. Hands-free, approval at Never. Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
+
+- **RZ1. Get the code.** Close the backend and frontend windows, then `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`. No new packages or settings. Press the microphone, choose **Hands-free**.
+- **RZ2. A change in the last stage (U1), and the reminder.** Ask **"Should we open a Dubai office?"**. When the Activity tab shows only the Devil's Advocate working, say **"Assume three hires."**, even over the voice. **Hear:** "That changes the decision. Restart with your change?" within about two seconds, never "Did you say …?". **See:** one card. Say nothing. **Hear**, after the summary: "Your change to three hires isn't in this answer yet. Say yes to restart with it." once. Say **"yes"**. **See:** $43,770.86 and -2.58.
+- **RZ3. Sounds do nothing (U2).** Repeat RZ2 up to the reminder, then say **"mm"**, **"hmm"**, **"uh-huh"**. **Hear / see:** nothing, no new team, the card still open. Then **"okay"**: "Restarting with your change."
+- **RZ4. An unclear turn never starts a team (U0).** With nothing running, say **"Okay, I will leave it as it is."** **Hear:** "Did you say: Okay, I will leave it as it is? Say yes to look into it, or say it again." Say **"no"**: "Okay. Say it again." No team ran.
+- **RZ5. A greeting (U4).** Say **"Hello? Yes?"**. **Hear:** "Hello. What would you like to look at?" and nothing from the earlier answer. Say **"yes"**: nothing happens.
+- **RZ6. Re-run the analyst, heard imperfectly (U3, U5).** After a Dubai answer, say **"Re-run the analyst."** (it is fine if the transcript shows "Analyt"). **Hear:** "Re-running only the Financial Analyst again. The rest of the team's findings stand." **See:** only the Financial Analyst works; no Perspective lens; each metric chip once. Say **"Re-run the librarain"** (or any name two letters off): **Hear:** "Did you mean re-run the Librarian?".
+- **RZ7. The badge (U5) and the tests.** On any "Not verified" badge, hover (**See:** "Click to see why") and click: **See:** the reasons. If one looks wrong, copy it into feedback. Tests without a microphone: `.\.venv\Scripts\python.exe -m pytest backend\tests\test_voice_round6.py -q` **Expect:** all pass.
+
+**Superseded by RZ above (done: results under "Founder feedback"): RY1 to RY7 of M5.**
+**M5 re-test after fix round 4 of 2026-11-15: RY1 to RY7 of M5.** Headphones or a headset. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data. (The older "RY1 to RY7" further down are M4's.)
 
 - **RY1. Get the code.** Close the backend and frontend windows. Then:
   `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`
@@ -1250,7 +1265,15 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M5] Re-test RY1–RY7: OPEN (fix session 2026-11-15, round 5)
+### [M5] Re-test RY1–RY7: RESOLVED, awaiting re-test RZ1–RZ7 (fix session 2026-11-15, round 5)
+**Resolved (2026-11-15, PR #10):** U0 to U5 and the reminder, with tests in `tests/test_voice_round6.py` built from your own logged turns (`decision_log.jsonl` and the live `/api/voice/metrics`: turn text and timings only). What the logs showed:
+- **U1.** Both "Assume three hires." were heard (two barge-ins with those words), but **neither became a turn**: no turn was recorded for them. The only paths that drop words before the lane are a read-back and the echo check, so my reading is: the recogniser was unsure of the first (it was said over FounderOS's own speech), so it was read back ("Did you say: Assume three hires? …"); the second, said over that read-back, matched the read-back's own words and was dropped as an echo; then "Ugh." cleared the read-back. Not proven (the confidence is not logged), but it fits every logged line. Fixed: while a team works a change is never read back (its offer is the question), the same words said over their read-back are you confirming, and a sound like "Ugh." never clears a read-back.
+- **U2.** "Ugh." itself did nothing (logged as a backchannel). The next three turns did the harm: "Okay." took the summary's offer of risks (no change was open, see U1), "No?" declined it ("Okay. The rest is on screen."), and then **"Okay, I will leave it as it is."** was heard and **started a team** (Financial Analyst, Librarian, Perspective lens, Devil's Advocate at 09:33 UTC). That sentence is FounderOS's own decline line in Whisper's spelling ("I will" for "I'll"); if it was not you reading the checklist aloud, it was its own echo, which the old check missed because of the contraction. Fixed: contractions are matched in the echo check; under rule U0 such a turn is read back and never runs a team; a sound is never yes or no and leaves an offer open.
+- **U3.** "Re-run the Analyt." named no agent exactly, so it was a new request (09:36:58 UTC, with a Perspective lens). Fixed: agent names are matched by prefix and edit distance ("Analyt", "analist", "Devil", "scot"); two letters off, it asks "Did you mean re-run the …?". The chips: one chip per metric now, whichever agents looked it up.
+- **U4.** "Hello? Yes?" went to the Advisor as chit-chat, with the earlier answer as context. Now a greeting gets "Hello. What would you like to look at?" and no run; "yes" with nothing on offer does nothing.
+- **U5.** The badge already opens its reasons on click; it now says so on hover ("Click to see why"). I could not see which reason your restarted run had (results are not logged); if the reason shown is wrong, please copy it into feedback.
+- **Reminder.** After an unanswered change the summary ends with "Your change to three hires isn't in this answer yet. Say yes to restart with it.", once.
+
 Founder's results (2026-11-15, about 14:00–15:05 IST): **PASS** restart after the answer with "Yes." ($43,770.86, -2.58), T4 (no unverified line on Not run), T5 (code trade-off). **FAIL** RY4, RY6. **PARTIAL** RY2, RY5.
 
 To fix (method: the founder's real logged turns are the regression fixtures):
@@ -1582,6 +1605,9 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
+0d. **From M5 fix round 5 (2026-11-15), none blocking:**
+   - **Rule U0 is strict by design**: a turn of fewer than three words, or one that is not a question or a request ("The Dubai thing worries me"), is read back before any team runs. Say if it asks too often.
+   - **U1's cause is my reading of the logs, not proven** (the recogniser's confidence is not logged). RZ2 is the check.
 0c. **From M5 fix round 4 (2026-11-15), none blocking:**
    - **After an unanswered change, the summary ends without any offer.** One change, one offer: the offer was said when you asked, so with the answer I say the findings and the proposal and then nothing; "yes" still restarts and the card is still there. If you would rather hear a short reminder after the summary, or no summary at all until you have answered, say so.
    - **A different change said in the same run gets its own card** ("Assume four hires." after "Assume three hires."): the older card stays open too. Say if the newer one should replace it.
@@ -1623,6 +1649,9 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M5 fix session, round 5 (2026-11-15)
+- Recorded the RY results first (`5ad54d6`). Read the founder's turns from `decision_log.jsonl`, `llm_calls.jsonl` and the live voice metrics (text and timings only). U0–U5 and the reminder; `tests/test_voice_round6.py`; four older tests changed for rule U0 or U2. No microphone test.
+
 ### M5 fix session, round 4 (2026-11-15)
 - Recorded the founder's RX1–RX7 results first (commit `1cfd1aa`). Then T1 to T5.
 - New: `tests/test_voice_round5.py`. Changed: `conversation/classifier.py` (`plain`, a bare "Yes?" is a listening noise), `conversation/manager.py` (answers matched without marks, one offer per change, no second offer line, no ready line when no team ran), `voice/session.py` (`_Say.change`, `_changes_said`, answers matched without marks), `agents/runtime.py` (`clear_trade_off`, `code_trade_off`), `agents/graph.py` (`team_ran` on `run.finished`), frontend `workspace.tsx` and `AdvisorPanel.tsx` (one card per change, the lane's words, below the answer while open). Two round 3 tests changed with the design (the second asking is gone).
@@ -1727,6 +1756,11 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M5 fix session, round 5, 2026-11-15)
+- Rule U0 and the reminder are in PRD §12. "Clear" is code: three words or more, and a question word, a request verb ("compare", "draft", "I want"), "should we", or a question of four words or more; or one metric named. Anything else is read back, and yes runs it as said.
+- A sound (`is_noise`: ugh, mm, hmm, uh, uh-huh, ah, oh) never answers and never closes a question; a one-word turn that is a word ("No.") still answers.
+- A re-run that names no agent at all ("Redo the forecast") stays an ordinary turn, so rule U0 decides it.
 
 ## Decisions made (M5 fix session, round 4, 2026-11-15)
 - The founder's rules T1 to T5 are in PRD §12.

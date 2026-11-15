@@ -536,6 +536,8 @@ class AgentOrchestrator:
             for a in artifacts
             if a.kind == "metric_card"
         ]
+        # Founder re-test U5: one chip per metric, the first agent's, however many agents looked it up.
+        metrics = list({m.metric: m for m in reversed(metrics)}.values())[::-1]
         past_decisions = list({d.path: d for r in results for d in r.past_decisions}.values())
         citations: list[Citation] = []
         for r in results:

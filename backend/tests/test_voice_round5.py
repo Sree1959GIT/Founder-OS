@@ -30,6 +30,7 @@ from tests.test_voice import make, stream, wav_bytes
 from tests.test_voice_round2 import DUBAI, finished, lane, wait_for
 
 CHANGE = "Assume three hires."
+REMINDER = "Your change to three hires isn't in this answer yet. Say yes to restart with it."
 OFFERS = (RESTART_OFFER, CHANGE_STILL_OPEN)
 # The founder's sentence of 2026-11-15, as the model wrote it.
 UNCLEAR_TRADE_OFF = (
@@ -286,7 +287,8 @@ async def test_the_card_carries_the_words_the_voice_says(finance: Any) -> None:
 
 
 async def test_a_change_whose_offer_was_never_said_aloud_is_asked_once_with_the_answer(finance: Any) -> None:
-    """Typed in the chat box (not through the voice), so nothing was said: the voice asks, once, after the summary."""
+    """Typed in the chat box (not through the voice), so nothing was said: the voice asks, once, after the summary.
+    (Round 5, founder decision: that one line is the short reminder.)"""
     session, wire, _, _tts, manager = make(finance, [], approval_policy="never", still_working_s=0)
     await session.start()
     await session.control({"type": "text", "text": DUBAI})
@@ -294,10 +296,10 @@ async def test_a_change_whose_offer_was_never_said_aloud_is_asked_once_with_the_
     first_run = wire.of("turn")[0]["outcome"]["run_id"]
     await manager.turn(session.session_id, CHANGE)  # the chat box's own request, not this socket
     await finished(manager, first_run)
-    await wait_for(lambda: CHANGE_STILL_OPEN in said(wire))
+    await wait_for(lambda: REMINDER in said(wire))
     await asyncio.sleep(0.3)
-    assert [t for t in said(wire) if t in OFFERS] == [CHANGE_STILL_OPEN]
-    assert said(wire)[-1] == CHANGE_STILL_OPEN and not any(t.startswith("Want") for t in said(wire))
+    assert said(wire).count(REMINDER) == 1 and not [t for t in said(wire) if t in OFFERS]
+    assert said(wire)[-1] == REMINDER and not any(t.startswith("Want") for t in said(wire))
     assert len(cards(manager)) == 1
     await session.control({"type": "text", "text": "Yes?"})
     await wait_for(lambda: "Restarting with your change." in said(wire))
@@ -315,13 +317,14 @@ def test_a_run_with_no_team_has_no_ready_line() -> None:
 async def test_a_reply_that_ran_no_team_says_nothing_about_verification(finance: Any) -> None:
     """The founder's case: a "Not run" badge together with "The answer is ready, but some of it is unverified"."""
     manager = lane(finance)
-    first = await manager.turn(None, "Hello there")
-    result = await finished(manager, first.run_id)
+    run = manager.orchestrator.start("Hello there")  # round 5 (U4): the lane itself now greets without a run
+    result = await run.task  # type: ignore[misc]
     assert result.verification.state == "not_run" and not result.agents
-    ended = [e for e in manager.bus.history(first.run_id) if e.type == "run.finished"]
+    ended = [e for e in manager.bus.history(run.run_id) if e.type == "run.finished"]
     assert ended[-1].data["team_ran"] is False
-    lines = manager.sessions[first.session_id].narration
-    assert not any("verif" in line.lower() or "answer is ready" in line.lower() for line in lines)
+    session = manager.session("s1")
+    manager._finished(session, run.run_id, ended[-1])
+    assert not any("verif" in line.lower() or "answer is ready" in line.lower() for line in session.narration)
     assert not [e for e in manager.bus.history() if e.type == "recap"]
 
 

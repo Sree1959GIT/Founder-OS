@@ -35,8 +35,8 @@ from loguru import logger
 from app.agents.runtime import single_metric
 from app.agents.verifier import extract_figures
 from app.conversation.classifier import by_rules as lane_rules
-from app.conversation.classifier import is_filler, plain
-from app.conversation.manager import CHANGE_STILL_OPEN, ConversationManager
+from app.conversation.classifier import is_filler, is_noise, plain
+from app.conversation.manager import ConversationManager, change_reminder
 from app.voice.audio import FRAME_MS, IN_RATE, OUT_RATE, FrameBuffer, float_to_pcm16, pcm16_to_float, rms
 from app.voice.domain import corrected
 from app.voice.metrics import BargeIn, TurnMetric, VoiceMetrics
@@ -503,12 +503,16 @@ class VoiceSession:
     def _own_echo(self, text: str) -> bool:
         """Are these words FounderOS's own, just said (founder re-test S3)? "…go through the risks?" picked up from
         the loudspeaker reads as a yes to its own offer. A plain one-word answer is never an echo."""
-        words = re.findall(r"[a-z0-9']+", text.lower())
+        words = _words(text)
         if not words or (len(words) == 1 and _PLAIN_ANSWER.match(words[0])):
+            return False
+        if self._unsure is not None and words == _words(self._unsure):
+            # Founder re-test U1: "Assume three hires." said again over its own read-back ("Did you say: Assume
+            # three hires? …") is the founder confirming it, not the read-back heard back.
             return False
         now, n = self.clock(), len(words)
         for at, line in self._own_words:
-            said = re.findall(r"[a-z0-9']+", line.lower())
+            said = _words(line)
             if now - at <= OWN_WORDS_S and any(said[i : i + n] == words for i in range(len(said) - n + 1)):
                 return True
         return False
@@ -617,6 +621,9 @@ class VoiceSession:
         """The words to act on, or nothing yet (founder re-test R6). A turn the recogniser was unsure of is read back
         first: yes takes it as heard, no drops it, and anything else is simply the founder saying it again."""
         pending, self._unsure = self._unsure, None
+        if pending is not None and is_noise(text):
+            self._unsure = pending  # founder re-test U1, U2: a listening noise neither confirms nor drops it
+            return ""
         if pending is not None:
             if _HEARD_RIGHT.match(plain(text)):
                 return pending
@@ -635,6 +642,10 @@ class VoiceSession:
     def _worth_asking(self, text: str) -> bool:
         """Not a listening noise, and not a plain answer to something on offer: those cost nothing if misheard."""
         if is_filler(text) or len(text.split()) < 2 or self.manager.has_question(self.session_id, text):
+            return False
+        if lane_rules(text) == "amendment" and self.manager.state(self.session_id)["running"]:
+            # Founder re-test U1: a change is never read back first. Its offer ("Restart with your change?") is the
+            # question, and it comes at once, in any stage of the run.
             return False
         simple = (_APPROVE, _HOLD, _ASK_IT, _DROP_IT, _RESTART, _KEEP, _MORE, _NO_MORE)
         return not any(pattern.match(plain(text)) for pattern in simple)
@@ -881,8 +892,10 @@ class VoiceSession:
             # change whose offer was never said aloud (typed in the box, or cut off) is asked about here.
             self.offers.amendment_id = change.id
             self.offers.more = []
-            if not self._change_out(change.id):
-                await self._say("answer", CHANGE_STILL_OPEN, run_id, turn, change=change.id)
+            # Founder decision 2026-11-15: the summary ends on one short reminder of it.
+            reminder = f"{change.id}:reminder"
+            if not self._change_out(reminder):
+                await self._say("answer", change_reminder(change.text), run_id, turn, change=reminder)
         elif spoken.more and not waiting:  # one question at a time: a queued question's offer comes first
             await self._say("answer", spoken.more[0].offer, run_id, turn, offer=spoken.more[0])
 
@@ -1072,6 +1085,28 @@ class VoiceSession:
         if kind == "held":
             return str(data.get("text", ""))
         return ""
+
+
+_CONTRACTIONS = {
+    "i'll": "i will",
+    "i'm": "i am",
+    "it's": "it is",
+    "isn't": "is not",
+    "don't": "do not",
+    "didn't": "did not",
+    "you'd": "you would",
+    "i've": "i have",
+    "that's": "that is",
+    "won't": "will not",
+}
+
+
+def _words(text: str) -> list[str]:
+    """Words for comparing what was said with what was heard: Whisper writes "I'll" as "I will" (founder re-test U2)."""
+    out: list[str] = []
+    for word in re.findall(r"[a-z0-9']+", text.lower().replace("\u2019", "'")):
+        out.extend(_CONTRACTIONS.get(word, word).split())
+    return out
 
 
 def _drain(queue: asyncio.Queue[_Say]) -> list[_Say]:
