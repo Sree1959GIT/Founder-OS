@@ -35,7 +35,7 @@ from loguru import logger
 from app.agents.runtime import single_metric
 from app.agents.verifier import extract_figures
 from app.conversation.classifier import by_rules as lane_rules
-from app.conversation.classifier import is_filler
+from app.conversation.classifier import is_filler, plain
 from app.conversation.manager import CHANGE_STILL_OPEN, ConversationManager
 from app.voice.audio import FRAME_MS, IN_RATE, OUT_RATE, FrameBuffer, float_to_pcm16, pcm16_to_float, rms
 from app.voice.domain import corrected
@@ -149,6 +149,7 @@ class _Say:
     epoch: int
     keep: bool = False  # a reply or an offer: not dropped as out-of-date narration when the answer begins
     offer: Segment | None = None  # this line is that part's offer ("Want me to go through the risks?"): said once
+    change: str | None = None  # this line offers that change ("Restart with your change?"): one change, one offer
 
 
 @dataclass
@@ -229,6 +230,8 @@ class VoiceSession:
         self._own_words: deque[tuple[float, str]] = deque(maxlen=12)
         self._audio_end = 0.0
         self._overlapped = False  # the utterance being heard began while FounderOS was speaking, or just after
+        # Founder re-test T3: the changes whose offer has been said aloud. One change, one offer.
+        self._changes_said: set[str] = set()
 
     # ------------------------------------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -583,7 +586,7 @@ class VoiceSession:
             return
         self._missed_last = False
         words = heard.text.strip()
-        unclear = heard.confidence < self.config.confirm_below and bool(self.offers.more and _MORE.match(words))
+        unclear = heard.confidence < self.config.confirm_below and bool(self.offers.more and _MORE.match(plain(words)))
         if unclear and self._unsure is None and not self.manager.has_question(self.session_id, words):
             # Founder re-test S3: after an offer the voice waits for the founder. A sound the recogniser was unsure
             # of ("Okay." made out of a breath) is not a yes: nothing is said, and the note under the mic says so.
@@ -599,7 +602,7 @@ class VoiceSession:
     def _answers_a_question(self, text: str) -> bool:
         """The founder is answering something FounderOS asked: its own read-back, the lane's yes/no question, an
         approval, or the offer at the end of a summary."""
-        words = text.strip()
+        words = plain(text)  # founder re-test T2: "Yes?" is "yes"
         if not words:
             return False
         if self._unsure is not None and (_HEARD_RIGHT.match(words) or _HEARD_WRONG.match(words)):
@@ -615,9 +618,9 @@ class VoiceSession:
         first: yes takes it as heard, no drops it, and anything else is simply the founder saying it again."""
         pending, self._unsure = self._unsure, None
         if pending is not None:
-            if _HEARD_RIGHT.match(text):
+            if _HEARD_RIGHT.match(plain(text)):
                 return pending
-            if _HEARD_WRONG.match(text):
+            if _HEARD_WRONG.match(plain(text)):
                 await self._say("conversation", SAY_AGAIN, None, None, keep=True, first=True)
                 return ""
             return text
@@ -634,7 +637,7 @@ class VoiceSession:
         if is_filler(text) or len(text.split()) < 2 or self.manager.has_question(self.session_id, text):
             return False
         simple = (_APPROVE, _HOLD, _ASK_IT, _DROP_IT, _RESTART, _KEEP, _MORE, _NO_MORE)
-        return not any(pattern.match(text) for pattern in simple)
+        return not any(pattern.match(plain(text)) for pattern in simple)
 
     async def _turn(self, text: str, end_t: float, stt_ms: float | None, speech_ms: float = 0.0) -> None:
         turn = TurnMetric(session_id=self.session_id, mode=self.config.mode, text=text, speech_ms=speech_ms)
@@ -663,11 +666,28 @@ class VoiceSession:
         if outcome.run_id and (outcome.started_run or outcome.kind is None):
             self.offers.approval_run = None
             self.offers.more = []
+            self.offers.amendment_id = None  # a new run: a change offered for the old one is over
             run = self.manager.orchestrator.runs.get(outcome.run_id)
             lookup = single_metric(run.message if run is not None else text)
             ack = outcome.reply or (ACK_METRIC if lookup else ACK_TEAM)
             await self._say("conversation", ack, None, turn, keep=True, first=True)
             self._answer(outcome.run_id, turn)
+        elif outcome.reply and outcome.amendment_id:
+            # Founder re-test T1, T3: a change is offered at once, in whatever stage the run is, and before any
+            # line of the answer still waiting to be said. From here "yes" means the restart, so no other offer
+            # stays open beside it; a change whose offer is already out is not offered a second time.
+            self.offers.more = []
+            # (The founder saying the same change again, after its offer, is answered with the offer again.)
+            if not self._change_out(outcome.amendment_id, or_said=False):
+                await self._say(
+                    "conversation",
+                    outcome.reply,
+                    outcome.run_id,
+                    turn,
+                    keep=True,
+                    first=True,
+                    change=outcome.amendment_id,
+                )
         elif outcome.reply:
             await self._say("conversation", outcome.reply, outcome.run_id, turn, keep=True, first=True)
         elif (
@@ -695,6 +715,18 @@ class VoiceSession:
         current = self._current
         return any(s.offer is segment and s.epoch == self.epoch for s in [*waiting, *([current] if current else [])])
 
+    def _change_out(self, amendment_id: str, *, or_said: bool = True) -> bool:
+        """Has this change's offer been said (`or_said`), or is it on its way out (founder re-test T3)?"""
+        if or_said and amendment_id in self._changes_said:
+            return True
+        waiting = _drain(self._says)
+        for s in waiting:
+            self._says.put_nowait(s)
+        current = self._current
+        return any(
+            s.change == amendment_id and s.epoch == self.epoch for s in [*waiting, *([current] if current else [])]
+        )
+
     async def _voice_command(self, text: str, turn: TurnMetric) -> bool:
         """Spoken answers to what is on offer: approve the team, ask a queued question, restart with a change."""
         orchestrator = self.manager.orchestrator
@@ -702,6 +734,8 @@ class VoiceSession:
         # you mean two people?"): its yes or no goes to the lane, typed or spoken.
         if self.manager.has_question(self.session_id, text):
             return False
+        # Founder re-test T2: an answer is the same answer whatever its case and marks ("Yes?", "Restart!").
+        said, text = text, plain(text)
         run_id = self.offers.approval_run
         if run_id and (_APPROVE.match(text) or _HOLD.match(text)):
             approve = bool(_APPROVE.match(text))
@@ -727,7 +761,7 @@ class VoiceSession:
                 await self._say("conversation", "Okay. The rest is on screen.", None, turn, keep=True)
                 return True
             turn.kind = "more"
-            await self._say_more(text, turn)
+            await self._say_more(said, turn)
             return True
         return False
 
@@ -842,10 +876,13 @@ class VoiceSession:
         )
         if change is not None:
             # Founder re-test S4: a change said while the team worked and not yet answered. This answer does not have
-            # it, so the turn ends on that question and not on an offer of more.
+            # it, so no offer of more is made: "yes" means the restart, never "go through the risks".
+            # Founder re-test T3: one change, one offer. Its offer was said when the founder asked for it; only a
+            # change whose offer was never said aloud (typed in the box, or cut off) is asked about here.
             self.offers.amendment_id = change.id
-            self.offers.more = []  # "yes" now means the restart, never "go through the risks"
-            await self._say("answer", CHANGE_STILL_OPEN, run_id, turn)
+            self.offers.more = []
+            if not self._change_out(change.id):
+                await self._say("answer", CHANGE_STILL_OPEN, run_id, turn, change=change.id)
         elif spoken.more and not waiting:  # one question at a time: a queued question's offer comes first
             await self._say("answer", spoken.more[0].offer, run_id, turn, offer=spoken.more[0])
 
@@ -859,6 +896,7 @@ class VoiceSession:
         keep: bool = False,
         first: bool = False,
         offer: Segment | None = None,
+        change: str | None = None,
     ) -> None:
         if self.quiet or not text.strip():
             return
@@ -872,7 +910,7 @@ class VoiceSession:
         if lane == "answer":
             # The outcome has begun: older narration still waiting to be spoken is out of date.
             waiting = [s for s in waiting if s.lane == "answer" or s.keep]
-        item = _Say(lane, text, run_id, turn, self.epoch, keep or lane == "answer", offer)
+        item = _Say(lane, text, run_id, turn, self.epoch, keep or lane == "answer", offer, change)
         # A reply to what the founder just said comes before narration that was waiting for them to finish.
         for s in [item, *waiting] if first else [*waiting, item]:
             self._says.put_nowait(s)
@@ -942,6 +980,8 @@ class VoiceSession:
         now = self.clock()
         if item.offer is not None:
             self._offers_said.append(item.offer)
+        if item.change is not None:
+            self._changes_said.add(item.change)
         self._own_words.append((now, item.text))
         turn = item.turn
         if turn is not None:

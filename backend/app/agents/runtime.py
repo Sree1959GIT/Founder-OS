@@ -1630,6 +1630,47 @@ _WRITTEN_WHEN = re.compile(
 )
 
 
+_TRADE_OFF = re.compile(r"\btrade[- ]?offs?\b", re.I)
+_NAME_NOISE = frozenset({"with", "from", "only", "then", "first", "your", "current", "amount", "instead", "change"})
+
+
+def _names_option(sentence: str, name: str) -> bool:
+    """The option's name, or a telling word of it ("the pilot" for "Travel-led pilot")."""
+    low = sentence.lower()
+    words = [w for w in re.findall(r"[a-z]+", name.lower()) if len(w) >= 4 and w not in _NAME_NOISE]
+    return name.lower() in low or any(re.search(rf"\b{re.escape(w)}", low) for w in words)
+
+
+def code_trade_off(frame: DecisionFrame | None, chosen: str = "") -> str:
+    """The trade-off between the proposal and the full option, in code's words, from each option's own entry.
+    Empty when the frame cannot say it (no second option, or an option with no entry)."""
+    if frame is None or len(frame.options) < 2:
+        return ""
+    proposed = next((o for o in frame.options if o.name == (chosen or frame.default_option)), frame.options[0])
+    other = next((o for o in frame.options if o.is_full and o.name != proposed.name), None)
+    other = other or next((o for o in frame.options if o.name != proposed.name and o.trade_off.strip()), None)
+    if other is None or not proposed.trade_off.strip() or not other.trade_off.strip():
+        return ""
+    # An option's name may carry a figure ("Change prices by +10 %"): then it is named by its role.
+    first = "the proposal" if extract_figures(proposed.name) else proposed.name
+    second = ("the full option" if other.is_full else "the alternative") if extract_figures(other.name) else other.name
+    return (
+        f"The main trade-off: with {first}, {proposed.trade_off.strip().rstrip('.')}; "
+        f"with {second}, {other.trade_off.strip().rstrip('.')}."
+    )
+
+
+def clear_trade_off(sentence: str, frame: DecisionFrame | None, chosen: str = "") -> str:
+    """Founder re-test T5: the model wrote "The main trade-off is stopping hiring for the pilot while confirming the
+    cost model with three hires." A trade-off is between two options: a sentence about "the trade-off" that does not
+    name two of the options on the table is replaced by code's. Any other sentence comes back as it was."""
+    if frame is None or not _TRADE_OFF.search(sentence) or sentence.rstrip().endswith("?"):
+        return sentence
+    if sum(_names_option(sentence, o.name) for o in frame.options) >= 2:
+        return sentence
+    return code_trade_off(frame, chosen) or sentence
+
+
 def misdates_a_record(sentence: str, records: list[DecisionRecord]) -> bool:
     """Founder re-test S5: "You already proposed a Dubai office in 2027", of a memo dated 2026-11-06. A sentence
     about a decision on record never gives a date the record does not: not as the date it was written (that is its
@@ -1694,6 +1735,7 @@ class _SentenceGate:
         """No sentence twice, and no more than the budget."""
         kept: list[str] = []
         for piece in split_sentences(text):
+            piece = clear_trade_off(piece, self.frame, self.chosen)  # founder re-test T5
             key = re.sub(r"\W+", " ", piece).strip().lower()
             if not key:
                 kept.append(piece)

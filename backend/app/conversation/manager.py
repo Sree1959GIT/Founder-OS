@@ -26,7 +26,7 @@ from app.agents.graph import AgentOrchestrator, RunContext
 from app.agents.registry import REGISTRY
 from app.agents.runtime import Plan, single_metric
 from app.agents.verifier import extract_figures, split_sentences
-from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules
+from app.conversation.classifier import Classified, TurnClassifier, TurnKind, by_rules, is_filler, plain
 from app.conversation.contexts import GlobalContext, LocalContext, RunSnapshot
 from app.llm.base import LLMError, LLMProvider, Message
 from app.voice.domain import count_reading
@@ -81,7 +81,11 @@ _NO = re.compile(
 )
 _YES_BY_KIND = {
     "stop": re.compile(r"^(?:please\s+)?(?:stop|cancel|halt)(?:\s+(?:it|the team|now|please))*[\s.!]*$", re.I),
-    "amendment": re.compile(r"^(?:restart|restart (?:it|with my change))[\s.!]*$", re.I),
+    "amendment": re.compile(
+        r"^(?:(?:yes|yeah|yep|ok|okay|sure|please)\s+)?restart(?: it| with (?:it|my change|the change|that))?"
+        r"(?:\s+please)?$",
+        re.I,
+    ),
     "queue": re.compile(r"^ask it(?: now)?[\s.!]*$", re.I),
 }
 _NO_BY_KIND = {"queue": re.compile(r"^(?:drop|skip) it[\s.!]*$", re.I)}
@@ -168,6 +172,8 @@ def _topic(request: str) -> str:
 
 
 def _ready_line(data: dict[str, Any]) -> str:
+    if data.get("team_ran") is False:
+        return ""  # founder re-test T4: no team ran, so there is nothing to call verified or unverified
     if data.get("assumptions"):
         return "The answer is ready. It rests on assumptions you should confirm."
     return "The answer is ready." if data.get("verified") else "The answer is ready, but some of it is unverified."
@@ -388,10 +394,13 @@ class ConversationManager:
             str(status),
             _ready_line(event.data),
         )
-        self._say(session, recap, "recap", status=str(status or "done"))
+        if recap:
+            self._say(session, recap, "recap", status=str(status or "done"))
         self._remember_answer(session, run_id)
         # Founder re-test S4: a change the founder asked for while the team worked, and never answered, is not lost
-        # when the answer arrives without it. Its offer stays open on this finished run and is asked again.
+        # when the answer arrives without it. Its offer stays open on this finished run: "yes" still restarts, and
+        # its card still works. Founder re-test T3: one change, one offer, one card, so the lane adds no second
+        # line here (the voice asks again only if its offer was never said aloud).
         unanswered = next(
             (
                 a
@@ -402,7 +411,6 @@ class ConversationManager:
         )
         if unanswered is not None:
             session.asked = Asked(kind="amendment", ref=unanswered.id)
-            self._say(session, CHANGE_STILL_OPEN, kind="change_open", amendment_id=unanswered.id)
         # Founder re-test 56: every queued question is offered, one at a time, once nothing is running, whichever run
         # ended (the session may have moved on to a restarted run that has already finished).
         if session.run_id == run_id or not self._active(session):
@@ -547,7 +555,9 @@ class ConversationManager:
 
     @staticmethod
     def _yes_no(asked: Asked, text: str) -> bool | None:
-        words = text.strip()
+        # Founder re-test T2: Whisper wrote a spoken "yes" as "Yes?", and it ran as a new question. An answer is the
+        # same answer whatever its case and its marks: "Yes?", "yes.", "Yeah!", "okay?".
+        words = plain(text)
         yes_too, no_too = _YES_BY_KIND.get(asked.kind), _NO_BY_KIND.get(asked.kind)
         if _YES.match(words) or (yes_too is not None and yes_too.match(words)):
             return True
@@ -563,6 +573,8 @@ class ConversationManager:
             return None
         yes = self._yes_no(asked, text)
         if yes is None:
+            if asked.kind in ("amendment", "queue") and is_filler(text):
+                session.asked = asked  # a listening noise is no answer: the offer is still the open question
             return None
         by = Classified(kind="answerable_now", by="rules")
         if asked.kind == "stop":
@@ -804,6 +816,23 @@ class ConversationManager:
         )
 
     def _offer_amendment(self, session: Session, classified: Classified, running: RunContext, text: str) -> TurnOutcome:
+        # A run whose team is still being chosen has no plan yet: only a run known not to be a decision is a
+        # "request".
+        known_other = running.plan is not None and not self._is_decision(running.run_id)
+        reply = RESTART_REQUEST if known_other else RESTART_OFFER
+        # Founder re-test T3: one change, one offer, one card. The same change said again (the founder repeating
+        # it, or the recogniser hearing it twice) is the offer already open, not a second one.
+        same = next(
+            (
+                a
+                for a in session.amendments.values()
+                if a.status == "offered" and a.run_id == running.run_id and _same(a.text, text)
+            ),
+            None,
+        )
+        if same is not None:
+            session.asked = Asked(kind="amendment", ref=same.id)
+            return self._reply(session, classified, reply, running.run_id).model_copy(update={"amendment_id": same.id})
         amendment = Amendment(
             id=f"amd_{uuid.uuid4().hex[:8]}",
             run_id=running.run_id,
@@ -813,10 +842,6 @@ class ConversationManager:
         session.amendments[amendment.id] = amendment
         session.asked = Asked(kind="amendment", ref=amendment.id)  # "yes" answers it, as the card's button does
         # Founder re-test S4: the same offer, in the same words, while the team works as after the answer.
-        # A run whose team is still being chosen has no plan yet: only a run known not to be a decision is a
-        # "request".
-        known_other = running.plan is not None and not self._is_decision(running.run_id)
-        reply = RESTART_REQUEST if known_other else RESTART_OFFER
         self._emit(session, "amendment.offered", amendment_id=amendment.id, text=text, reply=reply)
         outcome = self._reply(session, classified, reply, running.run_id)
         return outcome.model_copy(update={"amendment_id": amendment.id})

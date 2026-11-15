@@ -37,7 +37,7 @@ function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "adv
   if (turn.role === "amendment") {
     return (
       <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="amendment">
-        <p className="text-[13px] text-foreground">That changes the request. Restart with your change?</p>
+        <p className="text-[13px] text-foreground">{turn.offer ?? "That changes the decision. Restart with your change?"}</p>
         <p className="text-xs text-muted-foreground">{turn.text}</p>
         {turn.status === "offered" ? (
           <div className="flex flex-wrap gap-2">

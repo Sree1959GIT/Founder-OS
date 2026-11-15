@@ -5,7 +5,7 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: re-test RX1–RX7, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
+- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: re-test RY1–RY7 of M5, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-14 (M5 fix round 3, after the founder's RW1–RW10 re-test)
 
@@ -19,7 +19,7 @@
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
-| M5 | Voice pipeline | DONE, awaiting Major gate (re-test RX1–RX7) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
+| M5 | Voice pipeline | DONE, awaiting Major gate (re-test RY1–RY7 of M5) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
 ## Review gates (every PR passes all four)
@@ -59,16 +59,16 @@
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
-| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RX1–RX7 after fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
+| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RY1–RY7 (M5) after fix round 4 of 2026-11-15 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
 - Started (UTC): 2026-11-15 07:22 (local Windows session, small fix round 4 for the M5 Major gate, time-box 45 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan:
-  - [ ] Record the founder's RX1–RX7 results first
-  - [ ] T2 (main): "Yes?", "yes.", "Yeah!", "okay?" after an offer answer that offer
-  - [ ] T1 and T3: a mid-run change is offered at once, in every stage; one change, one offer, one card
-  - [ ] T4 (no verification line for a turn that ran no team), T5 (code's trade-off when the model's is unclear)
-  - [ ] Tests, RY re-test steps, PR #10 updated, CI green
+  - [x] Record the founder's RX1–RX7 results first
+  - [x] T2 (main): "Yes?", "yes.", "Yeah!", "okay?" after an offer answer that offer
+  - [x] T1 and T3: a mid-run change is offered at once, in every stage; one change, one offer, one card
+  - [x] T4 (no verification line for a turn that ran no team), T5 (code's trade-off when the model's is unclear)
+  - [x] Tests, RY re-test steps, PR #10 updated, CI green
 
 Previous session (2026-11-14, M5 fix round 3):
 - Started (UTC): 2026-11-14 10:49 (local Windows session, third and final fix round for the M5 Major gate, time-box 60 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
@@ -224,6 +224,14 @@ Previous session (M3a):
 
 ## Current state
 ### Voice (M5)
+**Round 4 (2026-11-15, after your RX1–RX7 re-test; this replaces everything below where they differ)**
+- **A yes is a yes, whatever its marks (T2).** Whisper wrote your "yes" as "Yes?", the lane's pattern for yes did not allow a question mark, and "Yes?" went to the Advisor as a new question (your `decision_log.jsonl` shows it at 07:09:57 UTC, classed as chit-chat: hence "Not run"). Answers are now matched without case and punctuation: "Yes?", "yes.", "Yeah!", "okay?", "Yep.", "Sure!", "Go ahead.", "Do it!", "Restart?" all answer the offer just made, typed or spoken; so do "No?" and "Keep going.". A listening noise ("mm") between the offer and your yes no longer closes the offer. A bare "Yes?" with nothing asked is a listening noise, never a question for the team.
+- **One change, one offer, one card (T3).** Round 3 asked twice by design: the offer when you said the change, and "You asked for a change while the team worked … Restart with it?" again with the answer. Your change came 3 to 10 seconds before the answer (the Devil's Advocate ran 07:09:00 to 07:09:07, the answer was written by 07:09:10), so you got both within seconds. Now the offer is said once, when you say the change: "That changes the decision. Restart with your change?". With the answer nothing is asked again and no offer of risks is made; the offer stays open, so "yes" or "restart" after the summary still restarts, and so does the card. Only a change whose offer was never said aloud (typed in the chat box, or cut off) is asked about once after the summary. The lane no longer writes a second offer under the answer.
+- **The card** now shows the same words the voice says (it had its own fixed text, "That changes the request. …", which was your "second offer"). The same change said twice (you repeating it, or the recogniser hearing it twice) is the same offer and the same card. A card still open when the answer arrives moves below the answer.
+- **A change is offered at once in every stage (T1).** Tested with the run held in its first stage, in its last (only the last agent working) and while the answer is written: each time the offer is said and the card shown before the run ends and before any line of the answer. **I could not reproduce "no offer at that moment"** (see the feedback item).
+- **No verification line when no team ran (T4).** "The answer is ready, but some of it is unverified" is not written for a reply with the "Not run" badge.
+- **The trade-off names two options, or code writes it (T5).** A sentence about "the trade-off" that does not name two of the options on the table is replaced by "The main trade-off: with Travel-led pilot, you learn more slowly from trips than from a local presence, and win customers later; with Full office, it is the slowest to set up and the hardest to undo." (each option's own entry). A question is left alone.
+
 **Round 3 (2026-11-14, after your RW1–RW10 re-test; this replaces everything below where they differ)**
 - **Headphones or a headset give the best voice results.** Your numbers (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms, cancel about 990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB.
 - **A stopped run is never spoken (S1).** After "stop" and "yes" you hear "Stopping the team." and "That run was cancelled.", and nothing else: no summary, no offer. The lines waiting to be said are dropped, nothing of that run's answer is said later, and a run whose stop arrived too late to interrupt its last step is still ended as cancelled, with no answer on screen. The same holds for the Cancel button and a typed "stop".
@@ -749,7 +757,7 @@ Known issues / notes:
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
 ## Next steps (for the M6 session)
-0. **Gate check:** M5 is a **Major** gate. The founder runs RX1 to RX7 below (RW3, RW4, RW6, RW7, RW8 and RW9 passed on 2026-11-14) and merges the PR. Act on any "Founder feedback" first.
+0. **Gate check:** M5 is a **Major** gate. The founder runs RY1 to RY7 (M5) below (RX2, RX3 and RX6 text passed on 2026-11-15) and merges the PR. Act on any "Founder feedback" first.
 0b. M6 also carries the founder's decisions of 2026-11-13 (PRD §12): F expandable left and right panels with a collapsible left panel; G a movable pop-up agent window with a graphical view of each agent's work (time-boxed); the Kokoro licence point; TTS latency. v1.1: H, I, J.
 1. M6 (PRD §8): final `setup.bat`/`run.bat` (they now install the `voice` extra and download the voice models), README and the demo script, VRAM/latency tuning notes.
 2. Voice latency: try Kokoro on the GPU (`onnxruntime-gpu` in place of `onnxruntime`, checked against faster-whisper's Silero use) or `kokoro-v1.0.int8.onnx` (GitHub only); measure with `scripts/voice_bench.py`. Target: metric answer p50 under 3 s.
@@ -759,7 +767,23 @@ Known issues / notes:
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M5 re-test after fix round 3 of 2026-11-14. Run this one first: RX1 to RX7 (about 15 minutes).** Headphones or a headset give the best results. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data.
+**M5 re-test after fix round 4 of 2026-11-15. Run this one first: RY1 to RY7 of M5 (about 10 minutes).** Headphones or a headset. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data. (The older "RY1 to RY7" further down are M4's.)
+
+- **RY1. Get the code.** Close the backend and frontend windows. Then:
+  `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`
+  No new packages and no new settings. Gear > **Ask before a team runs** > **Never** > **Save**. Press the microphone, choose **Hands-free**.
+- **RY2. A change, and "yes" (T2, T3).** Say **"Should we open a Dubai office?"**. After the opening turn, while the team works, say **"Assume three hires."** **Hear, once:** "That changes the decision. Restart with your change?" **See:** one card with those same words, your change under them, and **Restart with my change** / **Keep going**. Say nothing until the summary has ended. **Hear:** the findings and the proposal (still two hires), and then nothing more: no "You asked for a change …", no "Want me to go through the risks?". **See:** still one card, now below the answer. Now say **"yes"**. **Hear:** "Restarting with your change." **See:** a new run, and in its answer "… with three local hires, as you asked, is $30,000.00 up front and **$43,770.86** a month, moving projected runway from 11.23 to 8.65 months (**-2.58**)". It does not matter whether the transcript shows "Yes.", "Yes?" or "Yeah!".
+- **RY3. The change said late (T1).** Ask the Dubai question again. Watch the Activity tab; when People & Ops and Regulatory & Tax are done and the Devil's Advocate is working, say **"Assume three hires."** **Hear:** the offer within about two seconds, before the summary. **See:** the card at the same moment. Say **"yes"** at once. **Hear:** "Restarting with your change." **See:** $43,770.86 and -2.58. If the offer comes late or not at all, please note what the transcript line under the microphone showed, and whether you heard "Did you say …?".
+- **RY4. Yes after a noise, and no.** Ask the Dubai question, say **"Assume three hires."** while the team works, wait for the summary, say **"mm"**, then **"okay"**. **Hear:** nothing after "mm"; "Restarting with your change." after "okay". Once more, and answer **"no"**: **Hear:** "Okay, I'll leave it as it is." **See:** the card says "Carried on as it was."
+- **RY5. No verification line when no team ran (T4).** Say **"Hello."** **See:** the reply with the **Not run** badge, and no line "The answer is ready, but some of it is unverified". Then, with nothing on offer, say **"yes"**. **See / hear:** nothing happens (no new question, no "Not run" reply).
+- **RY6. Re-run one agent, and the trade-off (T5).** After a Dubai summary, say **"Re-run the analyst."** **Hear:** "Re-running only the Financial Analyst again. The rest of the team's findings stand." **See:** only the Financial Analyst working in the new run; the others keep their findings. Then read the text answer. **See:** if it has a sentence on "the trade-off", it names two options (for example the pilot and the full office), or it is code's: "The main trade-off: with Travel-led pilot, …; with Full office, …".
+- **RY7. Timings and the tests.** After your own turns:
+  `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms; $m.recent_barge_ins | Format-Table paused_ms,stopped_ms,client_flush_ms,verdict,by,text`
+  **Expect:** as in RX7 (first words p50 about 0.9 s, every `paused_ms` under 150).
+  The tests, without a microphone: `.\.venv\Scripts\python.exe -m pytest backend\tests\test_voice_round5.py backend\tests\test_voice_round4.py -q`. **Expect:** all pass.
+
+**Superseded by RY above (done: results under "Founder feedback"; kept for reference): RX1 to RX7.** Two things RX says are no longer so: the card's words are the voice's ("That changes the decision. …"), and RX5's second asking with the answer is gone (one change, one offer).
+**M5 re-test after fix round 3 of 2026-11-14: RX1 to RX7.** Headphones or a headset give the best results. Hands-free, approval at Never. Commands work in Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback". Figures follow the sample data.
 
 - **RX1. Get the code.** Close the backend and frontend windows. Then:
   `git fetch origin; git checkout claude/m5-voice; git pull origin claude/m5-voice; .\run.bat`
@@ -1226,7 +1250,14 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
-### [M5] Re-test RX1–RX7: OPEN (fix session 2026-11-15, round 4)
+### [M5] Re-test RX1–RX7: RESOLVED, awaiting re-test RY1–RY7 of M5 (fix session 2026-11-15, round 4)
+**Resolved (2026-11-15, PR #10):** T1 to T5, with tests in `tests/test_voice_round5.py` (44) and one in `frontend/src/lib/workspace.test.ts`. What I found, from the code and from this PC's own logs of your run (`data/default/decision_log.jsonl` and `llm_calls.jsonl`: times and model names only):
+- **T2. Cause found.** The lane's pattern for "yes" allowed ".", "!" and "," after the word, not "?". So "Yes?" was no answer, the open offer lapsed, and with nothing running the words became a new request: the log shows `"message": "Yes?"` classed as chit-chat at 07:09:57 UTC. Fixed by matching answers without case or punctuation, in the lane and in the voice (approve, ask it, restart, the read-back, the offer of more). Also closed: a listening noise before the yes used to close the offer.
+- **T3. Cause found, and it was my round 3 design.** The offer was said when you asked, and asked again with the answer; and the card had its own fixed words ("That changes the request. …"), different from the spoken ones. Now one offer, said once, and the card carries the same words. The same change heard twice is one offer and one card. **I did not find what drew the card twice**: one offer makes one event and one card in every test. Two things that could have are closed (the change heard twice; the same offer arriving twice in the browser). If you see two cards again, tell me whether both showed the same change.
+- **T1. Not reproduced.** With fakes the offer is said and the card shown before the run ends in every stage: first, last (only the last agent working), and while the answer is written. The logs put your change in the last 3 to 10 seconds of the run (Devil's Advocate 07:09:00 to 07:09:07, answer written by 07:09:10). A spoken turn takes about 1.5 to 2 seconds to hear, transcribe and answer, so an offer for a change said that late arrives together with the answer; and round 3 then asked a second time right after. I believe that is what "only after the answer" was, but I cannot prove it without your microphone. What changed: the offer goes ahead of any answer line still waiting, and nothing else is on offer beside it. RY3 asks you to check exactly this.
+- **T4. Cause found.** The lane wrote its "answer is ready" line from the `verified` flag alone, and a reply with no team is "not verified" there. No such line now when no team ran.
+- **T5.** A trade-off sentence must name two of the options on the table; otherwise code's sentence replaces it. "Unclear" is judged only by that: I did not try to judge the wording.
+
 Founder's results (2026-11-15): **PASS** RX2, RX3, RX6 text (S5 fixed). **FAIL** RX4 in voice. Clicking "Restart with my change" applied the change correctly ($43,770.86 a month, -2.58), so the engine is right; the voice path is not.
 
 To fix:
@@ -1540,9 +1571,13 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
+0c. **From M5 fix round 4 (2026-11-15), none blocking:**
+   - **After an unanswered change, the summary ends without any offer.** One change, one offer: the offer was said when you asked, so with the answer I say the findings and the proposal and then nothing; "yes" still restarts and the card is still there. If you would rather hear a short reminder after the summary, or no summary at all until you have answered, say so.
+   - **A different change said in the same run gets its own card** ("Assume four hires." after "Assume three hires."): the older card stays open too. Say if the newer one should replace it.
+   - **T1 and the card drawn twice were not reproduced** (see the feedback item). RY2 and RY3 are the check.
 0b. **From M5 fix round 3 (2026-11-14), none blocking:**
    - **What failed in RW5?** (Re-run the analyst.) See the feedback item and RX6.
-   - **An unanswered change is asked again with the answer** ("You asked for a change while the team worked, and this answer does not have it. Restart with it?"), in place of the offer of risks. That is my addition, to stop a change being lost. Say if you would rather it restarted by itself, or stayed silent.
+   - *(Replaced in round 4: one change, one offer. See 0c.)* An unanswered change was asked again with the answer.
    - **A quiet "okay" after an offer is ignored** below the 0.45 threshold, which you kept for the read-back. If real answers get ignored, lower `VOICE_CONFIRM_BELOW`.
 0a. **From M5 fix round 2 (2026-11-13): answered by the founder on 2026-11-14** (PRD §12): keep `small.en`; keep 1 s; a typed "stop" does not ask; keep "On it."; keep 0.45. The last point below (a re-run with a change runs the whole team) was not answered and stands as built.
    - **Whisper model.** `large-v3-turbo` fits beside qwen3:8b (+1.07 GB against +0.52 GB) and is no slower, but my test could not show that it hears you better. Try it in RW8 and say whether to make it the default (PRD §2 names `small.en`).
@@ -1577,6 +1612,11 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M5 fix session, round 4 (2026-11-15)
+- Recorded the founder's RX1–RX7 results first (commit `1cfd1aa`). Then T1 to T5.
+- New: `tests/test_voice_round5.py`. Changed: `conversation/classifier.py` (`plain`, a bare "Yes?" is a listening noise), `conversation/manager.py` (answers matched without marks, one offer per change, no second offer line, no ready line when no team ran), `voice/session.py` (`_Say.change`, `_changes_said`, answers matched without marks), `agents/runtime.py` (`clear_trade_off`, `code_trade_off`), `agents/graph.py` (`team_ran` on `run.finished`), frontend `workspace.tsx` and `AdvisorPanel.tsx` (one card per change, the lane's words, below the answer while open). Two round 3 tests changed with the design (the second asking is gone).
+- Read this PC's `decision_log.jsonl` and `llm_calls.jsonl` for the founder's run of 07:08 to 07:10 UTC (times, callers, classes; no prompts are stored there). No microphone test.
+
 ### M5 fix session, round 3 (2026-11-14)
 - Recorded the founder's RW1–RW10 results first (commit `2971096`). Then S1 to S5, the typed "stop" and the answered open questions.
 - New: `tests/test_voice_round4.py`. Changed: `agents/graph.py` (`RunContext.cancel_requested`), `agents/dedupe.py` (`same_goal`), `agents/runtime.py` (`misdates_a_record`, the memo told again), `conversation/manager.py` (`turn(..., spoken=)`, one restart offer, an unanswered change kept open), `conversation/classifier.py`, `voice/session.py` (stopped runs, offers said once, own echo, unclear yes), `.env.example` (comments only), and the older tests that held the replaced behaviour.
@@ -1676,6 +1716,13 @@ Second planning round (2026-11-02):
 
 - 2026-11-03: Acted on founder feedback (setup.bat chose Python 3.14). Python is now picked 3.12 → 3.11 → `python`, with a
   3.13+ warning in setup and run scripts; README updated.
+
+## Decisions made (M5 fix session, round 4, 2026-11-15)
+- The founder's rules T1 to T5 are in PRD §12.
+- Mine, within those: an answer is matched on its words alone (`plain`: no case, no `? ! . , ; :`), in the lane and in the voice. A listening noise does not close an offer that has a card; any other turn still does.
+- One offer per change means the round 3 re-ask is gone. The voice asks after the summary only when the change's offer was never said aloud.
+- The card shows the lane's reply from the `amendment.offered` event, so the screen and the voice cannot drift apart again.
+- A trade-off sentence is judged by one rule (it names two options); code's replacement uses each option's own trade-off entry.
 
 ## Decisions made (M5 fix session, round 3, 2026-11-14)
 - The founder's answers to the open questions, and the rules for S1 to S5, are in PRD §12.

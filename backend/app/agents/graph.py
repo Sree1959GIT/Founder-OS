@@ -514,6 +514,7 @@ class AgentOrchestrator:
             verified=result.verified,
             assumptions=result.assumptions_to_confirm,
             elapsed_ms=result.elapsed_ms,
+            team_ran=result.verification.state != "not_run",  # founder re-test T4: no check to report otherwise
         )
         await run.deltas.put(None)
         return result

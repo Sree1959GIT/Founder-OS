@@ -68,7 +68,17 @@ export type Turn =
   | { id: string; role: "you"; text: string }
   | { id: string; role: "advisor"; runId: string }
   | { id: string; role: "lane"; text: string; kind: "narration" | "recap" | "reply" }
-  | { id: string; role: "amendment"; amendmentId: string; text: string; status: "offered" | "accepted" | "declined" }
+  | {
+      id: string;
+      role: "amendment";
+      amendmentId: string;
+      text: string;
+      status: "offered" | "accepted" | "declined";
+      /** The offer in the lane's own words, the ones the voice says. */
+      offer?: string;
+      /** The run the change would restart. */
+      runId?: string;
+    }
   | { id: string; role: "queued"; queueId: string; text: string; status: "queued" | "offered" | "accepted" | "declined" };
 
 /** The agents of a run, in the order they were spawned. */
@@ -268,12 +278,16 @@ function laneTurn(state: WorkspaceState, event: AgentEvent): WorkspaceState {
     return { ...state, turns: [...state.turns, turn] };
   }
   if (event.type === "amendment.offered") {
+    // One change, one card (M5 re-test T3), however often its offer arrives.
+    if (state.turns.some((t) => t.role === "amendment" && t.amendmentId === data.amendment_id)) return state;
     const turn: Turn = {
       id,
       role: "amendment",
       amendmentId: data.amendment_id as string,
       text: data.text as string,
       status: "offered",
+      offer: (data.reply as string | undefined) || undefined,
+      runId: event.run_id,
     };
     return { ...state, turns: [...state.turns, turn] };
   }
@@ -305,6 +319,15 @@ function advisorLast(turns: Turn[], runId: string): Turn[] {
   const id = `advisor-${runId}`;
   const card = turns.find((t) => t.id === id);
   return card ? [...turns.filter((t) => t.id !== id), card] : turns;
+}
+
+/**
+ * A change still on offer when the answer arrives stays the open question (M5 re-test T3: one change, one card):
+ * its card moves below the answer, where it is seen, instead of a second offer being written there.
+ */
+function openChangeLast(turns: Turn[], runId: string): Turn[] {
+  const open = turns.filter((t) => t.role === "amendment" && t.status === "offered" && t.runId === runId);
+  return open.length ? [...turns.filter((t) => !open.includes(t)), ...open] : turns;
 }
 
 export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
@@ -376,7 +399,7 @@ export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       };
       return {
         ...state,
-        turns: run.answer ? state.turns : advisorLast(state.turns, action.runId),
+        turns: openChangeLast(run.answer ? state.turns : advisorLast(state.turns, action.runId), action.runId),
         runs: { ...state.runs, [action.runId]: updated },
       };
     }

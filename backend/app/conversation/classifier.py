@@ -74,11 +74,17 @@ class Classified(BaseModel):
     decision_id: str | None = None
 
 
+def plain(text: str) -> str:
+    """A short answer without its marks and case (founder re-test T2): the recogniser writes a spoken "yes" as
+    "Yes?", "Yes." or "Yes!", and they are all the same answer."""
+    return re.sub(r"\s+", " ", re.sub(r"[?!.,;:…]+", " ", text)).strip().lower()
+
+
 def is_filler(text: str) -> bool:
     """A listening noise or a single stray word that asks nothing and orders nothing (founder re-test R1): "Ugh!",
     "mm", "hmm", "right", "okay", "Thanks." Never a question, never a command."""
     words = text.strip()
-    if not words or FILLER.match(words) or _BACKCHANNEL.match(words):
+    if not words or FILLER.match(words) or _BACKCHANNEL.match(words) or _BACKCHANNEL.match(plain(words)):
         return True
     if "?" in words or STOP_WORD.search(words):
         return False
@@ -90,8 +96,8 @@ def by_rules(text: str) -> TurnKind | None:
     cleaned = re.sub(r"^(actually|wait|sorry)[,\s]+", "", text.strip(), flags=re.I)
     if _STOP.match(cleaned):
         return "stop"
-    if _BACKCHANNEL.match(text.strip()) or FILLER.match(text.strip()):
-        return "backchannel"
+    if _BACKCHANNEL.match(text.strip()) or FILLER.match(text.strip()) or _BACKCHANNEL.match(plain(text)):
+        return "backchannel"  # "Yes?" and "Okay?" too: with nothing asked, a bare yes is a listening noise
     if _AMENDMENT.search(text):
         return "amendment"
     if _STATUS.search(text):

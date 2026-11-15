@@ -71,4 +71,28 @@ describe("workspace state", () => {
     expect(state.runs.r1?.answer).toBe("Final");
     expect(state.runs.r1?.verified).toBe(false);
   });
+
+  it("shows one card for one change, in the lane's words, and keeps it below the answer while it is open (M5 re-test T3)", () => {
+    let state = reducer(initialState, { type: "session", id: "s1" });
+    state = reducer(state, { type: "run", runId: "r1", message: "Dubai?" });
+    state = reducer(state, { type: "turn", turn: { id: "advisor-r1", role: "advisor", runId: "r1" } });
+    const offer = { session_id: "s1", amendment_id: "amd1", text: "Assume three hires.", reply: "That changes the decision. Restart with your change?" };
+    state = play(state, event("amendment.offered", offer), event("amendment.offered", offer));
+    const cards = () => state.turns.filter((t) => t.role === "amendment");
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0]).toMatchObject({ status: "offered", offer: "That changes the decision. Restart with your change?" });
+    state = reducer(state, { type: "delta", runId: "r1", text: "Proposed" });
+    const result = { answer: "Final", status: "done", verified: true, artifacts: [], message: "Dubai?", intent: "decision" } as unknown as ChatResult;
+    state = reducer(state, { type: "result", runId: "r1", result });
+    expect(state.turns.map((t) => t.role)).toEqual(["advisor", "amendment"]);
+    // A card of another run, or one already answered, stays where it is.
+    state = play(state, event("amendment.offered", { ...offer, amendment_id: "amd0" }, "r0"));
+    state = reducer(state, { type: "result", runId: "r1", result });
+    expect(state.turns.map((t) => (t.role === "amendment" ? t.amendmentId : t.role))).toEqual(["advisor", "amd0", "amd1"]);
+    state = { ...state, turns: state.turns.filter((t) => !(t.role === "amendment" && t.amendmentId === "amd0")) };
+    state = reducer(state, { type: "amendment", id: "amd1", status: "declined" });
+    state = reducer(state, { type: "turn", turn: { id: "n2", role: "lane", text: "Later", kind: "narration" } });
+    state = reducer(state, { type: "result", runId: "r1", result });
+    expect(state.turns.map((t) => t.role)).toEqual(["advisor", "amendment", "lane"]);
+  });
 });

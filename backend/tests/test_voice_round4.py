@@ -396,8 +396,9 @@ async def test_words_said_while_the_team_works_are_never_dropped_on_a_models_gue
     assert (await classifier.classify("Oh god", DUBAI)).kind == "backchannel"
 
 
-async def test_a_change_left_unanswered_is_asked_again_when_the_answer_is_ready(finance: Any) -> None:
-    """The founder's case: the answer came with two hires and the change was gone. Now its offer stays open."""
+async def test_a_change_left_unanswered_stays_open_when_the_answer_is_ready(finance: Any) -> None:
+    """The founder's case: the answer came with two hires and the change was gone. Now its offer stays open: "yes"
+    still restarts. (Round 4, T3: the lane writes no second offer under the answer; the card is the offer.)"""
     manager = lane(finance)
     first = await manager.turn(None, DUBAI)
     offered = await manager.turn(first.session_id, "Assume three hires.")
@@ -405,14 +406,16 @@ async def test_a_change_left_unanswered_is_asked_again_when_the_answer_is_ready(
     assert "$32,347.24" in old.answer  # this answer does not have the change
     state = manager.state(first.session_id)
     assert state is not None and [a["status"] for a in state["amendments"]] == ["offered"]
-    assert state["narration"][-1] == CHANGE_STILL_OPEN
+    assert CHANGE_STILL_OPEN not in state["narration"]
     restarted = await manager.turn(first.session_id, "yes")
     assert restarted.answered == {"what": "amendment", "id": offered.amendment_id, "accept": True}
     new = await finished(manager, restarted.run_id)
     assert "$43,770.86" in new.answer
 
 
-async def test_the_voice_ends_the_summary_on_the_unanswered_change(finance: Any) -> None:
+async def test_the_voice_offers_no_risks_beside_an_unanswered_change(finance: Any) -> None:
+    """Round 4, T3: the change's offer was said when it was asked for, so it is not said again with the answer; the
+    summary ends without an offer of more, and "yes" means the restart."""
     session, wire, _, _tts, manager = make(finance, [], approval_policy="never", still_working_s=0)
     await session.start()
     await session.control({"type": "text", "text": DUBAI})
@@ -422,9 +425,11 @@ async def test_the_voice_ends_the_summary_on_the_unanswered_change(finance: Any)
     await wait_for(lambda: len(wire.of("turn")) == 2)
     assert wire.of("turn")[1]["outcome"]["reply"] == RESTART_OFFER
     await finished(manager, first_run)
-    await wait_for(lambda: CHANGE_STILL_OPEN in said(wire))
+    await session._answers_idle.wait()
+    await wait_for(lambda: session._says.empty() and session._current is None)
     await asyncio.sleep(0.3)
-    assert said(wire)[-1] == CHANGE_STILL_OPEN and not any(t.startswith("Want") for t in said(wire))
+    assert said(wire).count(RESTART_OFFER) == 1 and CHANGE_STILL_OPEN not in said(wire)
+    assert not any(t.startswith("Want") for t in said(wire)) and session.offers.more == []
     await session.control({"type": "text", "text": "yes"})
     await wait_for(lambda: "Restarting with your change." in said(wire))
     restarted = wire.of("turn")[-1]["outcome"]
