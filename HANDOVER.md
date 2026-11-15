@@ -62,6 +62,15 @@
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): RX1–RX7 after fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
+- Started (UTC): 2026-11-15 07:22 (local Windows session, small fix round 4 for the M5 Major gate, time-box 45 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan:
+  - [ ] Record the founder's RX1–RX7 results first
+  - [ ] T2 (main): "Yes?", "yes.", "Yeah!", "okay?" after an offer answer that offer
+  - [ ] T1 and T3: a mid-run change is offered at once, in every stage; one change, one offer, one card
+  - [ ] T4 (no verification line for a turn that ran no team), T5 (code's trade-off when the model's is unclear)
+  - [ ] Tests, RY re-test steps, PR #10 updated, CI green
+
+Previous session (2026-11-14, M5 fix round 3):
 - Started (UTC): 2026-11-14 10:49 (local Windows session, third and final fix round for the M5 Major gate, time-box 60 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan:
   - [x] Record the founder's RW1–RW10 results first
@@ -1217,6 +1226,15 @@ write the issues under "Founder feedback".
 
 ## Founder feedback
 _Write results from your Windows checks, bugs and change requests here. The next session acts on them first._
+### [M5] Re-test RX1–RX7: OPEN (fix session 2026-11-15, round 4)
+Founder's results (2026-11-15): **PASS** RX2, RX3, RX6 text (S5 fixed). **FAIL** RX4 in voice. Clicking "Restart with my change" applied the change correctly ($43,770.86 a month, -2.58), so the engine is right; the voice path is not.
+
+To fix:
+- **T2 (main).** After the answer offered "You asked for a change while the team worked, and this answer does not have it. Restart with it?", the founder said "yes"; Whisper gave "Yes?" and it was treated as a new question ("What's your reasoning for agreeing to that model over the full office?", badge "Not run"). Normalise punctuation and case; any clear affirmative (yes, yeah, yep, sure, okay, go ahead, do it, restart, with or without "?" or "!") right after an offer answers that offer. Test with "Yes?", "yes.", "Yeah!", "okay?".
+- **T1.** "Assume three hires." said late in the run (after People & Ops and Regulatory & Tax were done, while the Devil's Advocate worked) got no offer at that moment, only after the answer. Offer a mid-run change at once, spoken and as one card, in every stage including the last one and while the answer is being written.
+- **T3.** One change produced two offers ("You asked for a change while the team worked… Restart with it?" and "That changes the request. Restart with your change?") and the card twice. One change, one offer, one card.
+- **T4.** A reply showed a "Not run" badge together with "The answer is ready, but some of it is unverified". A turn that ran no team shows no verification line.
+- **T5 (minor).** The model wrote "The main trade-off is stopping hiring for the pilot while confirming the cost model with three hires." When the trade-off sentence is unclear or does not name the two options, use the code-written trade-off instead.
 ### [M5] Re-test RW1–RW10: RESOLVED, awaiting re-test RX1–RX7 (fix session 2026-11-14, round 3)
 **Resolved (2026-11-14, PR #10):** S1 to S5 and the typed "stop", with tests in `tests/test_voice_round4.py` (39), the S5 tests on your exact strings. **I could not reproduce S1, S3 or S4 as you saw them**, so for those three this is what I found and what is now closed, not a proven cause:
 - **S1.** Stopping does cancel the run: with fakes at 40 points of a run, and live on this PC at 20, 28, 33, 37 and 40 seconds (the last two while the answer was being written), every run ended cancelled with no answer. So I do not know which path spoke "My proposal is …" for you. Closed now: the voice keeps a list of stopped runs and says nothing of their answers, whatever state they end in (tested with a cancel that is made to miss); a cancelled run's waiting lines are dropped; a stop also clears an earlier summary's offer; and the orchestrator ends a run as cancelled if its stop arrived too late to interrupt the last step.
