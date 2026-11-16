@@ -169,6 +169,19 @@ class DeltaQueue(asyncio.Queue["str | None"]):
         return copy
 
 
+PROGRESS_VERIFYING = "Verifying…"
+PROGRESS_DONE = "Done"
+
+
+def progress_line(step: int, steps: int, agents: list[str]) -> str:
+    """ "Step 2 of 3: Market Scout working…" (founder RL2): the stage running now, for the conversation panel."""
+    if len(agents) <= 1:
+        who = agents[0] if agents else "The team"
+        return f"Step {step} of {steps}: {who} working…"
+    names = ", ".join(agents[:-1]) + f" and {agents[-1]}"
+    return f"Step {step} of {steps}: {names} working…"
+
+
 @dataclass
 class RunContext:
     run_id: str
@@ -193,6 +206,7 @@ class RunContext:
     reuse: dict[str, AgentResult] = field(default_factory=dict)
     # Founder re-test S1: the founder stopped this run. Whatever the graph still returns, it never becomes an answer.
     cancel_requested: bool = False
+    progress: str = ""  # founder RL2: the stage line the panel shows ("Step 1 of 3: Librarian working…")
 
 
 class TeamEdit(BaseModel):
@@ -226,6 +240,7 @@ class AgentOrchestrator:
         max_cloud: int = 6,
         max_steps: int = 4,
         cash_risk_warn_at: float = 2.0,
+        stage_delay_s: float = 0.0,
     ) -> None:
         self.router = router
         self.decisions = decisions
@@ -238,6 +253,8 @@ class AgentOrchestrator:
         self.cloud_slots = asyncio.Semaphore(max_cloud)
         self.max_steps = max_steps
         self.cash_risk_warn_at = cash_risk_warn_at  # above 1: never warn
+        # Founder RL2 (2026-11-16), dev only: a pause before each stage, so a live test can hit a chosen stage.
+        self.stage_delay_s = stage_delay_s
         self.runs: dict[str, RunContext] = {}
         self.graph = self._build()
 
@@ -328,13 +345,34 @@ class AgentOrchestrator:
             everyone = [i.model_copy(update=changes) for i in everyone]
         return the_plan.model_copy(update={"team": everyone})
 
-    @staticmethod
-    def _stage_of(state: GraphState, done: set[str]) -> list[Send]:
-        waiting = [i for i in state["plan"].team if i.id not in done]
+    def _stage_of(self, state: GraphState, done: set[str]) -> list[Send]:
+        team = state["plan"].team
+        waiting = [i for i in team if i.id not in done]
         if not waiting:
+            if team:
+                self._progress(state["run_id"], "verifying", PROGRESS_VERIFYING)
             return []
         stage = min(REGISTRY[i.type].stage for i in waiting)
-        return [Send("agent", {**state, "instance": i}) for i in waiting if REGISTRY[i.type].stage == stage]
+        now = [i for i in waiting if REGISTRY[i.type].stage == stage]
+        stages = sorted({REGISTRY[i.type].stage for i in team})
+        names = [i.name for i in now]
+        self._progress(
+            state["run_id"],
+            "stage",
+            progress_line(stages.index(stage) + 1, len(stages), names),
+            step=stages.index(stage) + 1,
+            steps=len(stages),
+            agents=names,
+        )
+        return [Send("agent", {**state, "instance": i}) for i in now]
+
+    def _progress(self, run_id: str, phase: str, text: str, **extra: Any) -> None:
+        """Founder RL2 (2026-11-16): one visible line on where the run is ("Step 2 of 3: Market Scout working…",
+        "Verifying…", "Done"). Text only: the voice never says it."""
+        run = self.runs.get(run_id)
+        if run is not None:
+            run.progress = text
+        self.bus.emit("run.progress", run_id, phase=phase, text=text, **extra)
 
     def _fan_out(self, state: GraphState) -> list[Send] | str:
         if not state.get("approved") or not state["plan"].team:
@@ -357,6 +395,9 @@ class AgentOrchestrator:
         kept = run.reuse.get(inst.id)
         if kept is not None:
             return {"results": [self._kept(run, inst, kept)]}
+        if self.stage_delay_s > 0:
+            # Dev only (FOUNDEROS_STAGE_DELAY_S): every instance of a stage waits together, so one pause a stage.
+            await asyncio.sleep(self.stage_delay_s)
         while True:
             task = asyncio.create_task(self._in_a_slot(inst, state))
             run.agent_tasks[inst.id] = task
@@ -507,6 +548,8 @@ class AgentOrchestrator:
             raise asyncio.CancelledError
         result = self._result(run, state, _ms(started))
         run.result = result
+        if run.progress and result.status == "done":
+            self._progress(run.run_id, "done", PROGRESS_DONE)
         self.bus.emit(
             "run.finished",
             run.run_id,

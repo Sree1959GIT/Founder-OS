@@ -54,6 +54,7 @@ const run = (over: Partial<RunView>): RunView => ({
   result: null,
   verified: null,
   lastSeq: 0,
+  progress: "",
   ...over,
 });
 

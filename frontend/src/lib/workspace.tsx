@@ -62,6 +62,8 @@ export interface RunView {
   result: ChatResult | null;
   verified: boolean | null;
   lastSeq: number;
+  /** Founder RL2: where the run is ("Step 2 of 3: Market Scout working…", "Verifying…", "Done"). */
+  progress: string;
 }
 
 export type Turn =
@@ -149,6 +151,7 @@ function emptyRun(id: string, message: string, at: string): RunView {
     result: null,
     verified: null,
     lastSeq: 0,
+    progress: "",
   };
 }
 
@@ -252,6 +255,9 @@ function withRunEvent(run: RunView, event: AgentEvent): RunView {
           },
         };
       }
+      break;
+    case "run.progress":
+      next.progress = (data.text as string) ?? next.progress;
       break;
     case "run.finished": {
       const status = data.status as RunView["status"];
@@ -455,6 +461,7 @@ const EVENT_TYPES = [
   "agent.done",
   "agent.rerun",
   "run.finished",
+  "run.progress",
   "narration",
   "recap",
   "amendment.offered",

@@ -163,6 +163,9 @@ class Settings(BaseSettings):
     # During a team run the voice is silent after its opening turn, but for one "Still working on it." after this
     # many seconds (0: never).
     voice_still_working_s: float = Field(default=30.0, ge=0, le=600)
+    # Dev only (founder RL2, 2026-11-16): a pause in seconds before each stage of a team, so a live test can say
+    # something while a chosen stage runs. 0 (the default) in normal use. Env: FOUNDEROS_STAGE_DELAY_S.
+    founderos_stage_delay_s: float = Field(default=0.0, ge=0, le=120)
 
     @field_validator("deep_provider", mode="before")
     @classmethod

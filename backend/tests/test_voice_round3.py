@@ -21,7 +21,7 @@ import pytest
 
 from app.agents.runtime import _SentenceGate, asks_about_a_draft
 from app.conversation.classifier import TurnClassifier, by_rules, is_filler
-from app.conversation.manager import STOP_QUESTION
+from app.conversation.manager import STOP_QUESTION, change_reminder
 from app.decision.base import DecisionService, FakeDecisionProvider
 from app.engine.calibration import CalibrationStore
 from app.engine.duckdb_engine import FinanceDB
@@ -252,7 +252,8 @@ async def test_an_accepted_change_is_applied(finance: Any, answer: str) -> None:
     old = await finished(manager, first.run_id)
     assert "$32,347.24" in old.answer and "(-2.07)" in old.answer  # two hires, the placeholder
     offer = await manager.turn(first.session_id, "Assume 3 hires.")
-    assert offer.reply == "That changes the decision. Restart with your change?" and offer.amendment_id
+    # Founder RL2 (2026-11-16): after the answer, the change gets the reminder that the answer does not have it.
+    assert offer.reply == change_reminder("Assume 3 hires.") and offer.amendment_id
     accepted = await manager.turn(first.session_id, answer)
     assert accepted.started_run and accepted.run_id not in (None, first.run_id)
     assert accepted.answered == {"what": "amendment", "id": offer.amendment_id, "accept": True}
@@ -299,7 +300,7 @@ async def test_a_restart_accepted_by_voice_is_shown_and_summarised(finance: Any,
     await session.control({"type": "text", "text": "Assume 3 hires."})
     await wait_for(lambda: len(wire.of("turn")) == 2)
     offered = wire.of("turn")[1]["outcome"]
-    assert offered["amendment_id"] and offered["reply"] == "That changes the decision. Restart with your change?"
+    assert offered["amendment_id"] and offered["reply"] == change_reminder("Assume 3 hires.")
     await session.control({"type": "text", "text": words})
     await wait_for(lambda: len(wire.of("turn")) == 3)
     restarted = wire.of("turn")[2]["outcome"]  # what the canvas follows
@@ -553,7 +554,7 @@ async def test_a_percentage_changes_a_price_decision_without_a_question(finance:
     first = await manager.turn(None, "Should we raise prices by 10%?")
     await finished(manager, first.run_id)
     change = await manager.turn(first.session_id, "Make it 15%.")
-    assert change.kind == "amendment" and change.reply == "That changes the decision. Restart with your change?"
+    assert change.kind == "amendment" and change.reply == change_reminder("Make it 15%.")
 
 
 # --- R7: a proposed memo on record gets one question ------------------------------------------------------------------

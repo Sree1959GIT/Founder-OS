@@ -929,6 +929,10 @@ class ConversationManager:
         # "request".
         known_other = running.plan is not None and not self._is_decision(running.run_id)
         reply = RESTART_REQUEST if known_other else RESTART_OFFER
+        if running.task is not None and running.task.done():
+            # Founder RL2 (2026-11-16): the answer is already out, so the change is not in it. Said once:
+            # "Your change to three hires isn't in this answer yet. Say yes to restart with it."
+            reply = change_reminder(text)
         # Founder re-test T3: one change, one offer, one card. The same change said again (the founder repeating
         # it, or the recogniser hearing it twice) is the offer already open, not a second one.
         same = next(

@@ -88,10 +88,13 @@ export function AdvisorPanel() {
     return () => window.removeEventListener("founderos:prefill", onPrefill);
   }, []);
   const lastAnswerLength = state.currentRunId ? (state.runs[state.currentRunId]?.answer.length ?? 0) : 0;
+  // Founder RL2: one line on where the current run is. A stopped or failed run shows no stage.
+  const current = state.currentRunId ? state.runs[state.currentRunId] : undefined;
+  const progress = current && (current.status === "running" || current.status === "done") ? (current.progress ?? "") : "";
 
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
-  }, [state.turns.length, lastAnswerLength]);
+  }, [state.turns.length, lastAnswerLength, progress]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -152,6 +155,11 @@ export function AdvisorPanel() {
           }
           return <LaneTurn key={turn.id} turn={turn} />;
         })}
+        {progress ? (
+          <p className="text-xs text-muted-foreground" data-testid="run-progress" aria-live="polite">
+            {progress}
+          </p>
+        ) : null}
         <div ref={end} />
       </div>
 

@@ -70,6 +70,8 @@ class Backend:
             DATA_DIR=str(self.data_dir),
             VOICE_MODELS_DIR=str(ROOT / "data" / "models"),
             TEAM_APPROVAL="never",
+            # Founder RL2: a short pause before each stage, so a step can be said while a chosen stage runs.
+            FOUNDEROS_STAGE_DELAY_S=os.environ.get("FOUNDEROS_STAGE_DELAY_S", "2"),
             PYTHONUTF8="1",
         )
         python = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -580,7 +582,151 @@ def _reran(ch: Channel, run_id: str) -> list[str]:
     return [str(e["data"].get("name")) for e in spawned if e["agent_id"] not in kept]
 
 
-SCENARIOS = {"S1+S2": s1_s2, "S3": s3, "S4": s4, "S5": s5, "S6": s6, "S7": s7}
+async def _say_change(ch: Channel, settle: float = 3) -> Step:
+    if isinstance(ch, Spoken):
+        inbox_mark = len(ch.inbox)
+        step = await ch.say(CHANGE, settle=settle, over_voice=True)
+        step.notes.append("timeline: " + ch.timeline(inbox_mark))
+        return step
+    return await ch.say(CHANGE, settle=settle)
+
+
+async def _until_stage(ch: Channel, run_id: str, step: int, timeout: float = 400) -> bool:
+    """Until the run's progress line says it is on `step` (founder RL2's "Step N of M")."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if ch.events.since(0, type="run.progress", run_id=run_id, step=step):
+            return True
+        if ch.events.finished(run_id):
+            return False
+        await asyncio.sleep(0.2)
+    return False
+
+
+def _check_offer_now(c: Step, ch: Channel, run_id: str, mark: int, line: str) -> None:
+    offered = ch.events.since(mark, type="amendment.offered", session_id=ch.session_id)
+    c.check("one card", len(offered) == 1)
+    c.check(f'"{line}" {"said" if ch.kind == "spoken" else "shown"} once', _has(c.lines, line) == 1)
+    c.check("no new run started", c.run_started is None)
+
+
+async def _run_to_stage(ch: Channel, r: Result, last: bool) -> str | None:
+    s = await ch.say(DUBAI, settle=1)
+    r.steps.append(s)
+    if not s.check("a team started", s.run_started):
+        return None
+    run_id = s.run_started
+    assert run_id is not None
+    if last:
+        ok = await _until_only_devil(ch, run_id)
+        s.check("the Devil's Advocate was the last agent working", ok)
+    else:
+        ok = await _until_stage(ch, run_id, 1)
+        second = ch.events.since(0, type="run.progress", run_id=run_id, step=2)
+        s.check("the first stage was running", ok and not second)
+    lines = [e["data"].get("text") for e in ch.events.since(0, type="run.progress", run_id=run_id)]
+    s.notes.append(f"progress so far: {lines}")
+    return run_id
+
+
+async def c_first(ch: Channel, r: Result) -> None:
+    """RL2a: the change said in the first stage is offered aloud at once."""
+    run_id = await _run_to_stage(ch, r, last=False)
+    if run_id is None:
+        return
+    mark = ch.events.mark()
+    c = await _say_change(ch)
+    r.steps.append(c)
+    second = bool(ch.events.since(0, type="run.progress", run_id=run_id, step=2))
+    c.notes.append(f"stage 2 begun by the end of the step: {second}")
+    _check_offer_now(c, ch, run_id, mark, OFFER)
+    await ch.http.post(f"/api/runs/{run_id}/cancel")
+
+
+async def c_last(ch: Channel, r: Result) -> None:
+    """RL2b: the change said in the last stage is offered aloud at once."""
+    run_id = await _run_to_stage(ch, r, last=True)
+    if run_id is None:
+        return
+    mark = ch.events.mark()
+    c = await _say_change(ch)
+    r.steps.append(c)
+    c.check("the run had not finished by the end of the step", ch.events.finished(run_id) is None)
+    _check_offer_now(c, ch, run_id, mark, OFFER)
+    await ch.http.post(f"/api/runs/{run_id}/cancel")
+
+
+async def c_summary(ch: Channel, r: Result) -> None:
+    """RL2c: the change said while the summary is being spoken stops it, and the reminder is said once."""
+    if not isinstance(ch, Spoken):
+        r.steps.append(Step(said="(spoken only: the typed box has no speech to cut off)"))
+        return
+    s = await ch.say(DUBAI, settle=1)
+    r.steps.append(s)
+    if not s.check("a team started", s.run_started):
+        return
+    run_id = s.run_started
+    assert run_id is not None
+    await ch.wait_finished(run_id)
+    deadline = time.time() + 40
+    while time.time() < deadline:
+        if any(m.get("type") == "say" and m.get("lane") == "answer" and m.get("run_id") == run_id for m in ch.inbox):
+            break
+        await asyncio.sleep(0.1)
+    await asyncio.sleep(1.0)  # well into the first sentence of the summary
+    s.check("the summary was being said", time.time() < ch.audio_until)
+    inbox_mark, mark = len(ch.inbox), ch.events.mark()
+    c = await ch.say(CHANGE, settle=4, over_voice=True)
+    r.steps.append(c)
+    c.notes.append("timeline: " + ch.timeline(inbox_mark))
+    later = ch.inbox[inbox_mark:]
+    cut = next((i for i, m in enumerate(later) if m.get("type") == "interrupt"), None)
+    c.check("the summary was stopped (interrupt)", cut is not None)
+    after = [str(m.get("text")) for m in later[(cut or 0) :] if m.get("type") == "say"]
+    c.notes.append(f"said after the change: {after}")
+    c.check(f'"{REMINDER}" said once', _has(after, REMINDER) == 1)
+    c.check("nothing else said after the change", len(after) == 1)
+    offered = ch.events.since(mark, type="amendment.offered", session_id=ch.session_id)
+    c.check("one card", len(offered) == 1)
+    y = await ch.say("yes", settle=3)
+    r.steps.append(y)
+    y.check("yes restarted the run", y.run_started)
+    if y.run_started:
+        await ch.http.post(f"/api/runs/{y.run_started}/cancel")
+
+
+async def c_after(ch: Channel, r: Result) -> None:
+    """RL2d: the change said after the run and its summary: the reminder, once."""
+    s = await ch.say(DUBAI, settle=1)
+    r.steps.append(s)
+    if not s.check("a team started", s.run_started):
+        return
+    run_id = s.run_started
+    assert run_id is not None
+    await ch.wait_finished(run_id)
+    await ch.after_answer(run_id)
+    lines = [e["data"].get("text") for e in ch.events.since(0, type="run.progress", run_id=run_id)]
+    s.notes.append(f"progress lines: {lines}")
+    s.check('progress ends on "Done"', bool(lines) and lines[-1] == "Done")
+    mark = ch.events.mark()
+    c = await ch.say(CHANGE, settle=4)
+    r.steps.append(c)
+    _check_offer_now(c, ch, run_id, mark, REMINDER)
+    c.check(f'not "{OFFER}"', _has(c.lines, OFFER) == 0)
+
+
+SCENARIOS = {
+    "S1+S2": s1_s2,
+    "S3": s3,
+    "S4": s4,
+    "S5": s5,
+    "S6": s6,
+    "S7": s7,
+    "RL2a": c_first,
+    "RL2b": c_last,
+    "RL2c": c_summary,
+    "RL2d": c_after,
+}
 
 
 # --- report ---------------------------------------------------------------------------------------------------------

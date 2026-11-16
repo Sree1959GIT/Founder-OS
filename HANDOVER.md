@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: re-test RZ1–RZ7, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
+- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: live check RL1, RL2a–RL2d, RL3–RL5, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-14 (M5 fix round 3, after the founder's RW1–RW10 re-test)
+- **Last updated:** 2026-11-16 (M5 fix round 7, after the founder's RL2 result)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -19,7 +19,7 @@
 | M3b | Specialist agents | DONE (merged, PR #7; Medium gate ACCEPTED 2026-11-05) | Plus the cloud layer and the conversation lane backend |
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
-| M5 | Voice pipeline | DONE, awaiting Major gate (re-test RZ1–RZ7) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
+| M5 | Voice pipeline | DONE, awaiting Major gate (live check RL1, RL2a–RL2d, RL3–RL5) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | NOT STARTED | |
 
 ## Review gates (every PR passes all four)
@@ -59,9 +59,13 @@
 | M3b Specialist agents | [Sree1959GIT/Founder-OS#7](https://github.com/Sree1959GIT/Founder-OS/pull/7) | Medium | ACCEPTED (SM, 2026-11-05), Medium; M1–M11 and RD3–RD9 pass on Windows (qwen3:8b, cloud off) |
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
-| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): live check RL1–RL5 after fix round 6 of 2026-11-15 (scripted runner `scripts/voice_scenarios.py`: S1–S7 typed and spoken all PASS on this PC). Founder RZ re-test 2026-11-15: S6 analyst re-run and S7 stop pass; S1, S3, S4, S5 and the librarain re-run failed on the PC. Before that, fix round 5 (U0–U5, reminder). Founder re-test of RY, 2026-11-15: restart with "Yes.", T4 and T5 pass; RY4 and RY6 failed; RY2 and RY5 partly. Before that, fix round 4 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
+| M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | AWAITING FOUNDER (re-test): live check RL1, RL2a–RL2d, RL3–RL5 after fix round 7 of 2026-11-16 (a change said in any stage, over the summary or after the run is said aloud; stage line; `FOUNDEROS_STAGE_DELAY_S`; runner RL2a–RL2d added). Founder RL2 2026-11-16 failed: offer shown, not spoken. Before that, live check RL1–RL5 after fix round 6 of 2026-11-15 (scripted runner `scripts/voice_scenarios.py`: S1–S7 typed and spoken all PASS on this PC). Founder RZ re-test 2026-11-15: S6 analyst re-run and S7 stop pass; S1, S3, S4, S5 and the librarain re-run failed on the PC. Before that, fix round 5 (U0–U5, reminder). Founder re-test of RY, 2026-11-15: restart with "Yes.", T4 and T5 pass; RY4 and RY6 failed; RY2 and RY5 partly. Before that, fix round 4 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
+- Started (UTC): 2026-11-16 (local Windows session, fix round 7 for the M5 Major gate, time-box 45 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
+- Plan: [x] record RL2; [x] runner scenarios RL2a–RL2d, reproduced before the fix; [x] change always spoken, reminder after a finished run; [x] stage line; [x] `FOUNDEROS_STAGE_DELAY_S`; [x] full runner set after the fix (20/20 PASS); [x] HANDOVER, push.
+
+Previous session (2026-11-15, round 6):
 - Started (UTC): 2026-11-15 16:39 (local Windows session, fix round 6 for the M5 Major gate, time-box 75 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan: [x] scripted runner `scripts/voice_scenarios.py` (real backend, Ollama, Whisper, Kokoro); [x] reproduce S1–S7 typed and spoken; [x] fix the real failures; [x] HANDOVER, PR #10, CI.
 
@@ -775,15 +779,19 @@ Known issues / notes:
 4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
 
 ## Windows verification checklist (for the founder)
-**M5 live check after fix round 6 of 2026-11-15. Run this one first: RL1 to RL5 (about 5 minutes).** Headphones, Hands-free, approval at Never, Windows PowerShell 5.1 from `D:\Founder-OS`.
+**M5 live check after fix round 7 of 2026-11-16. Run this one first: RL1, RL2a to RL2d, RL3 to RL5 (about 10 minutes).** Headphones, Hands-free, approval at Never, Windows PowerShell 5.1 from `D:\Founder-OS`.
 
-- **RL1. The right code.** Close **every** FounderOS window, then `Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue` **Expect:** nothing (if a line shows, an old backend is still running: close it or restart Windows). Then `git pull origin claude/m5-voice; .\run.bat`.
-- **RL2. The change.** Say **"Should we start a Dubai office?"**; when only the Devil's Advocate is working, say **"Assume three hires."** **Hear** at once: "That changes the decision. Restart with your change?" **See:** one card, where it first appears. Say nothing: after the summary, "Your change to three hires isn't in this answer yet. Say yes to restart with it." once.
+- **RL1. The right code, slowed down.** Close **every** FounderOS window, then `Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue` **Expect:** nothing (if a line shows, an old backend is still running: close it or restart Windows). Then `git pull origin claude/m5-voice; $env:FOUNDEROS_STAGE_DELAY_S = "8"; .un.bat` (8 s before each stage, so you can time each step; this window only).
+- **RL2a. A change in the first stage.** Say **"Should we start a Dubai office?"**. **See** under the conversation: "Step 1 of 3: Librarian, Market Scout and Financial Analyst working…". While that line shows, say **"Assume three hires."** **Hear at once** (cutting off the team line if it is playing): "That changes the decision. Restart with your change?" **See:** one card. Say **"keep going"**.
+- **RL2b. A change in the last stage.** Say **"Should we start a Dubai office?"** again. When the line says "Step 3 of 3: … working…", say **"Assume three hires."** **Hear at once:** "That changes the decision. Restart with your change?" Say nothing: the line moves to "Verifying…", then "Done"; after the short summary, **hear once:** "Your change to three hires isn't in this answer yet. Say yes to restart with it." Say **"keep going"**.
+- **RL2c. A change while the summary is spoken.** Ask the Dubai question again and wait for "Done". As soon as the summary starts, say **"Assume three hires."** **Hear:** the summary stops, then "Your change to three hires isn't in this answer yet. Say yes to restart with it." once, and nothing more of the summary. Say **"keep going"**.
+- **RL2d. A change after the run.** Ask the Dubai question again and wait until the summary and "Want me to go through the risks?" are over. Say **"Assume three hires."** **Hear:** "Your change to three hires isn't in this answer yet. Say yes to restart with it." once (not "Restart with your change?"). **See:** one card. Do not answer yet.
 - **RL3. Sounds.** Say **"hmm"**, then **"okay"**. **Hear:** nothing, then "Restarting with your change." **See:** $43,770.86 and -2.58.
 - **RL4. Unclear and greeting.** Say **"Okay, I will leave it as it is."** **Hear:** "Did you say: …?". Say **"no"**, then **"Hello? Yes?"** **Hear:** "Okay. Say it again.", then "Hello. What would you like to look at?"
 - **RL5. Re-run.** Say **"Re-run the analyst."** **Hear:** "Re-running only the Financial Analyst again. …" and no "Team: …" line.
+- **After the check:** close the window (or `Remove-Item Env:FOUNDEROS_STAGE_DELAY_S`) to go back to normal speed.
 
-**The scenarios yourself (about 12 minutes, Ollama running, FounderOS closed or open: it uses its own port and data folder):** `.\.venv\Scripts\python.exe scripts\voice_scenarios.py` **Expect:** a table of PASS; the report path is printed (in your Temp folder). `--typed`, `--spoken` or `--only S3 S4` run part of it.
+**The scenarios yourself (about 20 minutes, Ollama running, FounderOS closed or open: it uses its own port and data folder):** `.\.venv\Scripts\python.exe scripts\voice_scenarios.py` **Expect:** a table of PASS; the report path is printed (in your Temp folder). `--typed`, `--spoken` or `--only S3 RL2c` run part of it (RL2a to RL2d are the changes of round 7).
 
 **Superseded by RL above (done: results under "Founder feedback"): RZ1 to RZ7.**
 **M5 re-test after fix round 5 of 2026-11-15: RZ1 to RZ7.** Headphones or a headset. Hands-free, approval at Never. Windows PowerShell 5.1, from `D:\Founder-OS`. Then merge, or write what you saw under "Founder feedback".
@@ -1279,6 +1287,36 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M5] RL2 failed: a mid-run change was shown, not spoken; stages cannot be timed (fix session 2026-11-16, round 7): RESOLVED on this PC, awaiting live check RL1, RL2a–RL2d, RL3–RL5
+**Founder's RL2 result (2026-11-16):** asked "Should we start a Dubai office?", said "Assume three hires" / "Please go ahead with the three hires" near the Devil's Advocate stage. The offer text appeared in the chat, but the voice kept reading the current answer and never spoke the offer. The Devil's Advocate label, "Verifier sent Market Scout back", "3 done, one to go" and the final answer all appear almost at once, so the stage cannot be timed.
+**Asked for:** (1) a change said at any point (any stage, verifying, or while the answer is spoken) is spoken at once, cutting off speech like a barge-in; never an offer in the chat only; (2) after a finished run, "Your change to <X> isn't in this answer yet. Say yes to restart with it." once; (3) a progress line "Step N of M: <agent> working…", "Verifying…", "Done"; (4) dev setting `FOUNDEROS_STAGE_DELAY_S`; (5) runner scenarios for a change in the first stage, the last stage, during the spoken summary and after the run.
+
+**Reproduced first** (runner, spoken, before any fix): RL2a FAIL, the founder's bug exactly: the change was said during the first stage, the card appeared, the voice then said the team line ("I've put together a team of five …") and **never said the offer**. RL2c and RL2d FAIL: they said "Restart with your change?" where the run had already finished (the reminder was wanted). RL2b PASS. I did not pin down which line of code dropped the RL2a offer; the team line had arrived while the founder was speaking and was queued in front of it.
+
+**What changed:**
+- **A change always interrupts** (`app/voice/session.py`): when a change is understood, anything playing, being made or waiting to be said (team line, summary) is stopped by the barge-in path, and the offer is the next thing said. After the fix, RL2a's timeline: barge-in at 0.9 s, words understood at 1.5 s, the waiting team line dropped at 2.0 s, the offer said at 4.1 s.
+- **After a finished run** (`app/conversation/manager.py`) the reply is "Your change to three hires isn't in this answer yet. Say yes to restart with it.", in the panel and aloud. It is keyed as the summary's own reminder, so it is said once, whichever path gets there first.
+- **Progress line**: the event `run.progress` ("Step 1 of 3: Librarian, Market Scout and Financial Analyst working…", "Verifying…", "Done"), shown under the conversation, never spoken. "Verifying…" starts when the last stage ends and covers writing and checking the answer.
+- **`FOUNDEROS_STAGE_DELAY_S`** (dev only, default 0, README "Development"): that many seconds before each stage.
+- Tests: `tests/test_voice_round7.py`; nine older tests now expect the reminder after a finished run.
+
+**Runner after the fix (this PC, 2026-11-16, 1082 s, `FOUNDEROS_STAGE_DELAY_S=2`):**
+
+| Scenario | Typed | Spoken |
+|---|---|---|
+| S1+S2 change in the last stage, reminder, yes, $43,770.86 and -2.58 | PASS | PASS |
+| S3 sounds do nothing, then okay restarts | PASS | PASS |
+| S4 read back, no team | PASS | PASS |
+| S5 greeting | PASS | PASS |
+| S6 re-run the analyst / the librarain | PASS | PASS |
+| S7 stop, yes | PASS | PASS |
+| RL2a change in the first stage: offer said at once | PASS | PASS |
+| RL2b change in the last stage: offer said at once | PASS | PASS |
+| RL2c change over the spoken summary: summary stops, reminder once | n/a (typed: no speech) | PASS |
+| RL2d change after the run: reminder once, one card | PASS | PASS |
+
+**Limits:** not tested with a microphone. A change cuts off the team line if it is still waiting or playing; the team is on screen. Typed RL2c only checks that nothing breaks, since typing makes no sound.
+
 ### [M5] RZ re-test and scripted runner: RESOLVED on this PC, awaiting live check RL1–RL5 (fix session 2026-11-15, round 6)
 **Founder's RZ results (2026-11-15):** S6 "Re-run the analyst" re-ran only the analyst (pass, but the panel repeated the team and stage lines); S7 stop and yes passed. Failed on the PC: S1 the change's offer came only after the answer (typed too); S2 the restarted run was "Not verified"; S3 sounds; S4 "Okay, I will leave it as it is." started a team (typed and spoken); S5 "Hello? Yes?" got no response; S6 "Re-run the librarain" started a Librarian run with a confused answer.
 
@@ -1690,6 +1728,9 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M5 fix session, round 7 (2026-11-16)
+- Recorded RL2 first. Added runner scenarios RL2a–RL2d; before the fix they reproduced the founder's report (RL2a: change in the first stage, card shown, offer never spoken; RL2c/RL2d: the restart offer, not the reminder). Fixed in `session.py` (a change interrupts whatever is playing, one key for the reminder) and `manager.py` (reminder after a finished run). Stage line (`run.progress`), `FOUNDEROS_STAGE_DELAY_S`. `tests/test_voice_round7.py`. No microphone test.
+
 ### M5 fix session, round 6 (2026-11-15)
 - Built `scripts/voice_scenarios.py` (real backend, Ollama, Whisper, Kokoro; typed and spoken) and `tests/test_voice_scenarios_script.py` (it skips without Ollama). First spoken pass: S1+S2, S3, S6 FAIL. Fixed S3 (sounds written as "Ahem."/"Ahoy."; yes to an open card) and S6 (re-run lines); fixed two runner faults. Final: all 12 PASS. No microphone test.
 

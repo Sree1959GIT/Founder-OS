@@ -58,6 +58,7 @@ ACK_METRIC = "Checking that now."
 ACK_TEAM = "On it."
 MISSED = "Sorry, I didn't catch that."
 QUEUE_OFFER = "Your next question is ready. Say ask it, or drop it."
+CHANGE_REMINDER_END = "Say yes to restart with it."  # how `change_reminder` ends (founder RL2)
 QUEUED = "I'll keep that for when this run finishes."  # the lane's reply to a question asked mid-run
 STILL_WORKING = "Still working on it."
 SAY_AGAIN = "Okay. Say it again."
@@ -688,8 +689,17 @@ class VoiceSession:
             # line of the answer still waiting to be said. From here "yes" means the restart, so no other offer
             # stays open beside it; a change whose offer is already out is not offered a second time.
             self.offers.more = []
+            # Founder RL2 (2026-11-16): a change is said aloud at once, whatever is playing. Speech still going (the
+            # summary, a line between sentences, or one the founder spoke into a gap and so never paused) stops,
+            # by the barge-in path, and the offer comes next. The reminder after a finished run ("Your change … isn't
+            # in this answer yet.") is the same line the summary would end on, so it carries the same key: once.
+            if self.speaking() or self._current is not None or not self._says.empty():
+                await self._interrupt("change")
+            key = outcome.amendment_id
+            if outcome.reply.endswith(CHANGE_REMINDER_END):
+                key = f"{outcome.amendment_id}:reminder"
             # (The founder saying the same change again, after its offer, is answered with the offer again.)
-            if not self._change_out(outcome.amendment_id, or_said=False):
+            if not self._change_out(key, or_said=False):
                 await self._say(
                     "conversation",
                     outcome.reply,
@@ -697,7 +707,7 @@ class VoiceSession:
                     turn,
                     keep=True,
                     first=True,
-                    change=outcome.amendment_id,
+                    change=key,
                 )
         elif outcome.reply:
             await self._say("conversation", outcome.reply, outcome.run_id, turn, keep=True, first=True)

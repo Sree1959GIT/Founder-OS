@@ -24,6 +24,7 @@ from app.conversation.manager import (
     MAX_SESSIONS,
     ConversationError,
     ConversationManager,
+    change_reminder,
 )
 from app.decision.base import Decision, DecisionError, DecisionService, FakeDecisionProvider
 from app.engine.calibration import CalibrationStore
@@ -416,7 +417,8 @@ async def test_a_follow_up_after_a_decision_changes_that_decision_not_a_new_run(
     assert run.plan is not None and run.plan.intent == "decision"
     offer = await manager.turn("s40", "also make it a two person team")
     assert offer.kind == "amendment" and offer.amendment_id and offer.run_id == run.run_id
-    assert offer.reply == "That changes the decision. Restart with your change?"
+    # Founder RL2 (2026-11-16): after the answer, the reminder that the answer does not have the change.
+    assert offer.reply == change_reminder("also make it a two person team")
     assert len(manager.orchestrator.runs) == 1  # nothing started before the founder says yes
     accepted = manager.answer_amendment("s40", offer.amendment_id or "", True)
     new_run = manager.orchestrator.runs[accepted["run_id"]]
@@ -461,7 +463,7 @@ async def test_a_follow_up_to_the_dubai_answer_is_offered_not_run_at_once(financ
     run = manager.orchestrator.runs[first.run_id or ""]
     await run.task
     offer = await manager.turn("s40d", "also make it a two person team")
-    assert offer.amendment_id and offer.reply == "That changes the decision. Restart with your change?"
+    assert offer.amendment_id and offer.reply == change_reminder("also make it a two person team")  # founder RL2
     accepted = manager.answer_amendment("s40d", offer.amendment_id or "", True)
     new_run = manager.orchestrator.runs[accepted["run_id"]]
     await new_run.task
