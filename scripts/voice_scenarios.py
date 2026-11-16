@@ -488,7 +488,9 @@ async def s3(ch: Channel, r: Result) -> None:
 
 
 async def s4(ch: Channel, r: Result) -> None:
-    s = await ch.say("Okay, I will leave it as it is.", settle=4)
+    # Founder W4 (2026-11-16): "Okay, I will leave it as it is." now keeps things as they are (scenario W4); an
+    # unclear turn is still read back.
+    s = await ch.say("Dubai office maybe.", settle=4)
     r.steps.append(s)
     s.check("no team started", s.run_started is None)
     s.check('"Did you say: …? Say yes to look into it, or say it again."', _has(s.lines, "did you say") >= 1)
@@ -715,6 +717,140 @@ async def c_after(ch: Channel, r: Result) -> None:
     c.check(f'not "{OFFER}"', _has(c.lines, OFFER) == 0)
 
 
+RISKS_OFFER = "Want me to go through the risks?"
+LEAVE = "Okay, leaving it as it is."
+
+
+async def _answered_dubai(ch: Channel, r: Result) -> str | None:
+    s = await ch.say(DUBAI, settle=1)
+    r.steps.append(s)
+    if not s.check("a team started", s.run_started):
+        return None
+    assert s.run_started is not None
+    await ch.wait_finished(s.run_started)
+    await ch.after_answer(s.run_started)
+    await asyncio.sleep(3)
+    await ch.wait_quiet()
+    return s.run_started
+
+
+async def w1(ch: Channel, r: Result) -> None:
+    """Founder W1: the same change said twice after the reminder never says "Restarted." without a run."""
+    run_id = await _answered_dubai(ch, r)
+    if run_id is None:
+        return
+    first = await ch.say(CHANGE, settle=4)
+    r.steps.append(first)
+    first.check(f'"{REMINDER}"', _has(first.lines, REMINDER) == 1)
+    again = await ch.say(CHANGE, settle=4)
+    r.steps.append(again)
+    state = await ch.state()
+    marks = [a.get("status") for a in state.get("amendments", [])]
+    again.notes.append(f"cards: {marks}")
+    if again.run_started:
+        again.check('a restart is said as "Restarting with your change."', _has(again.lines, "restarting") >= 1)
+    else:
+        again.check("the reminder is said once more", _has(again.lines, REMINDER) == 1)
+        again.check('no card says "Restarted." (none accepted)', "accepted" not in marks)
+        again.check("the card is still open", marks.count("offered") == 1)
+    if again.run_started:
+        await ch.http.post(f"/api/runs/{again.run_started}/cancel")
+
+
+async def w2(ch: Channel, r: Result) -> None:
+    """Founder W2: a restart with the founder's change is "Figures verified · N assumptions", not "Not verified"."""
+    run_id = await _answered_dubai(ch, r)
+    if run_id is None:
+        return
+    c = await ch.say(CHANGE, settle=4)
+    r.steps.append(c)
+    yes = await ch.say("yes", settle=3)
+    r.steps.append(yes)
+    if not yes.check("yes restarted", yes.run_started):
+        return
+    assert yes.run_started is not None
+    await ch.wait_finished(yes.run_started)
+    await ch.after_answer(yes.run_started)
+    run = (await ch.http.get(f"/api/runs/{yes.run_started}")).json()
+    result = run.get("result") or {}
+    v = result.get("verification") or {}
+    yes.notes.append(f"badge: {v.get('state')}; reasons: {v.get('reasons')}")
+    for a in result.get("agents") or []:
+        yes.notes.append(f"{a.get('name')}: status={a.get('status')} verified={a.get('verified')}")
+    lane = [e["data"].get("text", "") for e in ch.events.since(0, type="narration", run_id=yes.run_started)]
+    yes.notes.append(f"lane: {lane}")
+    yes.check("$43,770.86 a month", "43770.86" in json.dumps(result) or "43,770.86" in json.dumps(result))
+    yes.check("badge: figures verified with assumptions", v.get("state") == "assumptions")
+
+
+async def w3(ch: Channel, r: Result) -> None:
+    """Founder W3: after a decision answer, ONE offer said and shown; yes walks through the risks; no does nothing."""
+    run_id = await _answered_dubai(ch, r)
+    if run_id is None:
+        return
+    s = r.steps[-1]
+    if isinstance(ch, Spoken):
+        said = ch.said_since(0)
+        s.notes.append(f"said: {said}")
+        s.check(f'"{RISKS_OFFER}" said once', _has(said, RISKS_OFFER) == 1)
+    shown = [e["data"].get("text", "") for e in ch.events.since(0, session_id=ch.session_id) if e["type"] == "recap"]
+    s.notes.append(f"recap shown: {shown}")
+    s.check(f'"{RISKS_OFFER}" shown in the chat once', _has(shown, RISKS_OFFER) == 1)
+    y = await ch.say("yes", settle=5)
+    r.steps.append(y)
+    y.check("no run started", y.run_started is None)
+    y.check("the risks were gone through (at least one line)", len([ln for ln in y.lines if ln.strip()]) >= 1)
+    y.check("nothing asked again", _has(y.lines, RISKS_OFFER) == 0)
+    n = await ch.say("no", settle=3)
+    r.steps.append(n)
+    n.check("no does nothing (no run)", n.run_started is None)
+
+
+async def w4(ch: Channel, r: Result) -> None:
+    """Founder W4: "Ok, I will leave it as it is." after an answer: "Okay, leaving it as it is.", no read-back."""
+    run_id = await _answered_dubai(ch, r)
+    if run_id is None:
+        return
+    for phrase in ("Ok, I will leave it as it is.", "Keep it as is.", "That's fine."):
+        s = await ch.say(phrase, settle=3)
+        r.steps.append(s)
+        s.check("no team started", s.run_started is None)
+        s.check('no "Did you say"', _has(s.lines, "did you say") == 0)
+        s.check(f'"{LEAVE}"', _has(s.lines, LEAVE) == 1)
+
+
+async def w5(ch: Channel, r: Result) -> None:
+    """Founder W5: "Re-run the Analyst." after a team without one uses the last decision team that had one."""
+    run_id = await _answered_dubai(ch, r)
+    if run_id is None:
+        return
+    lb = await ch.say("Re-run the Librarian.", settle=2)
+    r.steps.append(lb)
+    if lb.run_started:
+        await ch.wait_finished(lb.run_started)
+        await ch.after_answer(lb.run_started)
+        lb.notes.append(
+            f"team: {[e['data'].get('name') for e in ch.events.since(0, type='agent.spawned', run_id=lb.run_started)]}"
+        )
+    past = await ch.say("What did we decide before about Dubai?", settle=2)
+    r.steps.append(past)
+    if past.run_started:
+        await ch.wait_finished(past.run_started)
+        await ch.after_answer(past.run_started)
+        names = [e["data"].get("name") for e in ch.events.since(0, type="agent.spawned", run_id=past.run_started)]
+        past.notes.append(f"team: {names}")
+    a = await ch.say("Re-run the Analyst.", settle=3)
+    r.steps.append(a)
+    a.check('no "not on this team"', _has(a.lines, "not on this team") == 0)
+    a.check('"Re-running only the Financial Analyst on the Dubai question"', _has(a.lines, "on the Dubai") >= 1)
+    if a.check("a re-run started", a.run_started):
+        assert a.run_started is not None
+        await ch.wait_finished(a.run_started)
+        ran = _reran(ch, a.run_started)
+        a.notes.append(f"agents that worked again: {ran}")
+        a.check("only the Financial Analyst ran", ran == ["Financial Analyst"])
+
+
 SCENARIOS = {
     "S1+S2": s1_s2,
     "S3": s3,
@@ -726,6 +862,11 @@ SCENARIOS = {
     "RL2b": c_last,
     "RL2c": c_summary,
     "RL2d": c_after,
+    "W1": w1,
+    "W2": w2,
+    "W3": w3,
+    "W4": w4,
+    "W5": w5,
 }
 
 

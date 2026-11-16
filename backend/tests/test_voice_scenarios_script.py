@@ -34,4 +34,20 @@ def test_without_ollama_it_skips_cleanly(monkeypatch: pytest.MonkeyPatch, capsys
 
 
 def test_every_founder_scenario_is_scripted() -> None:
-    assert list(load().SCENARIOS) == ["S1+S2", "S3", "S4", "S5", "S6", "S7", "RL2a", "RL2b", "RL2c", "RL2d"]
+    assert list(load().SCENARIOS) == [
+        "S1+S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "RL2a",
+        "RL2b",
+        "RL2c",
+        "RL2d",
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "W5",
+    ]

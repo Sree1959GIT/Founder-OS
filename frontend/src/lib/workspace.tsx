@@ -111,6 +111,7 @@ type Action =
   | { type: "result"; runId: string; result: ChatResult }
   | { type: "run-ended"; runId: string; status: RunView["status"] }
   | { type: "amendment"; id: string; status: "accepted" | "declined" }
+  | { type: "card-last"; id: string }
   | { type: "queue"; id: string; status: "accepted" | "declined" };
 
 export const initialState: WorkspaceState = {
@@ -414,6 +415,10 @@ export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       if (!run || run.status !== "running") return state;
       return { ...state, runs: { ...state.runs, [action.runId]: { ...run, status: action.status } } };
     }
+    case "card-last": {
+      const card = state.turns.filter((t) => t.role === "amendment" && t.amendmentId === action.id && t.status === "offered");
+      return card.length ? { ...state, turns: [...state.turns.filter((t) => !card.includes(t)), ...card] } : state;
+    }
     case "amendment":
       return {
         ...state,
@@ -567,11 +572,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const queuedBefore =
           outcome.queue_id !== null &&
           stateRef.current.turns.some((t) => t.role === "queued" && t.queueId === outcome.queue_id);
-        if (outcome.reply && !outcome.amendment_id && (!outcome.queue_id || queuedBefore)) {
+        // Founder W1 (2026-11-16): the same change said again gets its reminder again. Its card is already on screen
+        // (one change, one card), so the reply is shown and the open card moves below it: never only an older card
+        // that says "Restarted.".
+        const amendedBefore =
+          outcome.amendment_id !== null &&
+          stateRef.current.turns.some((t) => t.role === "amendment" && t.amendmentId === outcome.amendment_id);
+        if (outcome.reply && (!outcome.amendment_id || amendedBefore) && (!outcome.queue_id || queuedBefore)) {
           dispatch({
             type: "turn",
             turn: { id: `reply-${Date.now()}`, role: "lane", text: outcome.reply, kind: "reply" },
           });
+          if (amendedBefore && outcome.amendment_id) dispatch({ type: "card-last", id: outcome.amendment_id });
         }
         // An offer answered in words, typed or spoken (M5 re-test R8): its card shows the answer, and a restarted
         // run is followed under the title its button would have given it, so the canvas shows the new figures.

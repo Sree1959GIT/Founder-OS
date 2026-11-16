@@ -272,8 +272,8 @@ async def test_the_on_screen_restart_applies_the_change_too(finance: Any) -> Non
     answer = manager.answer_amendment(first.session_id, offer.amendment_id or "", True)  # the card's button
     new = await finished(manager, answer["run_id"])
     assert "$43,770.86" in new.answer and "(-2.58)" in new.answer
-    late = await manager.turn(first.session_id, "yes")  # the offer has been answered: "yes" is only a noise now
-    assert late.kind == "backchannel" and not late.started_run
+    late = await manager.turn(first.session_id, "yes")  # the change has been answered: "yes" takes the new offer
+    assert not late.started_run and late.answered is None
 
 
 async def test_a_declined_change_changes_nothing(finance: Any) -> None:
@@ -282,7 +282,7 @@ async def test_a_declined_change_changes_nothing(finance: Any) -> None:
     await finished(manager, first.run_id)
     offer = await manager.turn(first.session_id, "Assume 3 hires.")
     declined = await manager.turn(first.session_id, "No.")
-    assert declined.reply == "Okay, I'll leave it as it is." and not declined.started_run
+    assert declined.reply == "Okay, leaving it as it is." and not declined.started_run
     assert declined.answered == {"what": "amendment", "id": offer.amendment_id, "accept": False}
     assert manager.sessions[first.session_id].run_id == first.run_id
 

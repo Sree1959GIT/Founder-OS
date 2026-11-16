@@ -76,7 +76,8 @@ def test_the_founders_unclear_turns_are_not_requests(text: str) -> None:
     assert not clear_request(text)
 
 
-@pytest.mark.parametrize("text", ["Okay, I will leave it as it is.", "The Dubai thing worries me"])
+# Founder W4 (2026-11-16): "Okay, I will leave it as it is." now keeps things as they are (test_voice_round8).
+@pytest.mark.parametrize("text", ["Dubai office maybe.", "The Dubai thing worries me"])
 async def test_an_unclear_turn_is_read_back_and_runs_only_on_yes(finance: Any, text: str) -> None:
     """RY4's "Okay, I will leave it as it is." started a team (Financial Analyst, Librarian, Perspective lens,
     Devil's Advocate). Now it is read back, and nothing runs unless the founder says yes."""

@@ -112,6 +112,25 @@ def is_noise(text: str) -> bool:
     return bool(words) and bool(FILLER.match(words) or _NOISE_TOO.match(words))
 
 
+# Founder W4 (2026-11-16): "Ok, I will leave it as it is.", "leave it", "keep it as is", "that's fine": keep things as
+# they are. Never read back, never a team.
+_LEAVE = re.compile(
+    r"^(?:(?:ok|okay|alright|all right|fine|no|yes|yeah|right|then|so)[,\s]+)*"
+    r"(?:(?:i(?:'ll| will| would)?|let's|we(?:'ll| will)?|just)\s+)*"
+    r"(?:leave it|keep it|leave things|keep things)(?:\s+(?:as it is|as is|like that|like this|alone|there))?"
+    r"(?:\s+(?:then|for now|please))*[\s.!]*$"
+    r"|^(?:(?:ok|okay|alright|no)[,\s]+)*(?:that's|that is|it's|it is|that'll do|that will do)\s*(?:fine|ok|okay|good)?"
+    r"(?:\s+(?:then|for now|thanks|thank you))*[\s.!]*$",
+    re.I,
+)
+
+
+def is_leave(text: str) -> bool:
+    """ "Ok, I will leave it as it is." and its close variants (founder W4): the founder keeps things as they are."""
+    words = plain(text)
+    return bool(words) and bool(_LEAVE.match(words)) and words not in ("it's", "it is", "that's", "that is")
+
+
 def is_greeting(text: str) -> bool:
     """ "Hello", "Hi there", "Hello? Yes?" (founder re-test U4): a greeting, answered with one, never a team."""
     return bool(_GREETING.match(text.strip()))

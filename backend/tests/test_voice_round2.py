@@ -279,8 +279,10 @@ async def test_voice_metric_answer_is_a_summary_and_the_detail_is_on_offer(finan
         ("answer", "Want the detail?"),
     ]
     await session.control({"type": "text", "text": "no thanks"})
-    await wait_for(lambda: wire.of("say")[-1]["text"] == "Okay. The rest is on screen.")
-    assert session.offers.more == []
+    # Founder W3 (2026-11-16): "no" to the offer does nothing.
+    await wait_for(lambda: session.offers.more == [])
+    await asyncio.sleep(0.2)
+    assert wire.of("say")[-1]["text"] == "Want the detail?"
     await session.close()
 
 

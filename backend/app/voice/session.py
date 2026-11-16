@@ -715,7 +715,7 @@ class VoiceSession:
             outcome.kind == "backchannel"
             and self.offers.more
             and not self._offer_out(self.offers.more[0])
-            and not self.manager.session(self.session_id).asked
+            and self.manager.session(self.session_id).asked in (None, *self._more_asked())
             and self.manager.state(self.session_id)["running"] is False
         ):
             # Founder re-test R5: "uh-huh" over the summary cut it off before its offer, so the turn ended without
@@ -725,6 +725,11 @@ class VoiceSession:
             self.offers.amendment_id = outcome.amendment_id
         if outcome.answered:
             self.offers.amendment_id = self.offers.queue_id = None
+
+    def _more_asked(self) -> list[Any]:
+        """The lane's own record of the offer of more (founder W3) is not a question that blocks the voice's offer."""
+        asked = self.manager.session(self.session_id).asked
+        return [asked] if asked is not None and asked.kind == "more" else []
 
     def _offer_out(self, segment: Segment) -> bool:
         """Has this offer been said, or is it on its way out (waiting to be said, or being made right now)?"""
@@ -776,10 +781,11 @@ class VoiceSession:
             amendment_id, self.offers.amendment_id = self.offers.amendment_id, None
             return await self._offer_answered("amendment", amendment_id, bool(_RESTART.match(text)), turn)
         if self.offers.more and (_MORE.match(text) or _NO_MORE.match(text)):
+            self.manager.more_taken(self.session_id)
             if _NO_MORE.match(text):
+                # Founder W3: "no" to the offer does nothing (the rest is on screen).
                 self.offers.more = []
                 turn.kind = "more_declined"
-                await self._say("conversation", "Okay. The rest is on screen.", None, turn, keep=True)
                 return True
             turn.kind = "more"
             await self._say_more(said, turn)

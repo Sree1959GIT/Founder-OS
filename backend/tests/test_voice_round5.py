@@ -154,7 +154,10 @@ async def test_a_bare_yes_with_nothing_asked_never_runs_as_a_question(finance: A
     await finished(manager, first.run_id)
     runs_before = len(manager.orchestrator.runs)
     outcome = await manager.turn(first.session_id, heard, spoken=True)
-    assert outcome.kind == "backchannel" and not outcome.started_run and outcome.reply == ""
+    # Founder W3 (2026-11-16): the answer ends on one offer, so a yes takes it (the risks); it never starts a run.
+    assert not outcome.started_run and "?" not in outcome.reply
+    again = await manager.turn(first.session_id, heard, spoken=True)
+    assert again.kind == "backchannel" and not again.started_run and again.reply == ""
     assert len(manager.orchestrator.runs) == runs_before
 
 
