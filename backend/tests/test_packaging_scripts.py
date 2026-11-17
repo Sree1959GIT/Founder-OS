@@ -80,8 +80,10 @@ def test_reset_refuses_while_the_backend_is_running(monkeypatch: pytest.MonkeyPa
 
 
 def test_reset_rejects_a_bad_workspace_id(tmp_path: Path) -> None:
-    with pytest.raises(ValueError):
-        load("reset_demo").reset(make_settings(tmp_path), "../outside")
+    settings, reset_demo = make_settings(tmp_path), load("reset_demo")
+    for bad in ("../outside", "backups"):
+        with pytest.raises(ValueError):
+            reset_demo.reset(settings, bad)
 
 
 # --- download_models ------------------------------------------------------------------------------------------------

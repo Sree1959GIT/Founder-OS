@@ -40,6 +40,8 @@ def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
 
 def reset(settings: Settings, workspace: str, keep_settings: bool = True, now: datetime | None = None) -> Path:
     """Back up and reset one workspace. Returns the backup folder."""
+    if workspace == "backups":  # data/backups/ holds the backups themselves
+        raise ValueError("the workspace 'backups' cannot be reset with this script")
     stamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
     vault = settings.workspace_vault_dir(workspace)
     data = settings.workspace_data_dir(workspace)
@@ -88,7 +90,7 @@ def main() -> int:
         return 0
     try:
         backup = reset(settings, workspace, keep_settings=not args.settings)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         print(f"[ERROR] {exc}")
         print("        Is a file still open (Obsidian, Excel, an editor)? Close it and run this again.")
         return 1

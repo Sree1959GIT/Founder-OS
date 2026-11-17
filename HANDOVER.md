@@ -7,7 +7,7 @@
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** **M6: Windows packaging, polish & demo** (M6a in progress on `claude/m6a-packaging-demo`: packaging, demo, M5 carry-overs; M6b = F panels and G pop-up agent window). M0 to M5 are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-16 (M5 fix round 8, after the founder's live check of round 7)
+- **Last updated:** 2026-11-17 (M6a: packaging, demo, M5 carry-overs)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -20,7 +20,7 @@
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
 | M5 | Voice pipeline | DONE, awaiting Major gate (live check RM1–RM6) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Round 8, 2026-11-16: W1–W5 (a repeated change, the badge after a change, one offer after every decision answer, "leave it", re-run from the last decision team). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
-| M6 | Windows packaging, polish & demo | NOT STARTED | |
+| M6 | Windows packaging, polish & demo | IN PROGRESS (~45 %) | **M6a** (Light gate): `run.bat`/`setup.bat` from a fresh clone (port check naming the old process, Docker/Qdrant, preflight for Ollama at `OLLAMA_BASE_URL`), `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5. **M6b** next: F panels, G pop-up agent window, TTS latency, then the Major gate (fresh install with `run.bat`) |
 
 ## Review gates (every PR passes all four)
 | # | Gate | Who | Pass condition |
@@ -64,12 +64,12 @@
 ## Current session
 - Started (UTC): 2026-11-17 02:31 (local Windows session, **M6a**, partial PR "M6 (partial): packaging, demo and M5 carry-overs", Light gate, time-box 90 minutes), branch `claude/m6a-packaging-demo` from `origin/main` (M5 ACCEPTED, PR #10 merged). F (panels) and G (pop-up agent window) are M6b, not this session.
 - Plan:
-  - [ ] (6) M5 carry-overs, reproduced with `scripts/voice_scenarios.py` first: closing offer sometimes missing; "Ok, I will leave as it is"; restart offered for a change already in the answer (two hires = default); "yes" misheard (STT vocabulary/repairs); "yes" -> risks walk-through
-  - [ ] (1) `setup.bat`/`run.bat` from a fresh clone: Ollama at `OLLAMA_BASE_URL`, Qdrant container, clear messages, port-8000-in-use check naming the old process
-  - [ ] (2) `scripts/download_models.py`: qwen3:8b, nomic-embed-text (over Ollama's HTTP API), Whisper small.en, Kokoro
-  - [ ] (5) Clean demo data: shipped sample vault checked; `scripts/reset_demo.py` + `reset_demo.bat`
-  - [ ] (3) README for a fresh install; (4) `docs/DEMO_SCRIPT.md` (PRD §9)
-  - [ ] PRD §9 item 6 (barge-in 1 s) and §12 (Kokoro licence decision); checks, self-review, PR, CI
+  - [x] (6) M5 carry-overs, reproduced with `scripts/voice_scenarios.py` first: closing offer sometimes missing; "Ok, I will leave as it is"; restart offered for a change already in the answer (two hires = default); "yes" misheard (STT vocabulary/repairs); "yes" -> risks walk-through
+  - [x] (1) `setup.bat`/`run.bat` from a fresh clone: Ollama at `OLLAMA_BASE_URL`, Qdrant container, clear messages, port-8000-in-use check naming the old process
+  - [x] (2) `scripts/download_models.py`: qwen3:8b, nomic-embed-text (over Ollama's HTTP API), Whisper small.en, Kokoro
+  - [x] (5) Clean demo data: shipped sample vault checked; `scripts/reset_demo.py` + `reset_demo.bat`
+  - [x] (3) README for a fresh install; (4) `docs/DEMO_SCRIPT.md` (PRD §9)
+  - [x] PRD §9 item 6 (barge-in 1 s) and §12 (Kokoro licence decision); checks, self-review, PR, CI
 
 Previous session (2026-11-16, round 8):
 - Started (UTC): 2026-11-16 (local Windows session, fix round 8 for the M5 Major gate, time-box 45 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
@@ -249,6 +249,14 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### Packaging and demo (M6a, 2026-11-17)
+- **`run.bat`** is the one command. On a fresh clone (no `.venv` or no `frontend\node_modules`) it runs `setup.bat` first. Every start: it refuses ports 8000 and 3000 when taken and names the process (`scripts/check_ports.ps1`: PID, name, command line, "an old FounderOS backend" when the command line has `app.main:create_app`, and the `Stop-Process -Id` to run); checks Docker is installed **and running** (`docker info`) before `docker compose up -d qdrant`; prints a preflight (`scripts/preflight.py`: Ollama at `OLLAMA_BASE_URL` with its version and the configured models, Qdrant `/readyz`, the voice models), each line OK or MISSING with the command that fixes it; then waits up to 90 s for `/api/health` before opening the browser. Nothing missing stops the start; only a taken port does.
+- **`setup.bat`** also checks Node 20.19+ and npm, and that Docker is running, and downloads the models with **`scripts/download_models.py`**: the Ollama models (`OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, `FAST_LANE_MODEL`) through Ollama's HTTP `/api/pull` with progress, so Ollama in Docker needs no `docker exec`; then Whisper `small.en`/`base.en` and Kokoro through the existing `download_voice_models.py`. `--check` only reports; `--no-voice` / `--no-ollama`. The old `:ensure_model` block is gone.
+- **Clean demo data.** The shipped sample vault (`sample_data/vault/`, 7 files) has no test memos: `decisions/2026-11-06-open-dubai-office.md` and `notes/dubai-office.md` exist only in your runtime vault (`vault/default/`, git-ignored), made by earlier test runs. **`reset_demo.bat`** (`scripts/reset_demo.py`) moves `vault/<ws>/` and `data/<ws>/` to `data/backups/reset-<UTC time>-<ws>/` (nothing deleted), restores the sample notes, keeps `ui_settings.json` (`--settings` resets it too), and refuses while port 8000 answers. The next start reloads the Northwind data and re-indexes (the sync removes stale Qdrant vectors). **I did not run it on your data**: that is checklist step PK4.
+- **Docs:** README has a fresh-install section (requirements table, what setup and run do, models, reset, troubleshooting, VRAM/latency notes from your PC). `docs/DEMO_SCRIPT.md` is a 10-minute demo in PRD §9 order, with a "before the demo" list and a "what to do if" table. PRD §9 item 6 now says barge-in at 1 s; PRD §12 has the Kokoro licence decision for v1.
+- **Not done in M6a (M6b):** F panels, G pop-up agent window, TTS latency (Kokoro on GPU or int8), the M6 Major gate. `setup.bat` was not re-run end to end on this PC (it would reinstall, against your rule); its changed parts were checked by reading and `run.bat`'s port path was run live. PK1 is the fresh-clone check.
+- **M5 carry-overs (X1–X5):** see Founder feedback, top item.
+
 ### Voice (M5)
 **Round 4 (2026-11-15, after your RX1–RX7 re-test; this replaces everything below where they differ)**
 - **A yes is a yes, whatever its marks (T2).** Whisper wrote your "yes" as "Yes?", the lane's pattern for yes did not allow a question mark, and "Yes?" went to the Advisor as a new question (your `decision_log.jsonl` shows it at 07:09:57 UTC, classed as chit-chat: hence "Not run"). Answers are now matched without case and punctuation: "Yes?", "yes.", "Yeah!", "okay?", "Yep.", "Sure!", "Go ahead.", "Do it!", "Restart?" all answer the offer just made, typed or spoken; so do "No?" and "Keep going.". A listening noise ("mm") between the offer and your yes no longer closes the offer. A bare "Yes?" with nothing asked is a listening noise, never a question for the team.
@@ -782,17 +790,27 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M6 session)
-0. **Gate check:** M5 is a **Major** gate. The founder runs RY1 to RY7 (M5) below (RX2, RX3 and RX6 text passed on 2026-11-15) and merges the PR. Act on any "Founder feedback" first.
-0b. M6 also carries the founder's decisions of 2026-11-13 (PRD §12): F expandable left and right panels with a collapsible left panel; G a movable pop-up agent window with a graphical view of each agent's work (time-boxed); the Kokoro licence point; TTS latency. v1.1: H, I, J.
-1. M6 (PRD §8): final `setup.bat`/`run.bat` (they now install the `voice` extra and download the voice models), README and the demo script, VRAM/latency tuning notes.
-2. Voice latency: try Kokoro on the GPU (`onnxruntime-gpu` in place of `onnxruntime`, checked against faster-whisper's Silero use) or `kokoro-v1.0.int8.onnx` (GitHub only); measure with `scripts/voice_bench.py`. Target: metric answer p50 under 3 s.
-3. Voice: Laya for the backchannel decision once fine-tuned (C8); a spoken "Ask it now" for the RY5 queue offer already works ("ask it").
-4. After M5: Laya fine-tuning (C8) and Jev (C9), which the founder deferred. Then decide P1 again with real numbers.
-3. Dubai verification: let a figure quoted from a decision on record carry that record as its source (Current state, M4 limits).
-4. Smaller ideas: reload a conversation after a page refresh; a mapping form for Excel files that fail; count Jev in the cost ledger; a cash metric; `engine/embeddings.OllamaEmbedder` delegating to `OllamaProvider.embed`.
+## Next steps (for the M6b session)
+0. **Gate check:** M6a is a Light partial PR. The founder runs PK1–PK8 below and merges it. Act on any "Founder feedback" first.
+1. **M6b (PRD §8, founder decisions of 2026-11-13):** F expandable left and right panels with a collapsible left panel; G a movable pop-up agent window with a graphical view of each agent's work (time-boxed).
+2. **TTS latency:** try Kokoro on the GPU (`onnxruntime-gpu`, checked against faster-whisper's Silero use) or `kokoro-v1.0.int8.onnx` (`download_voice_models.py --kokoro-int8`); measure with `scripts/voice_bench.py`.
+3. **X1** (closing offer sometimes missing) was not reproduced. If the founder sees it again, note the question and the chat line, and add a runner scenario with that question. The code paths that can drop it: a frame with no options, or the "costs" fallback with no cost sentence (`app/voice/spoken.py` `summarise`).
+4. A re-run with a change *after* the answer ("Re-run the analyst, assume two hires") still re-runs the team when the number is already the base case (`_already_in` covers the offer path only).
+5. **M6 Major gate:** a fresh clone into a new folder, `run.bat`, then `docs/DEMO_SCRIPT.md` end to end.
+6. After M6: Laya fine-tuning (C8) and Jev (C9); Dubai verification of figures quoted from a decision on record; smaller ideas (reload a conversation after refresh, a mapping form for failing Excel files, Jev in the cost ledger, a cash metric, `OllamaEmbedder` delegating to `OllamaProvider.embed`).
 
 ## Windows verification checklist (for the founder)
+**M6a (Light gate), about 15 minutes. Run this one first: PK1 to PK8.** Windows PowerShell 5.1.
+
+- **PK1. Fresh clone, one command.** Close every FounderOS window. In a **new** folder: `git clone -b claude/m6a-packaging-demo https://github.com/Sree1959GIT/Founder-OS.git D:\FounderOS-fresh; Set-Location D:\FounderOS-fresh; .\run.bat` **Expect:** "First run: FounderOS is not set up yet, so setup.bat runs now", the install, the model step (with your Docker Ollama: "have qwen3:8b", "have nomic-embed-text"; then the voice models download, about 900 MB), a preflight block, the backend and frontend windows, "Backend is up", and the browser with the Northwind KPI cards (Runway 10.65 mo). Close both windows. Delete `D:\FounderOS-fresh` afterwards, or keep it for M6b.
+- **PK2. Port in use, named.** In `D:\Founder-OS`: `.\run.bat`, wait for the browser, then run `.\run.bat` **again** in a second PowerShell. **Expect:** `[ERROR] Port 8000 is already in use by an old FounderOS backend: python.exe (PID n).`, its command line, `Stop-Process -Id n`, and nothing else starts. Run the `Stop-Process` it prints (and close the frontend window), then `.\run.bat` again: it starts.
+- **PK3. Something missing is named.** `docker stop ollama`, then `.venv\Scripts\python.exe scripts\preflight.py` **Expect:** `[MISSING] Ollama is not answering at http://localhost:11434.` with "docker start ollama". `docker start ollama` and run it again: `[OK] Ollama 0.32.1 …`. Then `.venv\Scripts\python.exe scripts\download_models.py --check` **Expect:** every model "have …" and "All models are there.".
+- **PK4. Reset to the clean demo.** Close FounderOS. `.\reset_demo.bat`, answer `y`. **Expect:** "Done. Your old vault and data are in …\data\backups\reset-…-default". `Get-ChildItem vault\default -Recurse -File | Select-Object -Expand Name` **Expect:** the 7 sample files (no `2026-11-06-open-dubai-office.md`, no `dubai-office.md`, no `priorities.md`). Settings are kept. `.\run.bat`: the Northwind data loads; **Decisions** shows only the SDR decision.
+- **PK5. "Leave as it is" (X2).** Ask **"Should we start a Dubai office?"** (voice, Hands-free) and wait for the answer. Say **"Ok, I will leave as it is."** **Hear:** "Okay, leaving it as it is." No "Did you say…?". Also **"Leave that as it is."** and **"Keep as is."**: the same.
+- **PK6. A change already in the answer (X3).** After a Dubai answer say **"Assume two hires."** **Hear:** "That's already in this answer: it assumes two local hires. Nothing to restart." No card, no run. Then **"Assume three hires."** **Hear:** "Your change to three hires isn't in this answer yet. Say yes to restart with it."
+- **PK7. Yes, then the risks (X4, X5).** After a fresh Dubai answer, **hear** "Want me to go through the risks?" once. Say **"yeah"** (or "yes"). **Hear:** the risks, and no new team. If a yes is ignored, read your turn in the chat (what Whisper wrote) and tell me the word.
+- **PK8. Docs.** Skim `README.md` (Fresh install) and `docs/DEMO_SCRIPT.md`. Tell me anything that is wrong for your PC.
+
 **M5 live check after fix round 8 of 2026-11-16. Run this one first: RM1 to RM6 (about 10 minutes).** Headphones, Hands-free, approval at Never, Windows PowerShell 5.1 from `D:\Founder-OS`.
 
 - **RM1. The right code, in slow mode.** Close **every** FounderOS window, then `Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue` **Expect:** nothing. Then `git pull origin claude/m5-voice; $env:FOUNDEROS_STAGE_DELAY_S = "8"; .\run.bat`.
@@ -1312,6 +1330,21 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M5 → M6a] Carry-overs from the M5 gate (X1–X5): X2, X3, X4 RESOLVED on this PC, X1 not reproduced, X5 confirmed; awaiting PK5–PK7
+**Founder's items (M5 Gate log, 2026-11-16):** X1 closing offer sometimes missing; X2 "Ok, I will leave as it is" not recognised; X3 restart offered for a change already in the answer (two hires = default); X4 "yes" sometimes misheard (add to STT vocabulary/repairs); X5 confirm "yes" → risks walk-through.
+
+**Reproduced first** with new runner scenarios X1–X5 (`scripts/voice_scenarios.py`), on the unchanged code: **X2 FAIL** typed ("Did you say: Ok, I will leave as it is? …"; also "Leave that as it is.", "Keep as is."); **X3 FAIL** typed ("Assume two hires." got "Your change to two hires isn't in this answer yet…" and a card); **X4 FAIL** spoken (a spoken "Yeah." was written by Whisper as **"Yaffen."**, so nothing answered the offer; "Yes.", "Yes, please." and "Yes, go ahead." passed); **X1 PASS** spoken (two decision answers in a row, each ended on one offer, said and shown).
+
+**Causes and what changed:**
+- **X2:** the leave pattern needed "it" after "leave". Now also "leave as it is", "leave that/this as it is", "keep as is", "leave it like it is", "let it be" (`app/conversation/classifier.py`). "keep going" and "Leave the Dubai office as it is" are still not "leave".
+- **X3:** any change was treated as a change. Now, before an offer, the numbers in the founder's words are compared with the base case of the frame that run used: if every one is the same, the reply is "That's already in this answer: it assumes two local hires. Nothing to restart." (while the team works: "The team is already assuming …"), with no card (`_already_in`, `app/conversation/manager.py`). After a restart with three hires, "Assume three hires." is "already in" too. Two older tests that used "two" as the change now use "three".
+- **X4:** `app/voice/domain.py` repairs a whole turn that is one yes-like word ("Yaffen.", "Yas.", "Yess", "Yesh", "Jess", "Yah", "Yea", "Yeh", "Ya") to "Yes."; "Yes." and "Yeah." stay as they are, and words inside a sentence are never touched. The recogniser prompt now ends "Yes. Yeah. Yes, please. No.". "Yes, thank you." and "Yes sir." count as yes.
+- **X1:** not reproduced (2 of 2 spoken, plus W3 in round 8). No change; Next steps 3 names the code paths that could drop it.
+- **X5:** "yes" after the offer goes through the risks and starts no team; "no" does nothing (runner X5 = W3).
+- Tests: `backend/tests/test_m6a_carryovers.py`; runner scenarios X1–X5.
+
+**Runner after the fix (this PC, 2026-11-17):** RUNNER_AFTER
+
 ### [M5] Live check after round 7: W1–W5 (fix session 2026-11-16, round 8): RESOLVED on this PC (W2 not reproduced), awaiting live check RM1–RM6
 **Founder's result (2026-11-16):** CI green; RL2a, RL2b, RL2c, RL2d PASS. Then:
 - **W1.** "Assume three hires." said twice after the reminder showed "Restarted." though nothing restarted until "Yes".
@@ -1751,6 +1784,9 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
+0e. **From M6a (2026-11-17), none blocking:**
+   - **X3 compares with the base case only.** The Dubai frame's hires are low 1 / base 2 / high 3. "Assume two hires" now counts as already in the answer, although a restart would also narrow low and high to 2. That is my reading of "two hires = default"; say if you want that narrowing restart offered instead.
+   - **Reset keeps your Settings** (`ui_settings.json`: approval policy, cloud switch, voice mode). `reset_demo.bat --settings` resets them too. Say if the default should be the other way.
 0d. **From M5 fix round 5 (2026-11-15), none blocking:**
    - **Rule U0 is strict by design**: a turn of fewer than three words, or one that is not a question or a request ("The Dubai thing worries me"), is read back before any team runs. Say if it asks too often.
    - **U1's cause is my reading of the logs, not proven** (the recogniser's confidence is not logged). RZ2 is the check.
@@ -1779,6 +1815,12 @@ Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
 2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
+## Decisions made (M6a session, 2026-11-17)
+- Kokoro licence for v1: keep `kokoro-onnx` with phonemizer/espeak-ng, installed from PyPI by setup; swap to a permissive G2P before any sale (founder; PRD §12).
+- PRD §9 item 6 follows the 1 s barge-in decision (founder; PRD §12).
+- Packaging: `run.bat` runs setup on a fresh clone and stops only for a taken port; Ollama models are pulled over HTTP; reset moves data to `data/backups/` and never deletes (PRD §12).
+- X3: a change whose numbers all equal the base case of the answer's frame is "already in this answer": no offer, no card.
+
 ## Decisions made
 See PRD §12 (Decision log). Summary of the planning session on 2026-11-02:
 - New repo, text-first build order (voice last), milestone-based sessions of about 2 hours.
@@ -1795,6 +1837,9 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M6a session (2026-11-17)
+- Plan committed; runner scenarios X1–X5 reproduced X2, X3 (typed) and X4 (spoken: "Yeah." heard as "Yaffen.") on the unchanged code; X1 passed; fixes X2–X4 with tests.
+- `run.bat`/`setup.bat`, `check_ports.ps1`, `preflight.py`, `download_models.py`, `reset_demo.py`/`.bat` with tests; README fresh install; `docs/DEMO_SCRIPT.md`; PRD §9 item 6 and §12.
 ### M5 fix session, round 8 (2026-11-16)
 - Recorded RL2a–RL2d PASS; runner scenarios W1–W5; fixed W1 (chat), W3, W4, W5; W2 not reproduced; full runner set; HANDOVER (RM1–RM6, `.\run.bat` typo).
 ### M5 fix session, round 7 (2026-11-16)
