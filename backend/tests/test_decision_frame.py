@@ -814,7 +814,9 @@ async def test_figures_mid_run_offer_a_rerun_that_uses_them(finance: Any, vault:
     started = await manager.turn("s", DUBAI)
     await _until(lambda: manager.orchestrator.runs[started.run_id].plan is not None)
     outcome = await manager.turn("s", "Rent is $4,000 a month, 3 local hires")
-    assert outcome.kind == "amendment" and outcome.amendment_id and "your figures" in outcome.reply
+    # Founder re-test S4 (2026-11-14): the same offer, in the same words, as after the answer.
+    assert outcome.kind == "amendment" and outcome.amendment_id
+    assert outcome.reply == "That changes the decision. Restart with your change?"
     answer = manager.answer_amendment("s", outcome.amendment_id, True)
     provider.release.set()
     result = await manager.orchestrator.runs[answer["run_id"]].task
@@ -1192,6 +1194,18 @@ def test_the_lead_acknowledges_the_founders_change(ctx: ToolContext) -> None:
     """54b: after "also make it a two person team", the answer says so in one clause."""
     from app.agents.runtime import decision_lead
 
-    frame = build_frame(f"{DUBAI} The founder then added: also make it a two person team", ctx)
-    lead = decision_lead(frame, [])
-    assert "with two local hires, as you asked" in lead
+    message = f"{DUBAI}\nThe founder then added: also make it a two person team"
+    frame = build_frame(message, ctx)
+    assert "with two local hires, as you asked" in decision_lead(frame, [], message=message)
+    # 62: the same figure, given in the first question, is not acknowledged as a change.
+    assert "as you asked" not in decision_lead(
+        build_frame("Should we open a Dubai office with two local hires?", ctx), []
+    )
+
+
+def test_a_figure_in_the_first_question_is_not_called_a_change(ctx: ToolContext) -> None:
+    """Founder note 62: "with price change of +10 %, as you asked" appeared when no change was asked."""
+    from app.agents.runtime import decision_lead
+
+    message = "Should we raise our prices by 10%?"
+    assert "as you asked" not in decision_lead(build_frame(message, ctx), [], message=message)

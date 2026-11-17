@@ -42,6 +42,9 @@ def create_e2e_app() -> FastAPI:
         vault_watch=False,
         ollama_warmup=False,
         team_approval="always",
+        voice_stt="fake",  # no Whisper or Kokoro load competing with the browser test
+        voice_tts="fake",
+        voice_vad="energy",
     )
     app = create_app(settings)
     inner = app.router.lifespan_context

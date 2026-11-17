@@ -24,6 +24,7 @@ from app.conversation.manager import (
     MAX_SESSIONS,
     ConversationError,
     ConversationManager,
+    change_reminder,
 )
 from app.decision.base import Decision, DecisionError, DecisionService, FakeDecisionProvider
 from app.engine.calibration import CalibrationStore
@@ -237,8 +238,11 @@ async def test_the_fast_model_words_a_reply_and_a_slow_one_is_not_waited_for(fin
 async def test_stop_cancels_the_run(finance: Any) -> None:
     manager, _ = lane(finance)
     session_id, run = await started(manager)
-    outcome = await manager.turn(session_id, "stop")
-    assert outcome.kind == "stop"
+    asked = await manager.turn(session_id, "stop", spoken=True)
+    assert asked.kind == "confirm" and asked.reply == "Stop the team? Say yes to stop."  # founder re-test R1
+    assert not run.task.done()
+    outcome = await manager.turn(session_id, "yes", spoken=True)
+    assert outcome.kind == "stop" and outcome.reply == "Stopping the team."
     with pytest.raises(asyncio.CancelledError):
         await run.task
     await _until(lambda: not manager.sessions[session_id].narrators)
@@ -314,7 +318,11 @@ async def test_an_idle_turn_never_waits_for_a_model_and_old_idle_sessions_make_r
     manager, provider = lane(finance)
     manager.classifier = TurnClassifier(DecisionService(Slow()), timeout_s=30)
     provider.release.set()
-    outcome = await asyncio.wait_for(manager.turn("s", "The Dubai thing worries me"), timeout=2)
+    # Founder rule U0 (2026-11-15): an unclear turn is read back, at once, and only a yes starts the team.
+    asked = await asyncio.wait_for(manager.turn("s", "The Dubai thing worries me"), timeout=2)
+    assert asked.reply.startswith("Did you say: The Dubai thing worries me?") and not asked.started_run
+    outcome = await asyncio.wait_for(manager.turn("s", "Yes."), timeout=2)
+    assert outcome.started_run
     await manager.orchestrator.runs[outcome.run_id or ""].task
     for i in range(MAX_SESSIONS + 5):
         manager.session(f"other{i}")
@@ -344,12 +352,18 @@ async def test_only_one_amendment_can_replace_a_run(finance: Any) -> None:
     await manager.orchestrator.runs[accepted["run_id"]].task
 
 
-async def test_an_offer_ends_with_its_run(finance: Any) -> None:
+async def test_an_unanswered_offer_stays_open_on_its_finished_run_until_another_run_replaces_it(finance: Any) -> None:
+    """Founder re-test S4 (2026-11-14): a change asked for while the team worked is not lost when the answer arrives
+    without it. (Before, the offer ended with its run.) A new run is what closes it."""
     manager, provider = lane(finance)
     session_id, run = await started(manager)
     offer = await manager.turn(session_id, "Actually, assume two hires")
     provider.release.set()
     await run.task
+    await _until(lambda: not manager.sessions[session_id].narrators)
+    assert manager.sessions[session_id].amendments[offer.amendment_id or ""].status == "offered"
+    other = await manager.turn(session_id, "What is our runway?")
+    await manager.orchestrator.runs[other.run_id or ""].task
     await _until(lambda: not manager.sessions[session_id].narrators)
     with pytest.raises(ConversationError):
         manager.answer_amendment(session_id, offer.amendment_id or "", True)
@@ -366,7 +380,8 @@ async def test_a_run_ending_while_the_classifier_thinks_does_not_lose_the_turn(f
             return Classified(kind="new_question", by="default")
 
     manager.classifier = EndsTheRun()
-    outcome = await manager.turn(session_id, "The Dubai thing worries me")
+    # A clear question (founder rule U0: an unclear one would be read back, not run).
+    outcome = await manager.turn(session_id, "What does the Dubai office cost us?")
     assert outcome.run_id != run.run_id and manager.sessions[session_id].queue == []
     await manager.orchestrator.runs[outcome.run_id or ""].task
 
@@ -402,7 +417,8 @@ async def test_a_follow_up_after_a_decision_changes_that_decision_not_a_new_run(
     assert run.plan is not None and run.plan.intent == "decision"
     offer = await manager.turn("s40", "also make it a two person team")
     assert offer.kind == "amendment" and offer.amendment_id and offer.run_id == run.run_id
-    assert offer.reply == "That changes the decision. Restart with your change?"
+    # Founder RL2 (2026-11-16): after the answer, the reminder that the answer does not have the change.
+    assert offer.reply == change_reminder("also make it a two person team")
     assert len(manager.orchestrator.runs) == 1  # nothing started before the founder says yes
     accepted = manager.answer_amendment("s40", offer.amendment_id or "", True)
     new_run = manager.orchestrator.runs[accepted["run_id"]]
@@ -447,7 +463,7 @@ async def test_a_follow_up_to_the_dubai_answer_is_offered_not_run_at_once(financ
     run = manager.orchestrator.runs[first.run_id or ""]
     await run.task
     offer = await manager.turn("s40d", "also make it a two person team")
-    assert offer.amendment_id and offer.reply == "That changes the decision. Restart with your change?"
+    assert offer.amendment_id and offer.reply == change_reminder("also make it a two person team")  # founder RL2
     accepted = manager.answer_amendment("s40d", offer.amendment_id or "", True)
     new_run = manager.orchestrator.runs[accepted["run_id"]]
     await new_run.task

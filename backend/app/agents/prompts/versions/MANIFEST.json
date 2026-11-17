@@ -1,26 +1,32 @@
 {
   "devils_advocate": {
-    "best": "v1",
-    "date": "2026-11-05",
+    "best": "v3",
+    "date": "2026-11-08",
     "model": "qwen3:8b",
     "results": {
       "v1": {
         "cases": 5,
-        "mean_latency_s": 44.5,
-        "passed": 5,
-        "repairs": 0
+        "mean_latency_s": 8.8,
+        "passed": 0,
+        "repairs": 1
       },
       "v2": {
         "cases": 5,
-        "mean_latency_s": 9.9,
-        "passed": 1,
-        "repairs": 1
+        "mean_latency_s": 3.7,
+        "passed": 0,
+        "repairs": 0
       },
       "v3": {
         "cases": 5,
-        "mean_latency_s": 10.4,
-        "passed": 5,
-        "repairs": 0
+        "mean_latency_s": 6.7,
+        "passed": 3,
+        "repairs": 1
+      },
+      "v4": {
+        "cases": 5,
+        "mean_latency_s": 8.1,
+        "passed": 0,
+        "repairs": 1
       }
     }
   },

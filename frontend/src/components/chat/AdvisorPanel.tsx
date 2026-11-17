@@ -1,7 +1,8 @@
-import { BellOff, Bell, Mic, SendHorizontal } from "lucide-react";
+import { BellOff, Bell, SendHorizontal } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { AnswerCard } from "@/components/chat/AnswerCard";
+import { VoiceControls } from "@/components/chat/VoiceControls";
 import { ErrorNote } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useWorkspace, type Turn } from "@/lib/workspace";
@@ -36,7 +37,7 @@ function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "adv
   if (turn.role === "amendment") {
     return (
       <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="amendment">
-        <p className="text-[13px] text-foreground">That changes the request. Restart with your change?</p>
+        <p className="text-[13px] text-foreground">{turn.offer ?? "That changes the decision. Restart with your change?"}</p>
         <p className="text-xs text-muted-foreground">{turn.text}</p>
         {turn.status === "offered" ? (
           <div className="flex flex-wrap gap-2">
@@ -87,10 +88,13 @@ export function AdvisorPanel() {
     return () => window.removeEventListener("founderos:prefill", onPrefill);
   }, []);
   const lastAnswerLength = state.currentRunId ? (state.runs[state.currentRunId]?.answer.length ?? 0) : 0;
+  // Founder RL2: one line on where the current run is. A stopped or failed run shows no stage.
+  const current = state.currentRunId ? state.runs[state.currentRunId] : undefined;
+  const progress = current && (current.status === "running" || current.status === "done") ? (current.progress ?? "") : "";
 
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
-  }, [state.turns.length, lastAnswerLength]);
+  }, [state.turns.length, lastAnswerLength, progress]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -151,6 +155,11 @@ export function AdvisorPanel() {
           }
           return <LaneTurn key={turn.id} turn={turn} />;
         })}
+        {progress ? (
+          <p className="text-xs text-muted-foreground" data-testid="run-progress" aria-live="polite">
+            {progress}
+          </p>
+        ) : null}
         <div ref={end} />
       </div>
 
@@ -160,7 +169,7 @@ export function AdvisorPanel() {
         </div>
       ) : null}
 
-      <form onSubmit={submit} className="m-4 mt-2 flex items-center gap-2 rounded-2xl border border-border-strong bg-card p-3">
+      <form onSubmit={submit} className="m-4 mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-border-strong bg-card p-3">
         <label htmlFor="ask" className="sr-only">
           Ask the advisor
         </label>
@@ -177,17 +186,7 @@ export function AdvisorPanel() {
         <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()} className="h-11 w-11 rounded-lg">
           <SendHorizontal aria-hidden="true" />
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label="Microphone (available in M5)"
-          title="Voice arrives in M5"
-          disabled
-          className="h-11 w-11 rounded-lg"
-        >
-          <Mic aria-hidden="true" />
-        </Button>
+        <VoiceControls />
       </form>
     </aside>
   );

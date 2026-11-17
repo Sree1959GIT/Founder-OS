@@ -91,6 +91,7 @@ export function VerificationBadge({ verification }: { verification: Verification
         onClick={() => setOpen(!open)}
         data-testid="verification-badge"
         data-state={state}
+        title={state === "not_verified" ? "Click to see why" : "Click to see what it rests on"}
         className={cn(
           // Wraps rather than running past the panel edge (founder re-test 53).
           "inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-left text-xs font-medium",

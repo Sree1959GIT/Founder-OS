@@ -31,6 +31,7 @@ EventType = Literal[
     "agent.artifact",
     "agent.done",
     "run.finished",
+    "run.progress",
     "agent.rerun",
     "turn.classified",
     "narration",

@@ -111,6 +111,9 @@ async def run_agent(agent: str, question: str, router: LLMRouter, finance: Any, 
         provider=result.provider,
     )
     run.problems = score(agent, question, result.text, frame, result.verified)
+    # Founder note 55: a figure the source check had to take out is a failure, even though the answer reads clean.
+    if result.removed_figures:
+        run.problems.append(f"wrote {len(result.removed_figures)} unsupported figure(s) that were removed")
     if result.status != "done":
         run.problems.insert(0, f"ended {result.status}")
     if result.provider == "rules":

@@ -23,6 +23,7 @@ import {
   type Artifact,
   type ChatResult,
   type DecisionFrame,
+  type TurnOutcome,
 } from "@/lib/api";
 import { load, save, unfinished } from "@/lib/persist";
 import { runTitle } from "@/lib/format";
@@ -61,13 +62,25 @@ export interface RunView {
   result: ChatResult | null;
   verified: boolean | null;
   lastSeq: number;
+  /** Founder RL2: where the run is ("Step 2 of 3: Market Scout working…", "Verifying…", "Done"). */
+  progress: string;
 }
 
 export type Turn =
   | { id: string; role: "you"; text: string }
   | { id: string; role: "advisor"; runId: string }
   | { id: string; role: "lane"; text: string; kind: "narration" | "recap" | "reply" }
-  | { id: string; role: "amendment"; amendmentId: string; text: string; status: "offered" | "accepted" | "declined" }
+  | {
+      id: string;
+      role: "amendment";
+      amendmentId: string;
+      text: string;
+      status: "offered" | "accepted" | "declined";
+      /** The offer in the lane's own words, the ones the voice says. */
+      offer?: string;
+      /** The run the change would restart. */
+      runId?: string;
+    }
   | { id: string; role: "queued"; queueId: string; text: string; status: "queued" | "offered" | "accepted" | "declined" };
 
 /** The agents of a run, in the order they were spawned. */
@@ -98,6 +111,7 @@ type Action =
   | { type: "result"; runId: string; result: ChatResult }
   | { type: "run-ended"; runId: string; status: RunView["status"] }
   | { type: "amendment"; id: string; status: "accepted" | "declined" }
+  | { type: "card-last"; id: string }
   | { type: "queue"; id: string; status: "accepted" | "declined" };
 
 export const initialState: WorkspaceState = {
@@ -138,6 +152,7 @@ function emptyRun(id: string, message: string, at: string): RunView {
     result: null,
     verified: null,
     lastSeq: 0,
+    progress: "",
   };
 }
 
@@ -242,6 +257,9 @@ function withRunEvent(run: RunView, event: AgentEvent): RunView {
         };
       }
       break;
+    case "run.progress":
+      next.progress = (data.text as string) ?? next.progress;
+      break;
     case "run.finished": {
       const status = data.status as RunView["status"];
       next.status = status === "done" || status === "rejected" || status === "cancelled" ? status : "failed";
@@ -267,12 +285,16 @@ function laneTurn(state: WorkspaceState, event: AgentEvent): WorkspaceState {
     return { ...state, turns: [...state.turns, turn] };
   }
   if (event.type === "amendment.offered") {
+    // One change, one card (M5 re-test T3), however often its offer arrives.
+    if (state.turns.some((t) => t.role === "amendment" && t.amendmentId === data.amendment_id)) return state;
     const turn: Turn = {
       id,
       role: "amendment",
       amendmentId: data.amendment_id as string,
       text: data.text as string,
       status: "offered",
+      offer: (data.reply as string | undefined) || undefined,
+      runId: event.run_id,
     };
     return { ...state, turns: [...state.turns, turn] };
   }
@@ -304,6 +326,15 @@ function advisorLast(turns: Turn[], runId: string): Turn[] {
   const id = `advisor-${runId}`;
   const card = turns.find((t) => t.id === id);
   return card ? [...turns.filter((t) => t.id !== id), card] : turns;
+}
+
+/**
+ * A change still on offer when the answer arrives stays the open question (M5 re-test T3: one change, one card):
+ * its card moves below the answer, where it is seen, instead of a second offer being written there.
+ */
+function openChangeLast(turns: Turn[], runId: string): Turn[] {
+  const open = turns.filter((t) => t.role === "amendment" && t.status === "offered" && t.runId === runId);
+  return open.length ? [...turns.filter((t) => !open.includes(t)), ...open] : turns;
 }
 
 export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
@@ -375,7 +406,7 @@ export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       };
       return {
         ...state,
-        turns: run.answer ? state.turns : advisorLast(state.turns, action.runId),
+        turns: openChangeLast(run.answer ? state.turns : advisorLast(state.turns, action.runId), action.runId),
         runs: { ...state.runs, [action.runId]: updated },
       };
     }
@@ -383,6 +414,10 @@ export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       const run = state.runs[action.runId];
       if (!run || run.status !== "running") return state;
       return { ...state, runs: { ...state.runs, [action.runId]: { ...run, status: action.status } } };
+    }
+    case "card-last": {
+      const card = state.turns.filter((t) => t.role === "amendment" && t.amendmentId === action.id && t.status === "offered");
+      return card.length ? { ...state, turns: [...state.turns.filter((t) => !card.includes(t)), ...card] } : state;
     }
     case "amendment":
       return {
@@ -409,6 +444,8 @@ interface WorkspaceApi {
   toggleQuiet: () => Promise<void>;
   amendment: (id: string, accept: boolean) => Promise<void>;
   queued: (id: string, accept: boolean) => Promise<void>;
+  /** A turn the founder spoke: the voice socket already sent it to the lane, so only its outcome is shown. */
+  spoken: (text: string, outcome: TurnOutcome) => void;
   currentRun: RunView | null;
   /** The latest decision stays open on the canvas when a small question follows it. */
   decisionRun: RunView | null;
@@ -429,6 +466,7 @@ const EVENT_TYPES = [
   "agent.done",
   "agent.rerun",
   "run.finished",
+  "run.progress",
   "narration",
   "recap",
   "amendment.offered",
@@ -513,12 +551,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Turns are accepted at once, even while the first is still being planned, and sent in order: the second turn of a
   // new conversation must reach the session the first one opened.
   const chain = useRef<Promise<void>>(Promise.resolve());
-  const post = useCallback(
-    async (clean: string) => {
-      dispatch({ type: "sending", sending: true });
-      dispatch({ type: "error", error: null });
-      try {
-        const outcome = await postTurn(clean, stateRef.current.sessionId);
+  // What the lane decided about a turn, typed or spoken (M5: the voice socket sends the same outcome).
+  const adopt = useCallback(
+    async (clean: string, outcome: TurnOutcome) => {
         const isNewSession = stateRef.current.sessionId === null;
         // Set at once, not on the next render: a turn chained right behind this one must join the same session,
         // not open a second one (and a second run) of its own.
@@ -537,20 +572,67 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const queuedBefore =
           outcome.queue_id !== null &&
           stateRef.current.turns.some((t) => t.role === "queued" && t.queueId === outcome.queue_id);
-        if (outcome.reply && !outcome.amendment_id && (!outcome.queue_id || queuedBefore)) {
+        // Founder W1 (2026-11-16): the same change said again gets its reminder again. Its card is already on screen
+        // (one change, one card), so the reply is shown and the open card moves below it: never only an older card
+        // that says "Restarted.".
+        const amendedBefore =
+          outcome.amendment_id !== null &&
+          stateRef.current.turns.some((t) => t.role === "amendment" && t.amendmentId === outcome.amendment_id);
+        if (outcome.reply && (!outcome.amendment_id || amendedBefore) && (!outcome.queue_id || queuedBefore)) {
           dispatch({
             type: "turn",
             turn: { id: `reply-${Date.now()}`, role: "lane", text: outcome.reply, kind: "reply" },
           });
+          if (amendedBefore && outcome.amendment_id) dispatch({ type: "card-last", id: outcome.amendment_id });
         }
-        if (startedRun && outcome.run_id) follow(outcome.run_id, clean);
+        // An offer answered in words, typed or spoken (M5 re-test R8): its card shows the answer, and a restarted
+        // run is followed under the title its button would have given it, so the canvas shows the new figures.
+        const answered = outcome.answered ?? null;
+        let title = clean;
+        if (answered) {
+          const status = answered.accept ? "accepted" : "declined";
+          const turns = stateRef.current.turns;
+          if (answered.what === "amendment") {
+            dispatch({ type: "amendment", id: answered.id, status });
+            const offered = turns.find((t) => t.role === "amendment" && t.amendmentId === answered.id);
+            const change = offered && offered.role === "amendment" ? offered.text : "";
+            const before = stateRef.current.currentRunId
+              ? stateRef.current.runs[stateRef.current.currentRunId]?.message
+              : undefined;
+            const root = before ? runTitle(before).split(" · changed: ")[0] : "";
+            title = root && change ? `${root} · changed: ${change}` : change || clean;
+          } else {
+            dispatch({ type: "queue", id: answered.id, status });
+            const offered = turns.find((t) => t.role === "queued" && t.queueId === answered.id);
+            title = offered && offered.role === "queued" ? offered.text : clean;
+          }
+        }
+        if (startedRun && outcome.run_id) follow(outcome.run_id, title);
+    },
+    [follow],
+  );
+
+  const post = useCallback(
+    async (clean: string) => {
+      dispatch({ type: "sending", sending: true });
+      dispatch({ type: "error", error: null });
+      try {
+        await adopt(clean, await postTurn(clean, stateRef.current.sessionId));
       } catch (err) {
         dispatch({ type: "error", error: err instanceof Error ? err.message : "Backend not reachable" });
       } finally {
         dispatch({ type: "sending", sending: false });
       }
     },
-    [follow],
+    [adopt],
+  );
+
+  const spoken = useCallback(
+    (text: string, outcome: TurnOutcome) => {
+      dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text } });
+      void adopt(text, outcome);
+    },
+    [adopt],
   );
 
   const send = useCallback(
@@ -619,13 +701,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       toggleQuiet,
       amendment,
       queued,
+      spoken,
       currentRun: state.currentRunId ? (state.runs[state.currentRunId] ?? null) : null,
       decisionRun:
         Object.values(state.runs)
           .filter((run) => run.frame || run.decisionType)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
     }),
-    [state, send, follow, toggleQuiet, amendment, queued],
+    [state, send, follow, toggleQuiet, amendment, queued, spoken],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

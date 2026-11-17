@@ -147,4 +147,17 @@ cd frontend && npm run lint && npx tsc --noEmit && npm test && npm run build
 
 CI runs the same checks on every pull request (the backend on both Linux and Windows).
 
+### Dev-only setting: `FOUNDEROS_STAGE_DELAY_S`
+A pause, in seconds, before each stage of an agent team (default `0`, maximum `120`). It is for live tests only: with
+the team's stages slowed down you can say something while a chosen stage runs (the Advisor panel shows
+"Step N of M: <agent> working…", then "Verifying…", then "Done"). It is not a secret and is not in `.env.example`;
+set it for one PowerShell session before `.\run.bat`:
+
+```powershell
+$env:FOUNDEROS_STAGE_DELAY_S = "8"; .\run.bat
+```
+
+Close that window (or `Remove-Item Env:FOUNDEROS_STAGE_DELAY_S`) to go back to normal speed.
+`scripts/voice_scenarios.py` sets it to 2 for its own backend.
+
 Full Windows setup, troubleshooting and the stakeholder demo script are added in milestone M6.

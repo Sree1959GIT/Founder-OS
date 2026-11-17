@@ -36,6 +36,15 @@ dev = [
 ]
 gpu = [
     "nvidia-ml-py>=12",
+    # CUDA 12 runtime DLLs for faster-whisper on Windows (CTranslate2 needs cuBLAS and cuDNN 9; see app/voice/stt.py).
+    "nvidia-cublas-cu12>=12.4; platform_system != 'Darwin'",
+    "nvidia-cudnn-cu12>=9,<10; platform_system != 'Darwin'",
+]
+# M5 voice: Whisper STT (MIT), Silero VAD (MIT, bundled in faster-whisper), Kokoro TTS (MIT code, Apache-2.0 weights;
+# its phonemizer and espeak-ng are GPL-3.0: see PRD section 12 before selling). Tests need none of these.
+voice = [
+    "faster-whisper>=1.2.1,<2",
+    "kokoro-onnx>=0.6.1,<0.7",
 ]
 
 [tool.setuptools.packages.find]

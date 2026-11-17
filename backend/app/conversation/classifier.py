@@ -16,7 +16,8 @@ from pydantic import BaseModel
 
 from app.decision.base import DecisionError, DecisionService
 
-TurnKind = Literal["backchannel", "answerable_now", "amendment", "new_question", "stop"]
+# "confirm": the lane asked a yes/no question back ("Stop the team? Say yes to stop.") and nothing has changed yet.
+TurnKind = Literal["backchannel", "answerable_now", "amendment", "new_question", "stop", "confirm"]
 KINDS: list[str] = ["backchannel", "answerable_now", "amendment", "new_question", "stop"]
 TURN_QUESTION = (
     "A founder said this while their team is working on an earlier request. Which is it? backchannel: an "
@@ -26,13 +27,22 @@ TURN_QUESTION = (
 
 # A whole turn, about the work itself: "Cancel the Acme contract" and "Stop hiring contractors" are requests.
 _STOP = re.compile(
-    r"^(please\s+)?(stop|cancel|abort|halt|never ?mind|forget it)"
+    r"^(please\s+)?(stop|cancel|abort|halt|hold it|never ?mind|forget it)"
     r"(\s+(it|that|this|the run|the team|the work|everything|now|please))*[\s.!]*$",
     re.I,
 )
+# Founder re-test R1: only these words can stop a team. A model's guess never does.
+STOP_WORD = re.compile(r"\b(stop|cancel|abort|halt|hold it|never ?mind|forget it)\b", re.I)
 _BACKCHANNEL = re.compile(
-    r"^(ok|okay|k|thanks|thank you|thx|got it|cool|great|nice|sure|yes|yep|right|good|fine|mm+|hm+|uh[- ]huh|"
-    r"go on|go ahead|continue|sounds good|understood)[\s.!,]*(thanks|thank you)?[\s.!]*$",
+    r"^(ok|okay|k|thanks|thank you|thx|got it|cool|great|nice|sure|yes|yeah|yep|right|good|fine|mm+|hm+|"
+    r"uh[- ]?huh|mm+[- ]?hm+|mhm+|i see|go on|go ahead|continue|sounds good|understood)[\s.!,]*(thanks|thank you)?"
+    r"[\s.!]*$",
+    re.I,
+)
+# A noise, not a word: what "uh-huh" and "mm" come out of the recogniser as ("Ugh!", "Huh.", "Oh.").
+FILLER = re.compile(
+    r"^(u+g+h+|u+h+|u+m+|e+r+m*|a+h+|o+h+|h+u+h+|h+a+h*|m+|h+m+|e+h+|aha|ooh|wow|oops|phew|hey|bye|you|the|a|and|"
+    r"so|well|i)([\s,-]+(u+g+h+|u+h+|u+m+|a+h+|o+h+|h+u+h+|m+|h+m+))*[\s.!,?…-]*$",
     re.I,
 )
 # About this work, not the business: "How long is our runway?" and "the status of the Acme deal" are questions.
@@ -64,19 +74,105 @@ class Classified(BaseModel):
     decision_id: str | None = None
 
 
+def plain(text: str) -> str:
+    """A short answer without its marks and case (founder re-test T2): the recogniser writes a spoken "yes" as
+    "Yes?", "Yes." or "Yes!", and they are all the same answer."""
+    return re.sub(r"\s+", " ", re.sub(r"[?!.,;:…]+", " ", text)).strip().lower()
+
+
+# Founder rule U0 (2026-11-15): only a clear question or decision request starts a team.
+_GREETING = re.compile(
+    r"^(?:(?:hi|hello|hey|hiya|hallo|good (?:morning|afternoon|evening))\b[\s,.!?]*)+"
+    r"(?:(?:there|yes|yeah|yep|ok|okay|again|founderos|everyone)\b[\s,.!?]*)*$",
+    re.I,
+)
+_LEAD_IN = r"^(?:(?:and|so|ok|okay|also|now|then|but|please|hey|right)[,\s]+)*"
+_ASKS = re.compile(
+    _LEAD_IN + r"(?:what|how|why|when|where|which|who|whose|should|shall|can|could|would|will|is|are|do|does|did|"
+    r"has|have|tell me|show me|give me)\b",
+    re.I,
+)
+_REQUEST = re.compile(
+    _LEAD_IN + r"(?:(?:can|could|would) you\s+)?(?:analy[sz]e|compare|model|forecast|project|draft|write|"
+    r"summari[sz]e|show|explain|estimate|calculate|review|check|find|list|plan|evaluate|assess|help|simulate|"
+    r"prioriti[sz]e|rank|look (?:at|into)|search|break down|walk me through|i want|i'd like|i would like|we want|"
+    r"we need|i need|we're (?:thinking|considering)|we are (?:thinking|considering)|we plan|let's|let us)\b",
+    re.I,
+)
+_DECIDE = re.compile(r"\bshould (?:we|i)\b", re.I)
+
+
+# Founder RZ re-test S3 (scripted runner): Whisper wrote a spoken "hmm" as "Ahem." and "uh-huh" as "Ahoy.".
+_NOISE_TOO = re.compile(r"^(?:uh[- ]?huh|mm+[- ]?hm+|mhm+|hmm+|hm|ahem|ahoy|aha+|ah[- ]ha)[\s.!,?]*$", re.I)
+
+
+def is_noise(text: str) -> bool:
+    """A sound, not a word (founder re-test U2): "Ugh.", "mm", "hmm", "uh", "uh-huh", "ah", "oh". Never yes or no."""
+    words = text.strip()
+    return bool(words) and bool(FILLER.match(words) or _NOISE_TOO.match(words))
+
+
+# Founder W4 (2026-11-16): "Ok, I will leave it as it is.", "leave it", "keep it as is", "that's fine": keep things as
+# they are. Never read back, never a team.
+_LEAVE = re.compile(
+    r"^(?:(?:ok|okay|alright|all right|fine|no|yes|yeah|right|then|so)[,\s]+)*"
+    r"(?:(?:i(?:'ll| will| would)?|let's|we(?:'ll| will)?|just)\s+)*"
+    r"(?:leave it|keep it|leave things|keep things)(?:\s+(?:as it is|as is|like that|like this|alone|there))?"
+    r"(?:\s+(?:then|for now|please))*[\s.!]*$"
+    r"|^(?:(?:ok|okay|alright|no)[,\s]+)*(?:that's|that is|it's|it is|that'll do|that will do)\s*(?:fine|ok|okay|good)?"
+    r"(?:\s+(?:then|for now|thanks|thank you))*[\s.!]*$",
+    re.I,
+)
+
+
+def is_leave(text: str) -> bool:
+    """ "Ok, I will leave it as it is." and its close variants (founder W4): the founder keeps things as they are."""
+    words = plain(text)
+    return bool(words) and bool(_LEAVE.match(words)) and words not in ("it's", "it is", "that's", "that is")
+
+
+def is_greeting(text: str) -> bool:
+    """ "Hello", "Hi there", "Hello? Yes?" (founder re-test U4): a greeting, answered with one, never a team."""
+    return bool(_GREETING.match(text.strip()))
+
+
+def clear_request(text: str) -> bool:
+    """A clear question or decision request: three words or more, asked as a question or made as a request
+    ("Should we open a Dubai office?", "Compare the two pricing options"). "Okay, I will leave it as it is." is
+    not one (founder re-test U2), and nor is any turn of one or two words."""
+    words = plain(text).split()
+    if len(words) < 3:
+        return False
+    t = text.strip()
+    return bool(_ASKS.match(t) or _REQUEST.match(t) or _DECIDE.search(t) or (t.endswith("?") and len(words) >= 4))
+
+
+def is_filler(text: str) -> bool:
+    """A listening noise or a single stray word that asks nothing and orders nothing (founder re-test R1): "Ugh!",
+    "mm", "hmm", "right", "okay", "Thanks." Never a question, never a command."""
+    words = text.strip()
+    if not words or FILLER.match(words) or _BACKCHANNEL.match(words) or _BACKCHANNEL.match(plain(words)):
+        return True
+    if "?" in words or STOP_WORD.search(words):
+        return False
+    return len(words.split()) == 1 and not _AMENDMENT.search(words) and not _STATUS.search(words)
+
+
 def by_rules(text: str) -> TurnKind | None:
     """The clear cases. Order matters: "actually, stop" is a stop, and "how long if we assume two?" is an amendment."""
     cleaned = re.sub(r"^(actually|wait|sorry)[,\s]+", "", text.strip(), flags=re.I)
     if _STOP.match(cleaned):
         return "stop"
-    if _BACKCHANNEL.match(text.strip()):
-        return "backchannel"
+    if _BACKCHANNEL.match(text.strip()) or FILLER.match(text.strip()) or _BACKCHANNEL.match(plain(text)):
+        return "backchannel"  # "Yes?" and "Okay?" too: with nothing asked, a bare yes is a listening noise
     if _AMENDMENT.search(text):
         return "amendment"
     if _STATUS.search(text):
         return "answerable_now"
     if _QUESTION.match(text.strip()):
         return "new_question"
+    if is_filler(text):
+        return "backchannel"  # one stray word while a team works changes nothing
     return None
 
 
@@ -101,6 +197,17 @@ class TurnClassifier:
             return Classified(kind="new_question", by="default")
         if decision.probability < self.decisions.min_confidence or decision.choice not in KINDS:
             return Classified(kind="new_question", by="default", probability=decision.probability)
+        if decision.choice == "stop" and not STOP_WORD.search(text):
+            # Founder re-test R1: "Ugh!" was taken as stop. Without one of the stop words a turn never stops a team:
+            # two words or fewer is a listening noise, anything longer is kept as a question.
+            kind: TurnKind = "backchannel" if len(text.split()) <= 2 and "?" not in text else "new_question"
+            return Classified(kind=kind, by="rules", probability=decision.probability, decision_id=decision.id)
+        if decision.choice == "backchannel" and len(text.split()) >= 3:
+            # Founder re-test S4: words said while the team works are never dropped on a model's guess. A listening
+            # noise is short and the rules know it; three words or more are kept as a question, so nothing is lost.
+            return Classified(
+                kind="new_question", by="rules", probability=decision.probability, decision_id=decision.id
+            )
         return Classified(
             kind=decision.choice,  # type: ignore[arg-type]
             by="decision",

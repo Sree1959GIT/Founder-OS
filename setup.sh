@@ -28,6 +28,7 @@ if ! .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info < (3, 13) e
 fi
 .venv/bin/python -m pip install --upgrade pip >/dev/null
 .venv/bin/python -m pip install -e "backend[dev]"
+# Optional voice (M5): .venv/bin/python -m pip install -e "backend[voice]" && .venv/bin/python scripts/download_voice_models.py
 
 (cd frontend && npm ci)
 

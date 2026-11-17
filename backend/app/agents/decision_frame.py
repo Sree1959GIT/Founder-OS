@@ -305,6 +305,14 @@ def _value_in_clause(item: ItemTemplate, clause: str) -> float | None:
     return _amount(money[-1]) if money else None
 
 
+def units_of(decision_type: str) -> tuple[bool, bool]:
+    """Whether this kind of decision counts people, and whether it has a percentage of its own: how a bare number or
+    a stray "%" in the founder's change is to be read (founder re-test R3)."""
+    items = _TEMPLATES.get(decision_type, [])
+    counts = decision_type == "hire" or any(i.cadence == "count" for i in items)
+    return counts, any(i.cadence in ("percent", "points") for i in items)
+
+
 def parse_inputs(text: str, decision_type: str) -> dict[str, float]:
     """The founder's own numbers for this decision's components. A later statement replaces an earlier one."""
     found: dict[str, float] = {}

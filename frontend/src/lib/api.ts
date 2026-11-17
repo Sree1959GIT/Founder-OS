@@ -236,6 +236,9 @@ export interface TurnOutcome {
   run_id: string | null;
   amendment_id: string | null;
   queue_id: string | null;
+  started_run?: boolean;
+  /** This turn answered an offer on screen in words ("yes", "restart", "ask it"): its card and the canvas follow. */
+  answered?: { what: "amendment" | "queue"; id: string; accept: boolean } | null;
 }
 
 export interface TeamEdit {

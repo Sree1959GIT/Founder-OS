@@ -1476,7 +1476,12 @@ def team_projection(results: list[AgentResult]) -> Projection | None:
     return next((r.projection for r in results if r.projection is not None), None)
 
 
-def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "") -> str:
+AMENDED = "The founder then added:"  # how the conversation lane writes an amended request
+
+
+def decision_lead(
+    frame: DecisionFrame | None, records: list[DecisionRecord], chosen: str = "", message: str = ""
+) -> str:
     """A decision answer opens with the proposed option, then the full model: the same order as the lead card.
 
     Written by code, so the figures are the table's and the signs are never doubled ("reducing runway by -2.07").
@@ -1489,7 +1494,8 @@ def decision_lead(frame: DecisionFrame | None, records: list[DecisionRecord], ch
     full = next((o for o in frame.options if o.is_full), None)
     model = frame.cost_model
     parts: list[str] = []
-    asked = _as_you_asked(model)
+    # Founder note 62: only a real amendment is acknowledged; a figure in the first question was not "asked" again.
+    asked = _as_you_asked(model) if AMENDED in message else ""
     why = _why_proposed(frame, proposed) if proposed is not None else ""
     if proposed is not None:
         mine = asked if proposed.is_full or model is None else ""
@@ -1596,6 +1602,105 @@ _TARGET_QUESTION = re.compile(
     r"\b(?:expected to|likely to|realistic\w*|going to)\b[^?]*\b(?:meet|hit|reach|achieve)\b[^?]*\?", re.I
 )
 _KILL_QUESTION = re.compile(r"\b(?:kill criteri\w*|on track|meet(?:ing)? (?:its|the) (?:targets?|criteria))\b", re.I)
+# The memo on record, named again after code's lead has named it (founder re-test R7: said twice in one answer).
+_MEMO_AGAIN = re.compile(
+    r"\b(?:proposed|draft(?:ed)?|earlier|existing|previous|prior)\s+(?:decision\s+)?memo\b|"
+    r"\bmemo\b[^.?!]*\b(?:on record|already|drafted)\b|\balready (?:have|drafted|wrote|written)\b[^.?!]*\bmemo\b|"
+    # Founder re-test S5: the memo told again without the word "memo" ("You already proposed a Dubai office in 2027
+    # with a Travel-led pilot").
+    r"\b(?:you(?:'ve| have)?|we(?:'ve| have)?)\s+(?:already|earlier|previously)\s+"
+    r"(?:proposed|drafted|planned|considered|looked at|written|wrote|recommended)\b|"
+    r"\b(?:earlier|existing|previous|prior)\s+(?:proposal|draft|plan|recommendation)\b|"
+    r"\bas (?:you )?(?:proposed|drafted|planned) (?:earlier|before|previously)\b",
+    re.I,
+)
+# A sentence that speaks of a decision or memo on record, and the dates it gives for it.
+_OF_A_RECORD = re.compile(
+    r"\b(?:memo|already|earlier|previously|proposed|proposal|drafted|draft|decided|on record)\b",
+    re.I,
+)
+_ISO_DATE = re.compile(r"\b(?:19|20)\d{2}-\d{2}-\d{2}\b")
+# When it was written: "proposed … in 2027", "a memo from 2026-11-06", "drafted on 6 November 2026".
+_WRITTEN_WHEN = re.compile(
+    r"\b(?:proposed|drafted|decided|wrote|written|memo|proposal|draft)\b"
+    r"(?:(?!\b(?:review|forecast|predict|target|until|criteri)\w*)[^.?!;:]){0,80}?"
+    r"\b(?:in|on|from|dated|of|since)\s+(?:(?:early|late|mid)[- ])?(?:\d{1,2}\s+)?(?:[A-Z][a-z]+\s+)?(?:\d{1,2},?\s+)?"
+    r"(?P<year>(?:19|20)\d{2})(?P<rest>-\d{2}-\d{2})?",
+    re.I,
+)
+
+
+_TRADE_OFF = re.compile(r"\btrade[- ]?offs?\b", re.I)
+_NAME_NOISE = frozenset({"with", "from", "only", "then", "first", "your", "current", "amount", "instead", "change"})
+
+
+def _names_option(sentence: str, name: str) -> bool:
+    """The option's name, or a telling word of it ("the pilot" for "Travel-led pilot")."""
+    low = sentence.lower()
+    words = [w for w in re.findall(r"[a-z]+", name.lower()) if len(w) >= 4 and w not in _NAME_NOISE]
+    return name.lower() in low or any(re.search(rf"\b{re.escape(w)}", low) for w in words)
+
+
+def code_trade_off(frame: DecisionFrame | None, chosen: str = "") -> str:
+    """The trade-off between the proposal and the full option, in code's words, from each option's own entry.
+    Empty when the frame cannot say it (no second option, or an option with no entry)."""
+    if frame is None or len(frame.options) < 2:
+        return ""
+    proposed = next((o for o in frame.options if o.name == (chosen or frame.default_option)), frame.options[0])
+    other = next((o for o in frame.options if o.is_full and o.name != proposed.name), None)
+    other = other or next((o for o in frame.options if o.name != proposed.name and o.trade_off.strip()), None)
+    if other is None or not proposed.trade_off.strip() or not other.trade_off.strip():
+        return ""
+    # An option's name may carry a figure ("Change prices by +10 %"): then it is named by its role.
+    first = "the proposal" if extract_figures(proposed.name) else proposed.name
+    second = ("the full option" if other.is_full else "the alternative") if extract_figures(other.name) else other.name
+    return (
+        f"The main trade-off: with {first}, {proposed.trade_off.strip().rstrip('.')}; "
+        f"with {second}, {other.trade_off.strip().rstrip('.')}."
+    )
+
+
+def clear_trade_off(sentence: str, frame: DecisionFrame | None, chosen: str = "") -> str:
+    """Founder re-test T5: the model wrote "The main trade-off is stopping hiring for the pilot while confirming the
+    cost model with three hires." A trade-off is between two options: a sentence about "the trade-off" that does not
+    name two of the options on the table is replaced by code's. Any other sentence comes back as it was."""
+    if frame is None or not _TRADE_OFF.search(sentence) or sentence.rstrip().endswith("?"):
+        return sentence
+    if sum(_names_option(sentence, o.name) for o in frame.options) >= 2:
+        return sentence
+    return code_trade_off(frame, chosen) or sentence
+
+
+def misdates_a_record(sentence: str, records: list[DecisionRecord]) -> bool:
+    """Founder re-test S5: "You already proposed a Dubai office in 2027", of a memo dated 2026-11-06. A sentence
+    about a decision on record never gives a date the record does not: not as the date it was written (that is its
+    own date only), and no other full date (a review date or a forecast's date must be one the record states). A
+    bare year elsewhere in the sentence is left alone: it may be about the market or the plan, not the memo."""
+    if not records or not _OF_A_RECORD.search(sentence):
+        return False
+    written = {r.drafted_on() for r in records if r.drafted_on()}
+    on_record = " ".join(
+        " ".join([r.path, r.title, r.decided or "", r.review_date or "", r.decision, *r.predictions, *r.kill_criteria])
+        for r in records
+    )
+    when = _WRITTEN_WHEN.search(sentence)
+    if when is not None and written:
+        stated = when["year"] + (when["rest"] or "")
+        if not any(date == stated or (not when["rest"] and date.startswith(stated)) for date in written):
+            return True
+    known_dates = set(_ISO_DATE.findall(on_record))
+    return any(date not in known_dates for date in _ISO_DATE.findall(sentence))
+
+
+def asks_about_a_draft(sentence: str) -> bool:
+    """With a proposed memo on record, code asks the one question ("what has changed since you drafted it?"). Any
+    other question from the model is about the draft's targets, forecasts or stop rules, which never started
+    (founder re-test R7: "Is the runway still above 10.44 months by 2027-05-06, as predicted?", "Is the risk of
+    runway falling below 6 months by March 2027 acceptable?"). So is the memo named a second time."""
+    text = sentence.strip()
+    return text.endswith("?") or bool(
+        _KILL_QUESTION.search(text) or _TARGET_QUESTION.search(text) or _MEMO_AGAIN.search(text)
+    )
 
 
 class _SentenceGate:
@@ -1630,6 +1735,7 @@ class _SentenceGate:
         """No sentence twice, and no more than the budget."""
         kept: list[str] = []
         for piece in split_sentences(text):
+            piece = clear_trade_off(piece, self.frame, self.chosen)  # founder re-test T5
             key = re.sub(r"\W+", " ", piece).strip().lower()
             if not key:
                 kept.append(piece)
@@ -1643,8 +1749,10 @@ class _SentenceGate:
                 continue
             if figures and self.lead_figures and all(number_supported(f, self.lead_figures) for f in figures):
                 continue  # the proposal and the full model, said again in the model's words
-            if self.draft_on_record and (_KILL_QUESTION.search(piece) or _TARGET_QUESTION.search(piece)):
+            if self.draft_on_record and asks_about_a_draft(piece):
                 continue
+            if misdates_a_record(piece, self.records):
+                continue  # a date the memo on record does not have (founder re-test S5)
             self.said.append(key)
             self.shown.append(piece)
             kept.append(piece)
@@ -1799,6 +1907,7 @@ async def advise(
     results: list[AgentResult],
     issues: list[str] | None = None,
     exists: Callable[[str], bool] | None = None,
+    earlier: str = "",
 ) -> AsyncIterator[StreamChunk]:
     """The Advisor streams its reply, sentence by sentence, each one checked before it goes out.
 
@@ -1822,6 +1931,13 @@ async def advise(
         )
         + f"\n\nTeam findings:\n{findings}"
     )
+    if earlier:
+        # Founder decision D: a follow-up ("and why that one?") is read against what was asked and answered before.
+        # The sentence gate still removes any figure that this run's findings do not back.
+        context += (
+            f"\n\nEarlier in this conversation, for context only:\n{earlier}\n"
+            "Use it to understand what the founder's message refers to. Take figures only from the team findings."
+        )
     # Only when there is one: told about past decisions in general, the model invented one ("you decided in August").
     decisions_rule = (PROMPTS_DIR / "advisor_past_decisions.md").read_text(encoding="utf-8")
     system = spec.prompt() + (decisions_rule if _team_decisions(results) else "")
@@ -1833,11 +1949,22 @@ async def advise(
     projection = team_projection(results)
     asked = beyond(user_message, projection)
     chosen = _chosen_in(results)
-    lead = horizon_lead(user_message, asked, projection) if asked else decision_lead(frame, records, chosen)
+    lead = (
+        horizon_lead(user_message, asked, projection) if asked else decision_lead(frame, records, chosen, user_message)
+    )
+    draft_on_record = bool(lead) and any(not r.is_decided for r in records)
     if lead:
+        # Founder re-test R7: with a proposed memo on record the one question is code's ("what has changed since you
+        # drafted it?"); the model adds none, and does not name the memo again.
+        adds = (
+            "the main trade-off, and nothing else. Ask no question and do not mention the memo on record again: the "
+            "founder has already been asked what has changed since it was drafted."
+            if draft_on_record
+            else "the main trade-off, and one question."
+        )
         context += (
             f"\n\nAlready said to the founder, first, by code: {lead}\nDo not repeat it, the goal or the proposal. "
-            f"Add at most {DECISION_PROSE_SENTENCES} short sentences: the main trade-off, and one question."
+            f"Add at most {DECISION_PROSE_SENTENCES} short sentences: {adds}"
             + (" Add no figures: the question is beyond what the projection covers." if asked else "")
         )
     messages = [Message.system(system), Message.user(context)]
@@ -1854,7 +1981,7 @@ async def advise(
         gate.shown.extend(p for p in split_sentences(lead) if p.strip())
         gate.max_sentences += len(gate.said)
         gate.lead_figures = [f.value for f in extract_figures(lead)]
-        gate.draft_on_record = any(not r.is_decided for r in records)
+        gate.draft_on_record = draft_on_record
         gate.no_figures = asked is not None  # beyond the projection: the only figure is code's, labelled
         sent.append(f"{lead} ")
         yield StreamChunk(delta=f"{lead} ")
