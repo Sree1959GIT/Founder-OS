@@ -1,33 +1,62 @@
 @echo off
-rem Start FounderOS on Windows: Qdrant (if Docker is available), backend :8000 and frontend :3000.
+rem Start FounderOS on Windows: Qdrant (if Docker is running), backend :8000 and frontend :3000, then the browser.
+rem From a fresh clone it runs setup.bat first. Close the two server windows to stop FounderOS.
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
-  echo [ERROR] .venv not found. Run setup.bat first.
-  exit /b 1
+echo == FounderOS ==
+
+rem --- First run: set up ------------------------------------------------------------------------------------------
+set "NEED_SETUP="
+if not exist ".venv\Scripts\python.exe" set "NEED_SETUP=1"
+if not exist "frontend\node_modules" set "NEED_SETUP=1"
+if defined NEED_SETUP (
+  echo First run: FounderOS is not set up yet, so setup.bat runs now ^(10 to 30 minutes, once^).
+  call "%~dp0setup.bat"
+  if errorlevel 1 (
+    echo [ERROR] Setup did not finish. Fix the error above, then run run.bat again.
+    exit /b 1
+  )
 )
 ".venv\Scripts\python.exe" -c "import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)"
 if errorlevel 1 (
   echo [WARN] .venv uses Python 3.13 or newer; Python 3.12 is recommended. See README.
 )
-if not exist "frontend\node_modules" (
-  echo [ERROR] Frontend dependencies missing. Run setup.bat first.
-  exit /b 1
-)
 
+rem --- Ports: an old FounderOS still running would answer with old code --------------------------------------------
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check_ports.ps1" 8000 3000
+if errorlevel 1 exit /b 1
+
+rem --- Qdrant (Docker, optional) ----------------------------------------------------------------------------------
 where docker >nul 2>nul
 if errorlevel 1 (
-  echo [WARN] Docker not found; running without Qdrant ^(BM25-only search^).
-) else (
-  docker compose up -d qdrant >nul 2>nul || echo [WARN] Qdrant did not start. Is Docker Desktop running?
+  echo [WARN] Docker is not installed: search runs in memory ^(fine for the demo^). Docker Desktop adds Qdrant.
+  goto :preflight
 )
+docker info >nul 2>nul
+if errorlevel 1 (
+  echo [WARN] Docker Desktop is not running: search runs in memory. Start Docker Desktop to use Qdrant.
+  goto :preflight
+)
+docker compose up -d qdrant >nul 2>nul
+if errorlevel 1 echo [WARN] The Qdrant container did not start ^(docker compose up -d qdrant^). Search runs in memory.
 
+:preflight
+rem --- What is there: Ollama at OLLAMA_BASE_URL, Qdrant, voice models (never stops the start) -----------------------
+".venv\Scripts\python.exe" scripts\preflight.py
+
+rem --- Start ------------------------------------------------------------------------------------------------------
 start "FounderOS backend" /d "%~dp0backend" cmd /k ""%~dp0.venv\Scripts\python.exe" -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8000"
 start "FounderOS frontend" /d "%~dp0frontend" cmd /k "npm run dev"
 
-rem Give the dev servers a few seconds, then open the browser.
-timeout /t 6 /nobreak >nul
+echo Waiting for the backend ^(up to 90 s^) ...
+powershell -NoProfile -Command "for ($i = 0; $i -lt 90; $i++) { try { Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/health' -TimeoutSec 2 | Out-Null; exit 0 } catch { Start-Sleep -Seconds 1 } }; exit 1"
+if errorlevel 1 (
+  echo [WARN] The backend did not answer within 90 s. Look at the "FounderOS backend" window for the error.
+) else (
+  echo Backend is up: http://127.0.0.1:8000/api/health
+)
 start "" "http://127.0.0.1:3000"
-echo FounderOS is starting. Close the two server windows to stop it.
+echo FounderOS is running at http://127.0.0.1:3000 . Close the two server windows to stop it.
 endlocal
+exit /b 0

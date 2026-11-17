@@ -3,47 +3,99 @@
 A local-first decision copilot for business owners. It combines a Socratic voice advisor, a deterministic
 DuckDB financial engine, an Obsidian-style Markdown brain with hybrid RAG, and a live visual canvas.
 
-**Status:** milestone M3a (LLM layer and core agents). The backend loads CSV/XLSX financials into DuckDB and serves
-deterministic metrics (every number with its lineage), what-if scenarios, sensitivity tables and Monte Carlo
-runs over a REST API. It also keeps an Obsidian-compatible Markdown vault with wikilinks and backlinks, and
-searches it (plus PDFs and spreadsheets) with hybrid keyword + semantic retrieval and citations. A team of agents
-(Planner, Financial Analyst, Librarian, Verifier, Advisor) answers questions over `/api/chat`, and every number in an
-answer is checked against its lineage. Features arrive milestone by milestone; see [`HANDOVER.md`](HANDOVER.md).
+**Status:** M0 to M5 are done (financial engine, vault and search, agents, canvas UI, voice). M6 (Windows packaging,
+polish and the demo) is in progress; see [`HANDOVER.md`](HANDOVER.md).
 
-- Product spec: [`docs/PRD.md`](docs/PRD.md)
+- Product spec: [`docs/PRD.md`](docs/PRD.md) · 10-minute demo: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
 - How to run a dev session with Claude Code: [`docs/GOAL_PROMPT.md`](docs/GOAL_PROMPT.md)
-- Current state and next steps: [`HANDOVER.md`](HANDOVER.md)
 
-## Requirements
-- Python 3.12 (recommended) or 3.11. Newer versions (3.13+) start, but setup warns because later ML/voice
-  packages (milestones M2–M5) may not ship wheels for them yet. `setup.bat` picks `py -3.12`, then `py -3.11`, then
-  `python`.
-- Node.js 22 LTS (or 20.19+)
-- Optional: [Ollama](https://ollama.com/download) (local LLM: the native app, or a Docker container at
-  `OLLAMA_BASE_URL`) with `qwen3:8b` and `nomic-embed-text`, and Docker Desktop (Qdrant vector search). Without them
-  the app still starts, the health badge says what is missing, and agents answer from rules.
-  With Ollama in Docker, pull models with `docker exec ollama ollama pull qwen3:8b`.
+## Fresh install on Windows 11
 
-## Quick start
+### 1. Install these first
+| What | Version | Needed for | Without it |
+|---|---|---|---|
+| [Python](https://www.python.org/downloads/) | **3.12** (or 3.11) | the backend | setup stops and says so |
+| [Node.js](https://nodejs.org/) | **22 LTS** (or 20.19+) | the web app | setup stops and says so |
+| [Git](https://git-scm.com/download/win) | any | cloning the repo | |
+| [Ollama](https://ollama.com/download) | 0.3 or newer | the local LLM (`qwen3:8b`) and embeddings | agents answer from rules only |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | any | Qdrant (vector search) | search runs in memory |
+| An NVIDIA GPU with a recent driver | 8 GB VRAM or more (12 GB tested) | fast LLM and speech recognition | slower, CPU speech recognition |
 
-Windows 11:
+Ollama can be the native app or a Docker container (for example one shared with an n8n stack). FounderOS talks to it
+over HTTP at `OLLAMA_BASE_URL` (default `http://localhost:11434`), so the `ollama` command does not need to be on PATH.
 
-```bat
-setup.bat
-run.bat
+`setup.bat` picks `py -3.12`, then `py -3.11`, then `python`. Python 3.13+ starts, but setup warns because some
+ML/voice packages may not ship wheels for it.
+
+### 2. Clone and run
+```powershell
+git clone https://github.com/Sree1959GIT/Founder-OS.git
+cd Founder-OS
+.\run.bat
 ```
+On a fresh clone `run.bat` runs `setup.bat` first (10 to 30 minutes, once; most of it is the model download). Then it
+starts Qdrant, the backend on http://127.0.0.1:8000 and the web app on http://127.0.0.1:3000, and opens the browser.
+Close the two server windows ("FounderOS backend", "FounderOS frontend") to stop it.
 
-Linux / macOS:
+What `setup.bat` does (safe to run again; it skips what is done):
+1. Checks Python and Node, copies `.env.example` to `.env` (once), creates `.venv` and installs the backend
+   (`backend[dev,gpu,voice]`) and the frontend (`npm ci`).
+2. Starts the Qdrant container (`docker compose up -d qdrant`) when Docker Desktop is running.
+3. Downloads the models with `scripts\download_models.py`: `qwen3:8b` (about 5.2 GB) and `nomic-embed-text` (0.3 GB)
+   through Ollama's HTTP API, Whisper `small.en` and `base.en`, and Kokoro-82M with its voices (about 0.9 GB) into
+   `data\models`.
+4. Prints a preflight: one line per service, OK or MISSING with what to do.
 
+What `run.bat` checks every time:
+- **Ports 8000 and 3000.** If one is taken it stops and names the process (PID, name and command line), says when it
+  is an old FounderOS backend, and prints `Stop-Process -Id <PID>`. An old backend would otherwise answer with old code.
+- **Docker** installed and running; the Qdrant container.
+- **Preflight:** Ollama answering at `OLLAMA_BASE_URL` and its models pulled, Qdrant, the voice models. Missing pieces
+  are named with the command that fixes them; FounderOS starts anyway.
+- It waits for `/api/health` (up to 90 s) before opening the browser.
+
+### 3. Models
+```powershell
+.venv\Scripts\python.exe scripts\download_models.py            # everything that is missing
+.venv\Scripts\python.exe scripts\download_models.py --check    # only report
+.venv\Scripts\python.exe scripts\download_models.py --no-voice # Ollama models only
+```
+The model names come from `.env` (`OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, `FAST_LANE_MODEL`, `VOICE_STT_MODEL`,
+`VOICE_TTS_MODEL`). With Ollama in Docker you can also pull by hand: `docker exec ollama ollama pull qwen3:8b`.
+
+### 4. Reset to the clean demo
+```powershell
+.\reset_demo.bat          # asks first; --yes to skip the question, --settings to reset Settings too
+```
+With FounderOS closed, it moves `vault\default\` and `data\default\` to `data\backups\reset-<time>-default\` (nothing
+is deleted: test memos, uploads, the DuckDB file and the logs all go there), and restores the shipped Northwind notes
+from `sample_data\vault\`. The next start reloads the Northwind financials. Your Settings are kept.
+
+### Troubleshooting
+| Problem | Fix |
+|---|---|
+| "Port 8000 is already in use by an old FounderOS backend" | Close that window or run the `Stop-Process -Id <PID>` it prints, then `.\run.bat` |
+| "Ollama is not answering at http://localhost:11434" | Start the Ollama app, or `docker start ollama`; if it runs elsewhere set `OLLAMA_BASE_URL` in `.env` |
+| "Ollama models not pulled" | `.venv\Scripts\python.exe scripts\download_models.py --no-voice` |
+| "Docker Desktop is not running" | Start it and run `.\run.bat` again (search works in memory meanwhile) |
+| Voice stays off | `scripts\download_models.py --no-ollama`; allow the microphone in the browser |
+| Speech recognition is slow | No CUDA: it falls back to `base.en` on the CPU. Update the NVIDIA driver |
+| The first answer takes 30 s or more | The model was cold (loaded on first use). Later answers are fast |
+| `npm ci` fails | Node is older than 20.19: install Node 22 LTS, delete `frontend\node_modules`, run `setup.bat` |
+| Python 3.13+ warning | Install Python 3.12, delete `.venv`, run `setup.bat` |
+
+### VRAM and latency (measured on the founder's RTX 4080 Laptop, 12 GB)
+- `qwen3:8b` about 5.9 GB, Whisper `small.en` +0.5 to 0.7 GB, `nomic-embed-text` 0.3 GB; total about 7.4 GB of 12 GB.
+  Kokoro runs on the CPU. Avoid a second chat model on the GPU: a reload of qwen3:8b takes minutes.
+- First spoken words p50 about 0.9 s; a spoken metric answer p50 about 1.7 s; barge-in pauses speech in about 70 ms
+  and stops it after about 1 s of the founder's speech (`VOICE_BARGE_IN_MS`). Measure on your PC with
+  `scripts\voice_bench.py`.
+
+## Linux / macOS (development)
 ```bash
 ./setup.sh
 ./run.sh
 ```
-
-Then open http://127.0.0.1:3000. The backend API is on http://127.0.0.1:8000 (`/api/health`, docs at `/docs`).
-
-`setup` creates `.venv`, installs backend and frontend dependencies, copies `.env.example` to `.env`, starts Qdrant
-with Docker (if available) and pulls the Ollama models named in `.env`.
 
 ## Configuration
 All settings live in `.env` (git-ignored). See [`.env.example`](.env.example) for every key. By default everything
@@ -160,4 +212,3 @@ $env:FOUNDEROS_STAGE_DELAY_S = "8"; .\run.bat
 Close that window (or `Remove-Item Env:FOUNDEROS_STAGE_DELAY_S`) to go back to normal speed.
 `scripts/voice_scenarios.py` sets it to 2 for its own backend.
 
-Full Windows setup, troubleshooting and the stakeholder demo script are added in milestone M6.
