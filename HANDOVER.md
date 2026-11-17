@@ -5,7 +5,7 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M5: Voice** (built, awaiting the founder's Major gate: live check RM1–RM6, branch `claude/m5-voice`, PR #10). Then M6. M0 to M4 are ACCEPTED and merged; P1–P7 are decided (PRD §12).
+- **Next milestone:** **M6: Windows packaging, polish & demo** (M6a in progress on `claude/m6a-packaging-demo`: packaging, demo, M5 carry-overs; M6b = F panels and G pop-up agent window). M0 to M5 are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-16 (M5 fix round 8, after the founder's live check of round 7)
 
@@ -62,6 +62,16 @@
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | ACCEPTED (SM, 2026-11-16), Major; RL2a–RL2d and RM2–RM6 pass on Windows after 8 fix rounds; carried to M6 bug-fix pass: closing offer sometimes missing, "leave as it is" not recognised, restart offered for a change already in the answer, "yes" sometimes misheard by Whisper. History: live check RM1–RM6 after fix round 8 of 2026-11-16 (W1 a repeated change shows its reminder again; W3 one offer said and shown after every decision answer, yes walks the risks, no does nothing; W4 "leave it" keeps things; W5 re-run from the last decision team; W2 not reproduced, see Founder feedback). Founder live check 2026-11-16 after round 7: CI green; RL2a, RL2b, RL2c, RL2d PASS. Before that, live check RL1, RL2a–RL2d, RL3–RL5 after fix round 7 of 2026-11-16 (a change said in any stage, over the summary or after the run is said aloud; stage line; `FOUNDEROS_STAGE_DELAY_S`; runner RL2a–RL2d added). Founder RL2 2026-11-16 failed: offer shown, not spoken. Before that, live check RL1–RL5 after fix round 6 of 2026-11-15 (scripted runner `scripts/voice_scenarios.py`: S1–S7 typed and spoken all PASS on this PC). Founder RZ re-test 2026-11-15: S6 analyst re-run and S7 stop pass; S1, S3, S4, S5 and the librarain re-run failed on the PC. Before that, fix round 5 (U0–U5, reminder). Founder re-test of RY, 2026-11-15: restart with "Yes.", T4 and T5 pass; RY4 and RY6 failed; RY2 and RY5 partly. Before that, fix round 4 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
 
 ## Current session
+- Started (UTC): 2026-11-17 02:31 (local Windows session, **M6a**, partial PR "M6 (partial): packaging, demo and M5 carry-overs", Light gate, time-box 90 minutes), branch `claude/m6a-packaging-demo` from `origin/main` (M5 ACCEPTED, PR #10 merged). F (panels) and G (pop-up agent window) are M6b, not this session.
+- Plan:
+  - [ ] (6) M5 carry-overs, reproduced with `scripts/voice_scenarios.py` first: closing offer sometimes missing; "Ok, I will leave as it is"; restart offered for a change already in the answer (two hires = default); "yes" misheard (STT vocabulary/repairs); "yes" -> risks walk-through
+  - [ ] (1) `setup.bat`/`run.bat` from a fresh clone: Ollama at `OLLAMA_BASE_URL`, Qdrant container, clear messages, port-8000-in-use check naming the old process
+  - [ ] (2) `scripts/download_models.py`: qwen3:8b, nomic-embed-text (over Ollama's HTTP API), Whisper small.en, Kokoro
+  - [ ] (5) Clean demo data: shipped sample vault checked; `scripts/reset_demo.py` + `reset_demo.bat`
+  - [ ] (3) README for a fresh install; (4) `docs/DEMO_SCRIPT.md` (PRD §9)
+  - [ ] PRD §9 item 6 (barge-in 1 s) and §12 (Kokoro licence decision); checks, self-review, PR, CI
+
+Previous session (2026-11-16, round 8):
 - Started (UTC): 2026-11-16 (local Windows session, fix round 8 for the M5 Major gate, time-box 45 minutes), branch `claude/m5-voice`, PR #10 (open, not merged). M6 not started.
 - Plan: [x] record RL2a–RL2d PASS; [x] runner scenarios W1–W5 with the founder's phrases, run before any fix; [x] W3, W4, W5 fixed; W1 fixed in the chat; W2 not reproduced (no change); [x] full runner set typed and spoken; [x] HANDOVER, push.
 
