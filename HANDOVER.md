@@ -1343,7 +1343,7 @@ write the issues under "Founder feedback".
 - **X5:** "yes" after the offer goes through the risks and starts no team; "no" does nothing (runner X5 = W3).
 - Tests: `backend/tests/test_m6a_carryovers.py`; runner scenarios X1–X5.
 
-**Runner after the fix (this PC, 2026-11-17):** RUNNER_AFTER
+**Runner after the fix (this PC, 2026-11-17):** X2 and X3 typed PASS; X3, X4 and X5 spoken PASS (643 s, on the final code). With the new prompt Whisper wrote the spoken "Yeah." as "Yeah." (it had been "Yaffen."), so the prompt fixed it at the recogniser and the repair is a second net. X1 spoken PASS before the fix (unchanged code path). Not tested with a microphone.
 
 ### [M5] Live check after round 7: W1–W5 (fix session 2026-11-16, round 8): RESOLVED on this PC (W2 not reproduced), awaiting live check RM1–RM6
 **Founder's result (2026-11-16):** CI green; RL2a, RL2b, RL2c, RL2d PASS. Then:
