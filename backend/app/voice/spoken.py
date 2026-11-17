@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import calendar
+import contextlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -431,7 +432,7 @@ def summarise(result: Any) -> Spoken:
             # Founder re-test R5: the summary always ends with an offer, even with no risks and one option.
             costs = spoken_text(frame.cost_sentence(), currency) if frame.cost_model is not None else ""
             more.append(Segment("detail", "Want me to go through the costs?", [costs] if costs else []))
-        return Spoken(lead=lead, more=more)
+        return Spoken(lead=lead, more=_offer_always(more, sentences, lead, frame, currency))
     elif metrics and getattr(result, "intent", "") == "finance":
         first = metrics[0]
         lead.append(metric_lead(first.label, first.value, first.unit, first.metric))
@@ -449,4 +450,28 @@ def summarise(result: Any) -> Spoken:
             lead.append("Part of this is unverified, so check the screen.")
         for chunk in _chunks(said[2:]):
             more.append(Segment("rest", "Want me to go on?", chunk))
+    if frame is not None:
+        more = _offer_always(more, sentences, lead[:3], frame, currency)
     return Spoken(lead=lead[:3], more=more)
+
+
+def _offer_always(
+    more: list[Segment], sentences: list[str], lead: list[str], frame: Any, currency: str
+) -> list[Segment]:
+    """Founder Y1 (M6a, 2026-11-17): a decision answer always ends on an offer that has something behind it, even
+    an answer that ends on the Advisor's own question, with no options in its frame or no costs to read out. The
+    lines are code's cost sentence, or the answer's own statements (checked text) that the lead did not say."""
+    if more and more[0].lines:
+        return more
+    costs = ""
+    if getattr(frame, "cost_model", None) is not None:
+        with contextlib.suppress(Exception):
+            costs = spoken_text(frame.cost_sentence(), currency)
+    if costs:
+        return [Segment("detail", "Want me to go through the costs?", [costs])]
+    said = {s.strip() for s in lead}
+    rest = [spoken_text(s, currency) for s in sentences if not s.rstrip().endswith("?")]
+    rest = [s for s in rest if s.strip() and s.strip() not in said][:3]
+    if rest:
+        return [Segment("rest", "Want me to go on?", rest)]
+    return [Segment("rest", "Want me to go on?", ["That is all I have on it. The detail is on the screen."])]

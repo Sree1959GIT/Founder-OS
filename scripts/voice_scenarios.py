@@ -920,6 +920,35 @@ async def x4(ch: Channel, r: Result) -> None:
         y.check("the risks were gone through", len([ln for ln in y.lines if ln.strip()]) >= 1)
 
 
+# --- M6a fix: founder PK7 (2026-11-17) -------------------------------------------------------------------------------
+async def y1_y2(ch: Channel, r: Result) -> None:
+    """Y1 the closing offer comes after every decision answer, even one that ends on the Advisor's own question.
+    Y2 "Yeah." after it is never met with silence (said twice, as the founder did)."""
+    for attempt in range(2):
+        mark = len(ch.inbox) if isinstance(ch, Spoken) else 0
+        run_id = await _answered_dubai(ch, r)
+        if run_id is None:
+            return
+        s = r.steps[-1]
+        run = (await ch.http.get(f"/api/runs/{run_id}")).json()
+        answer = str((run.get("result") or {}).get("answer") or "").strip()
+        s.notes.append(f"answer ends: …{answer[-160:]}")
+        s.notes.append(f"answer ends on a question: {answer.endswith('?')}")
+        shown = [e["data"].get("text", "") for e in ch.events.since(0, type="recap", run_id=run_id)]
+        s.notes.append(f"recap shown: {shown}")
+        s.check("the chat line ends on one offer", len(shown) == 1 and "want" in shown[0].lower())
+        if isinstance(ch, Spoken):
+            said = ch.said_since(mark)
+            s.check('one "Want ...?" said', sum("want" in ln.lower() and ln.rstrip().endswith("?") for ln in said) == 1)
+        for _ in range(2):
+            y = await ch.say("Yeah.", settle=6)
+            r.steps.append(y)
+            y.check("no run started", y.run_started is None)
+            y.check("not silent", any(ln.strip() for ln in y.lines))
+        if answer.endswith("?") or attempt:
+            return
+
+
 SCENARIOS = {
     "S1+S2": s1_s2,
     "S3": s3,
@@ -941,6 +970,7 @@ SCENARIOS = {
     "X3": x3,
     "X4": x4,
     "X5": w3,  # "yes" walks through the risks, "no" does nothing (founder W3, confirmed again in M6a)
+    "Y1+Y2": y1_y2,
 }
 
 

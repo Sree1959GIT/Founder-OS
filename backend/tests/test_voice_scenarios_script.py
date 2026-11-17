@@ -55,4 +55,5 @@ def test_every_founder_scenario_is_scripted() -> None:
         "X3",
         "X4",
         "X5",
+        "Y1+Y2",
     ]

@@ -7,7 +7,7 @@
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** **M6: Windows packaging, polish & demo** (M6a in progress on `claude/m6a-packaging-demo`: packaging, demo, M5 carry-overs; M6b = F panels and G pop-up agent window). M0 to M5 are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-17 (M6a: packaging, demo, M5 carry-overs)
+- **Last updated:** 2026-11-17 (M6a fix: PK1–PK6 PASS, PK7 FAIL; Y1–Y3 fixed, awaiting PK7, PK7b, PK1b)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -60,9 +60,13 @@
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | ACCEPTED (SM, 2026-11-16), Major; RL2a–RL2d and RM2–RM6 pass on Windows after 8 fix rounds; carried to M6 bug-fix pass: closing offer sometimes missing, "leave as it is" not recognised, restart offered for a change already in the answer, "yes" sometimes misheard by Whisper. History: live check RM1–RM6 after fix round 8 of 2026-11-16 (W1 a repeated change shows its reminder again; W3 one offer said and shown after every decision answer, yes walks the risks, no does nothing; W4 "leave it" keeps things; W5 re-run from the last decision team; W2 not reproduced, see Founder feedback). Founder live check 2026-11-16 after round 7: CI green; RL2a, RL2b, RL2c, RL2d PASS. Before that, live check RL1, RL2a–RL2d, RL3–RL5 after fix round 7 of 2026-11-16 (a change said in any stage, over the summary or after the run is said aloud; stage line; `FOUNDEROS_STAGE_DELAY_S`; runner RL2a–RL2d added). Founder RL2 2026-11-16 failed: offer shown, not spoken. Before that, live check RL1–RL5 after fix round 6 of 2026-11-15 (scripted runner `scripts/voice_scenarios.py`: S1–S7 typed and spoken all PASS on this PC). Founder RZ re-test 2026-11-15: S6 analyst re-run and S7 stop pass; S1, S3, S4, S5 and the librarain re-run failed on the PC. Before that, fix round 5 (U0–U5, reminder). Founder re-test of RY, 2026-11-15: restart with "Yes.", T4 and T5 pass; RY4 and RY6 failed; RY2 and RY5 partly. Before that, fix round 4 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
-| M6a Packaging, demo, M5 carry-overs (partial) | [Sree1959GIT/Founder-OS#11](https://github.com/Sree1959GIT/Founder-OS/pull/11) | Light | AWAITING FOUNDER (PK1–PK8) |
+| M6a Packaging, demo, M5 carry-overs (partial) | [Sree1959GIT/Founder-OS#11](https://github.com/Sree1959GIT/Founder-OS/pull/11) | Light | PK1–PK6 PASS, PK7 FAIL (Y1–Y3, fixed 2026-11-17); AWAITING FOUNDER (PK7, PK7b, PK1b, PK8) |
 
 ## Current session
+- Started (UTC): 2026-11-17 16:00 (local Windows session, **M6a bug-fix** after the founder's PK run, time-box 30 minutes), branch `claude/m6a-packaging-demo`, PR #11 (open, not merged). M6b (F, G, TTS) not started.
+- Plan: [x] record PK1–PK7; [x] runner scenario Y1+Y2 before any fix; [x] Y1, Y2, Y3 fixed with tests; [x] Y1+Y2, X4, X5 typed and spoken; [x] HANDOVER, push, CI.
+
+Previous session (2026-11-17, M6a):
 - Started (UTC): 2026-11-17 02:31 (local Windows session, **M6a**, partial PR "M6 (partial): packaging, demo and M5 carry-overs", Light gate, time-box 90 minutes), branch `claude/m6a-packaging-demo` from `origin/main` (M5 ACCEPTED, PR #10 merged). F (panels) and G (pop-up agent window) are M6b, not this session.
 - Plan:
   - [x] (6) M5 carry-overs, reproduced with `scripts/voice_scenarios.py` first: closing offer sometimes missing; "Ok, I will leave as it is"; restart offered for a change already in the answer (two hires = default); "yes" misheard (STT vocabulary/repairs); "yes" -> risks walk-through
@@ -803,6 +807,10 @@ Known issues / notes:
 ## Windows verification checklist (for the founder)
 **M6a (Light gate), about 15 minutes. Run this one first: PK1 to PK8.** Windows PowerShell 5.1.
 
+- **PK7 (re-test after the fix). Yes, then the risks; a yes is never ignored (Y1, Y2).** After a fresh Dubai answer, **see and hear** "The answer is ready… Want me to go through the risks?" (or "Want me to go on?" / "…the costs?"), even when the answer ends on the Advisor's own question. Say **"Yeah."** **Hear:** the risks, no new team. Say **"Yeah."** again. **Hear:** "Which comes first: … or …?" if the answer ended on an either/or question, otherwise "Yes to what? You can ask me about the risks or the other options." Never silence.
+- **PK7b. A third yes.** Straight after PK7, say **"Yes."** once more. **Hear:** "Yes to what? You can ask me about the risks or the other options." No team, no "Did you say…?".
+- **PK1b. Second clone, Qdrant already running (Y3).** With `founderos-qdrant` running from `D:\Founder-OS`, in `D:\FounderOS-fresh`: `git pull; .\setup.bat` **Expect:** `[OK] Qdrant already running on port 6333.` and no "container name … already in use" and no `[WARN] Could not start Qdrant`. `.\run.bat` says the same line.
+- **Founder results 2026-11-17:** PK1 PASS (but Y3), PK2–PK6 PASS, **PK7 FAIL** (Y1, Y2). PK8 not reported.
 - **PK1. Fresh clone, one command.** Close every FounderOS window. In a **new** folder: `git clone -b claude/m6a-packaging-demo https://github.com/Sree1959GIT/Founder-OS.git D:\FounderOS-fresh; Set-Location D:\FounderOS-fresh; .\run.bat` **Expect:** "First run: FounderOS is not set up yet, so setup.bat runs now", the install, the model step (with your Docker Ollama: "have qwen3:8b", "have nomic-embed-text"; then the voice models download, about 900 MB), a preflight block, the backend and frontend windows, "Backend is up", and the browser with the Northwind KPI cards (Runway 10.65 mo). Close both windows. Delete `D:\FounderOS-fresh` afterwards, or keep it for M6b.
 - **PK2. Port in use, named.** In `D:\Founder-OS`: `.\run.bat`, wait for the browser, then run `.\run.bat` **again** in a second PowerShell. **Expect:** `[ERROR] Port 8000 is already in use by an old FounderOS backend: python.exe (PID n).`, its command line, `Stop-Process -Id n`, and nothing else starts. Run the `Stop-Process` it prints (and close the frontend window), then `.\run.bat` again: it starts.
 - **PK3. Something missing is named.** `docker stop ollama`, then `.venv\Scripts\python.exe scripts\preflight.py` **Expect:** `[MISSING] Ollama is not answering at http://localhost:11434.` with "docker start ollama". `docker start ollama` and run it again: `[OK] Ollama 0.32.1 …`. Then `.venv\Scripts\python.exe scripts\download_models.py --check` **Expect:** every model "have …" and "All models are there.".
@@ -1331,6 +1339,19 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M6a] PK run 2026-11-17: PK1–PK6 PASS, PK7 FAIL (Y1, Y2), setup warning (Y3): RESOLVED on this PC, awaiting PK7, PK7b, PK1b
+**Founder's items:** Y1 no "The answer is ready… Want me to go through the risks?" (chat or aloud) after a Dubai answer that ended on the Advisor's own question ("What's your priority: extending runway or expanding sales reach?"). Y2 "Yeah." (heard correctly) after it, twice: total silence. Y3 `setup.bat` in a second clone: "container name /founderos-qdrant is already in use", `[WARN] Could not start Qdrant`, then `[OK] Qdrant`.
+
+**Reproduced first** with the new runner scenario **Y1+Y2** (`scripts/voice_scenarios.py`), typed, on the unchanged code: the offer was shown and the first "Yeah." got the risks, but **the second "Yeah." got silence** (FAIL, 2 of 2 answers). Y1 itself was not reproduced live: on this PC the Advisor's answer did not end on a question in either run (it ended on the cash-risk warning), so Y1 was reproduced in tests with such an answer.
+
+**Causes and what changed:**
+- **Y1:** the spoken summary only had an offer when it had lines behind it: a decision whose frame had no options (an answer that asks the founder instead of proposing, as yours did), or one with no cost lines, ended with no offer, so the lane showed none and the voice said none. Now every decision answer ends on an offer with something behind it: the risks or the other options as before, else "Want me to go through the costs?", else "Want me to go on?" with the answer's own statements (`_offer_always`, `app/voice/spoken.py`).
+- **Y2:** a yes with nothing open was a listening noise (silence). Now (`_bare_yes`, `app/conversation/manager.py`): an open offer is acted on (the risks, as before); else, if the answer ended on an either/or question, "Which comes first: extending runway or expanding sales reach?" (once per answer, no figures); else "Yes to what? You can ask me about the risks or the other options." It never starts a team. Two older tests that expected a silent second yes now expect that line.
+- **Y3:** `setup.bat` and `run.bat` first ask `http://localhost:6333/readyz`; if Qdrant answers they print `[OK] Qdrant already running on port 6333.` and skip `docker compose` (checked in cmd on this PC).
+- Tests: `backend/tests/test_m6a_carryovers.py` (Y1, Y2), `backend/tests/test_packaging_scripts.py` (Y3).
+
+**Runner after the fix (this PC, 2026-11-17):** Y1+Y2 typed and spoken PASS (the offer was shown and said after every answer; the first "Yeah." got the risks, the second got "Yes to what? You can ask me about the risks or the other options.", never silence); X4 and X5 typed and spoken PASS. In these runs the Advisor's answer again did not end on a question, so the either/or reply ("Which comes first: …?") and the no-options offer are covered by tests only. Backend: 1450 passed; ruff clean. Not tested with a microphone.
+
 ### [M5 → M6a] Carry-overs from the M5 gate (X1–X5): X2, X3, X4 RESOLVED on this PC, X1 not reproduced, X5 confirmed; awaiting PK5–PK7
 **Founder's items (M5 Gate log, 2026-11-16):** X1 closing offer sometimes missing; X2 "Ok, I will leave as it is" not recognised; X3 restart offered for a change already in the answer (two hires = default); X4 "yes" sometimes misheard (add to STT vocabulary/repairs); X5 confirm "yes" → risks walk-through.
 
@@ -1838,6 +1859,8 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M6a bug-fix (2026-11-17)
+- Recorded PK1–PK6 PASS, PK7 FAIL; runner scenario Y1+Y2 reproduced Y2 (second "Yeah." silent); fixed Y1 (offer always), Y2 (a yes is always answered), Y3 (Qdrant already running) with tests; HANDOVER PK7, PK7b, PK1b.
 ### M6a session (2026-11-17)
 - Plan committed; runner scenarios X1–X5 reproduced X2, X3 (typed) and X4 (spoken: "Yeah." heard as "Yaffen.") on the unchanged code; X1 passed; fixes X2–X4 with tests.
 - `run.bat`/`setup.bat`, `check_ports.ps1`, `preflight.py`, `download_models.py`, `reset_demo.py`/`.bat` with tests; README fresh install; `docs/DEMO_SCRIPT.md`; PRD §9 item 6 and §12.

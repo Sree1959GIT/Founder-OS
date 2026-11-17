@@ -395,7 +395,8 @@ def test_a_decision_summary_always_ends_with_an_offer() -> None:
     )
     spoken = summarise(result)
     assert spoken.lead[-1].startswith("My proposal is Hire one first: ")
-    assert spoken.more and spoken.more[0].offer == "Want me to go through the costs?"
+    # Founder Y1 (M6a): with no costs to read out, the offer is the answer's own statements, never an empty one.
+    assert spoken.more and spoken.more[0].offer == "Want me to go on?" and spoken.more[0].lines == ["x"]
 
 
 # R5's "a listening noise brings the offer back" now holds only for an offer that was never said (founder re-test S2,

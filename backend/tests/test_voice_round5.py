@@ -19,7 +19,7 @@ import pytest
 
 from app.agents.runtime import _SentenceGate, clear_trade_off, code_trade_off
 from app.conversation.classifier import by_rules, is_filler, plain
-from app.conversation.manager import CHANGE_STILL_OPEN, RESTART_OFFER, _ready_line
+from app.conversation.manager import CHANGE_STILL_OPEN, RESTART_OFFER, YES_TO_WHAT, _ready_line
 from app.engine.calibration import CalibrationStore
 from app.engine.duckdb_engine import FinanceDB
 from app.engine.metrics import MetricsEngine
@@ -157,7 +157,8 @@ async def test_a_bare_yes_with_nothing_asked_never_runs_as_a_question(finance: A
     # Founder W3 (2026-11-16): the answer ends on one offer, so a yes takes it (the risks); it never starts a run.
     assert not outcome.started_run and "?" not in outcome.reply
     again = await manager.turn(first.session_id, heard, spoken=True)
-    assert again.kind == "backchannel" and not again.started_run and again.reply == ""
+    # Founder Y2 (M6a): a second yes is never met with silence either; it still starts nothing.
+    assert not again.started_run and again.reply == YES_TO_WHAT
     assert len(manager.orchestrator.runs) == runs_before
 
 

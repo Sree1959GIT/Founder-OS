@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from app.conversation.classifier import is_leave
-from app.conversation.manager import LEAVE, change_reminder
+from app.conversation.manager import LEAVE, YES_TO_WHAT, change_reminder, either_or
 from app.voice.domain import corrected
 from tests.test_voice_round2 import lane
 from tests.test_voice_round8 import answered, finance  # noqa: F401  (the fixture)
@@ -91,3 +91,70 @@ async def test_yes_with_thanks_answers_the_offer(finance: Any, said: str) -> Non
     first = await answered(manager)
     out = await manager.turn(first.session_id, said)
     assert not out.started_run and out.reply and "did you say" not in out.reply.lower()
+
+
+# --- Y1, Y2 (founder PK7, 2026-11-17) -------------------------------------------------------------------------------
+PRIORITY = "What's your priority: extending runway or expanding sales reach?"
+
+
+def _decision(answer: str, options: list[Any] | None = None, cost_model: Any = None) -> Any:
+    from types import SimpleNamespace
+
+    frame = SimpleNamespace(
+        options=options or [], cost_model=cost_model, currency="USD", goals=[], default_option="", type="office"
+    )
+    return SimpleNamespace(
+        answer=answer, status="done", decision_frame=frame, metrics=[], cash_risk=None, agents=[], intent="decision"
+    )
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        f"Open a small hub first. {PRIORITY}",
+        PRIORITY,
+        f"The office costs a lot. It shortens the runway. Hiring is slow. {PRIORITY}",
+    ],
+)
+def test_a_decision_answer_ending_on_its_own_question_still_ends_on_an_offer(answer: str) -> None:
+    from app.voice.spoken import summarise
+
+    more = summarise(_decision(answer)).more
+    assert more and more[0].offer.startswith("Want") and more[0].lines
+
+
+def test_either_or_finds_the_two_choices() -> None:
+    assert either_or(f"Open a hub. {PRIORITY}") == "extending runway or expanding sales reach"
+    assert either_or("What would you cut first?") == ""
+    assert either_or("Open a hub. Is it runway or growth, at 12 months?") == ""
+    assert either_or("Open a hub.") == ""
+
+
+async def test_a_yes_is_never_ignored(finance: Any) -> None:  # noqa: F811
+    manager = lane(finance)
+    first = await answered(manager)
+    risks = await manager.turn(first.session_id, "Yeah.")
+    assert risks.reply and not risks.started_run  # the offer is open: yes is the risks
+    again = await manager.turn(first.session_id, "Yeah.")
+    assert again.reply == YES_TO_WHAT and not again.started_run
+    third = await manager.turn(first.session_id, "Yes.")
+    assert third.reply == YES_TO_WHAT
+
+
+async def test_a_yes_to_the_advisors_either_or_asks_which_one(finance: Any, monkeypatch: Any) -> None:  # noqa: F811
+    manager = lane(finance)
+    first = await answered(manager)
+    await manager.turn(first.session_id, "Yeah.")  # the risks
+    monkeypatch.setattr(manager, "_answer_text", lambda run_id: f"Open a small hub first. {PRIORITY}")
+    which = await manager.turn(first.session_id, "Yeah.")
+    assert which.reply == "Which comes first: extending runway or expanding sales reach?" and not which.started_run
+    again = await manager.turn(first.session_id, "Yeah.")  # asked once per answer
+    assert again.reply == YES_TO_WHAT
+
+
+async def test_a_yes_with_no_offer_open_is_answered(finance: Any) -> None:  # noqa: F811
+    manager = lane(finance)
+    first = await answered(manager)
+    manager.sessions[first.session_id].more = None  # Y1 as the founder saw it: no offer was made
+    out = await manager.turn(first.session_id, "Yeah.")
+    assert out.reply == YES_TO_WHAT and not out.started_run

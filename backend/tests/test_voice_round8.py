@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from app.conversation.classifier import is_leave
-from app.conversation.manager import LEAVE, change_reminder
+from app.conversation.manager import LEAVE, YES_TO_WHAT, change_reminder
 from app.engine.calibration import CalibrationStore
 from app.engine.duckdb_engine import FinanceDB
 from app.engine.metrics import MetricsEngine
@@ -53,7 +53,7 @@ async def test_a_decision_answer_shows_one_offer_and_yes_goes_through_the_risks(
     yes = await manager.turn(first.session_id, "yes")
     assert not yes.started_run and yes.reply and "?" not in yes.reply
     again = await manager.turn(first.session_id, "yes")
-    assert not again.started_run and again.reply == ""  # asked once: a second yes is a listening noise
+    assert not again.started_run and again.reply == YES_TO_WHAT  # founder Y2: asked once, and never silence
 
 
 async def test_no_to_the_offer_does_nothing(finance: Any) -> None:

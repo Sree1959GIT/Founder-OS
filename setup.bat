@@ -78,6 +78,12 @@ if not exist "sample_data\pnl.csv" (
 )
 
 rem --- Qdrant (Docker, optional) ------------------------------------------------
+rem Founder Y3: a Qdrant that already answers on port 6333 (another clone's container) is used as it is.
+curl.exe -s -f -m 3 http://localhost:6333/readyz >nul 2>nul
+if not errorlevel 1 (
+  echo [OK] Qdrant already running on port 6333.
+  goto :models
+)
 where docker >nul 2>nul
 if errorlevel 1 (
   echo [WARN] Docker not found. Search runs in memory until Docker Desktop is installed ^(optional^).

@@ -133,3 +133,14 @@ def test_ollama_down_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch, cap
     monkeypatch.setattr(dm.httpx, "get", down)
     assert dm.do_ollama(Settings(_env_file=None), check=False) is False
     assert "not answering" in capsys.readouterr().out
+
+
+# --- Y3: a Qdrant that already answers (another clone's container) ---------------------------------------------------
+@pytest.mark.parametrize("name", ["setup.bat", "run.bat"])
+def test_a_running_qdrant_skips_compose_with_no_warning(name: str) -> None:
+    text = (SCRIPTS.parent / name).read_bytes().decode("ascii")
+    probe = text.index("http://localhost:6333/readyz")
+    assert probe < text.index("docker compose up -d qdrant")
+    block = text[probe : text.index("where docker", probe)]
+    assert "[OK] Qdrant already running" in block and "goto :" in block and "[WARN]" not in block
+    assert "\r\n" in text and "\n" not in text.replace("\r\n", "")  # CRLF, or cmd loses its goto labels

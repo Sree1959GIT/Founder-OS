@@ -28,6 +28,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check_ports.ps
 if errorlevel 1 exit /b 1
 
 rem --- Qdrant (Docker, optional) ----------------------------------------------------------------------------------
+rem Founder Y3: a Qdrant that already answers on port 6333 (another clone's container) is used as it is.
+curl.exe -s -f -m 3 http://localhost:6333/readyz >nul 2>nul
+if not errorlevel 1 (
+  echo [OK] Qdrant already running on port 6333.
+  goto :preflight
+)
 where docker >nul 2>nul
 if errorlevel 1 (
   echo [WARN] Docker is not installed: search runs in memory ^(fine for the demo^). Docker Desktop adds Qdrant.
