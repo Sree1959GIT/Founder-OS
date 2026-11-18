@@ -3,7 +3,18 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { agentBars, countAgents, keepOnScreen, stageNodes } from "@/lib/agentGraph";
-import { DEFAULT_LAYOUT, LAYOUT_KEY, LEFT, loadLayout, maxWidth, parseLayout, resize, RIGHT, saveLayout } from "@/lib/layout";
+import {
+  DEFAULT_LAYOUT,
+  LAYOUT_KEY,
+  LEFT,
+  loadLayout,
+  maxWidth,
+  parseLayout,
+  resize,
+  RIGHT,
+  saveLayout,
+  shownWidths,
+} from "@/lib/layout";
 import type { AgentView, RunView } from "@/lib/workspace";
 
 const holder: { run: RunView | null } = { run: null };
@@ -103,6 +114,16 @@ describe("F: panel sizes", () => {
     expect(resize(DEFAULT_LAYOUT, "left", 700, 1280).left).toBe(560);
     // with the left folded the right may take more
     expect(maxWidth("right", { ...DEFAULT_LAYOUT, leftCollapsed: true }, 1100)).toBe(RIGHT.max);
+  });
+
+  it("a width saved on a big screen is drawn narrower on a small one, and kept", () => {
+    const wide = { left: 720, right: 560, leftCollapsed: false };
+    // 1024: the Agents panel is hidden (below xl), so the Advisor may take 1024 - 420 = 604
+    expect(shownWidths(wide, 1024)).toEqual({ left: 604, right: 560 });
+    // 1440 with both panels: the canvas keeps 420
+    const shown = shownWidths(wide, 1440);
+    expect(shown.left + shown.right + 420).toBeLessThanOrEqual(1440);
+    expect(shownWidths(wide, 2560)).toEqual({ left: 720, right: 560 });
   });
 
   it("dragging the left panel wider unfolds it", () => {

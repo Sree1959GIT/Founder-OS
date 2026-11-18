@@ -13,16 +13,17 @@ import { SettingsPanel } from "@/components/panels/SettingsPanel";
 import { VaultPanel } from "@/components/panels/VaultPanel";
 import { useHealth } from "@/hooks/useHealth";
 import { useRoute } from "@/hooks/useRoute";
-import { LEFT, maxWidth, RIGHT, usePanelLayout, viewportWidth } from "@/lib/layout";
+import { LEFT, maxWidth, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
 import { WorkspaceProvider } from "@/lib/workspace";
 
 function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAgents: () => void }) {
   const { layout, setWidth, reset, toggleLeft } = usePanelLayout();
-  const vw = viewportWidth();
+  const vw = useViewportWidth();
+  const shown = shownWidths(layout, vw);
   return (
     <>
       <AdvisorPanel
-        width={layout.left}
+        width={shown.left}
         collapsed={layout.leftCollapsed}
         onToggle={toggleLeft}
         onAgents={toggleAgents}
@@ -32,7 +33,7 @@ function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAg
         <ResizeHandle
           side="left"
           label="Advisor panel width"
-          width={layout.left}
+          width={shown.left}
           min={LEFT.min}
           max={maxWidth("left", layout, vw)}
           onResize={(w) => setWidth("left", w)}
@@ -43,14 +44,14 @@ function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAg
       <ResizeHandle
         side="right"
         label="Agents panel width"
-        width={layout.right}
+        width={shown.right}
         min={RIGHT.min}
         max={maxWidth("right", layout, vw)}
         onResize={(w) => setWidth("right", w)}
         onReset={() => reset("right")}
         className="md:hidden xl:block"
       />
-      <AgentRail width={layout.right} />
+      <AgentRail width={shown.right} />
     </>
   );
 }

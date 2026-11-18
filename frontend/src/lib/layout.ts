@@ -34,8 +34,25 @@ export function clamp(value: number, min: number, max: number): number {
 export function maxWidth(side: "left" | "right", layout: PanelLayout, viewport: number): number {
   const limits = side === "left" ? LEFT : RIGHT;
   if (viewport <= 0) return limits.max;
-  const other = side === "left" ? layout.right : layout.leftCollapsed ? FOLDED_WIDTH : layout.left;
+  const other =
+    side === "left" ? (railShown(viewport) ? layout.right : 0) : layout.leftCollapsed ? FOLDED_WIDTH : layout.left;
   return Math.max(limits.min, Math.min(limits.max, viewport - other - CANVAS_MIN));
+}
+
+/** The right (Agents) panel shows from Tailwind's `xl` breakpoint. */
+export const XL = 1280;
+export function railShown(viewport: number): boolean {
+  return viewport <= 0 || viewport >= XL;
+}
+
+/**
+ * The widths to draw now. A width saved on a bigger screen is drawn narrower so the canvas keeps its room, but the
+ * saved value is kept, so it comes back on the bigger screen.
+ */
+export function shownWidths(layout: PanelLayout, viewport: number): { left: number; right: number } {
+  const right = railShown(viewport) ? clamp(layout.right, RIGHT.min, maxWidth("right", layout, viewport)) : layout.right;
+  const left = clamp(layout.left, LEFT.min, maxWidth("left", { ...layout, right }, viewport));
+  return { left, right };
 }
 
 export function resize(layout: PanelLayout, side: "left" | "right", width: number, viewport: number): PanelLayout {
@@ -86,6 +103,17 @@ export function saveLayout(layout: PanelLayout): void {
 
 export function viewportWidth(): number {
   return typeof window !== "undefined" ? window.innerWidth : 0;
+}
+
+/** The window's width, kept current on resize. */
+export function useViewportWidth(): number {
+  const [width, setWidth] = useState(viewportWidth);
+  useEffect(() => {
+    const onResize = () => setWidth(viewportWidth());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
 }
 
 export interface PanelLayoutApi {
