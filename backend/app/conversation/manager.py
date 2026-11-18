@@ -992,6 +992,11 @@ class ConversationManager:
         # After the answer (founder re-test R8): only this agent runs again. The rest of the team's findings are kept
         # as they were, and the Advisor writes the answer again from all of them.
         frame = run.plan.frame
+        # M6b (HANDOVER next step 4): "Re-run the analyst, assume two hires" when the answer already rests on two
+        # hires is no change to the decision: only that agent runs again, as for a plain re-run, and the reply says so.
+        assumed = self._already_assumed(run, change) if change else ""
+        if assumed:
+            change, brief = "", inst.brief
         changes_inputs = bool(change) and (
             bool(parse_inputs(change, frame.type if frame is not None else "")) or self._gives_inputs(run, change)
         )
@@ -1030,6 +1035,8 @@ class ConversationManager:
             on = f"on the {place} question" if place else f'on "{_topic(run.message)}"'
             how = f"{on} with your change" if change else on
         reply = f"Re-running only the {inst.name} {how}. The rest of the team's findings stand."
+        if assumed:
+            reply = f"That's already in this answer: it assumes {assumed}. {reply}"
         return self._reply(session, by, reply, new.run_id).model_copy(update={"started_run": True})
 
     def _team_with(self, session: Session, kind: str, decision: RunContext | None) -> RunContext | None:
@@ -1052,11 +1059,22 @@ class ConversationManager:
             session_id=session.id, kind=classified.kind, classified_by=classified.by, reply=reply, run_id=run_id
         )
 
-    @staticmethod
-    def _already_in(running: RunContext, text: str) -> str:
+    @classmethod
+    def _already_in(cls, running: RunContext, text: str) -> str:
         """M6a carry-over (founder, M5 gate): "Assume two hires." when the answer already rests on two local hires is
         not a change, so no restart is offered. Every number the founder gave must equal the base case of the frame
         this run used; the reply names counts in words and other figures by name only (the lane states no figure)."""
+        what = cls._already_assumed(running, text)
+        if not what:
+            return ""
+        if running.task is not None and not running.task.done():
+            return f"The team is already assuming {what}. Nothing to restart."
+        return f"That's already in this answer: it assumes {what}. Nothing to restart."
+
+    @staticmethod
+    def _already_assumed(running: RunContext, text: str) -> str:
+        """What the run already assumes, in words ("two local hires"), when every number in `text` equals the base
+        case of its frame; "" when any differs or the text gives none."""
         frame = running.result.decision_frame if running.result is not None else None
         if frame is None and running.plan is not None:
             frame = running.plan.frame
@@ -1074,10 +1092,7 @@ class ConversationManager:
                 parts.append(f"{words[int(value)]} {item.name.lower()}")
             else:
                 parts.append(f"that {item.name.lower()}")
-        what = parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
-        if running.task is not None and not running.task.done():
-            return f"The team is already assuming {what}. Nothing to restart."
-        return f"That's already in this answer: it assumes {what}. Nothing to restart."
+        return parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
 
     def _offer_amendment(self, session: Session, classified: Classified, running: RunContext, text: str) -> TurnOutcome:
         same_as_answer = self._already_in(running, text)
