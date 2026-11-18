@@ -63,6 +63,16 @@
 | M6a Packaging, demo, M5 carry-overs (partial) | [Sree1959GIT/Founder-OS#11](https://github.com/Sree1959GIT/Founder-OS/pull/11) | Light | PK1–PK6 PASS, PK7 FAIL (Y1–Y3, fixed 2026-11-17); AWAITING FOUNDER (PK7, PK7b, PK1b, PK8) |
 
 ## Current session
+- Started (UTC): 2026-11-18 04:26 (local Windows session, **M6b**, the rest of M6, PR "M6: Windows packaging, polish & demo", **Major** gate, time-box 2 hours), branch `claude/m6b-polish-demo` from `origin/main` (M6a merged, PR #11; PK1–PK8 pass).
+- Plan, in the founder's order:
+  - [ ] (1) F: expandable left and right panels, collapsible left panel, sizes remembered per viewer
+  - [ ] (2) TTS latency: Kokoro int8 and/or onnxruntime-gpu, measured with `scripts/voice_bench.py`; keep the faster one if Whisper on the GPU still works (target metric answer ~3 s, now 3.8 s)
+  - [ ] (3) G: movable pop-up agent window with a graphical view of each agent's status and work, from the Advisor panel (40 minutes; minimal version if not done)
+  - [ ] (4) Next-steps item 4: a re-run with a change already in the base case does not re-run the team
+  - [ ] (5) npm deprecation warnings, only if safe
+  - [ ] Checks, self-review, Major-gate checklist (fresh clone `D:\FounderOS-fresh2`, DEMO_SCRIPT, F, G, voice timing), PR, CI
+
+Previous session (2026-11-17, M6a bug-fix):
 - Started (UTC): 2026-11-17 16:00 (local Windows session, **M6a bug-fix** after the founder's PK run, time-box 30 minutes), branch `claude/m6a-packaging-demo`, PR #11 (open, not merged). M6b (F, G, TTS) not started.
 - Plan: [x] record PK1–PK7; [x] runner scenario Y1+Y2 before any fix; [x] Y1, Y2, Y3 fixed with tests; [x] Y1+Y2, X4, X5 typed and spoken; [x] HANDOVER, push, CI.
 
