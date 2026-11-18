@@ -12,7 +12,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from loguru import logger
@@ -56,11 +56,30 @@ class FakeTTS:
         return (0.05 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
 
 
+# M6b, measured on the founder's PC (RTX 4080 Laptop): Kokoro fp32 on CUDA makes a line about 3.5x faster than 8 CPU
+# threads (a 100-character clause 1.1 s against 4.2 s). The default "EXHAUSTIVE" cuDNN search re-tunes every new input
+# length for seconds, so it is HEURISTIC. The int8 model is not for the GPU: most of its operators fall back to the CPU
+# with copies (10 to 30 s a line), so it always runs on the CPU.
+CUDA_PROVIDER = ("CUDAExecutionProvider", {"cudnn_conv_algo_search": "HEURISTIC"})
+
+
+def gpu_wanted(device: str, model_name: str, available: list[str]) -> bool:
+    """Kokoro goes on the GPU only when asked for ("cuda") or allowed ("auto"), onnxruntime-gpu is installed, and the
+    model is not the int8 one."""
+    return device in ("auto", "cuda") and "CUDAExecutionProvider" in available and "int8" not in model_name
+
+
 class KokoroTTS:
     name = "kokoro"
 
     def __init__(
-        self, model_path: Path, voices_path: Path, voice: str = "af_heart", speed: float = 1.0, threads: int = 8
+        self,
+        model_path: Path,
+        voices_path: Path,
+        voice: str = "af_heart",
+        speed: float = 1.0,
+        threads: int = 8,
+        device: str = "cpu",
     ) -> None:
         from kokoro_onnx import Kokoro
 
@@ -72,17 +91,41 @@ class KokoroTTS:
         import onnxruntime as ort
 
         started = time.perf_counter()
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = threads  # measured on an i9-13900HX: 8 threads 1.2 s, the default 1.8 s
-        options.inter_op_num_threads = 1
-        session = ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
-        self._kokoro = Kokoro.from_session(session, str(voices_path))
         self.voice, self.speed = voice, speed
         self.model = model_path.name
-        self.device = "cpu"
         self.note = ""
-        self.synthesize("Ready.")
-        logger.info("TTS Kokoro {} ready in {:.0f} ms", self.model, (time.perf_counter() - started) * 1000)
+
+        def session_on(providers: list[Any]) -> Any:
+            options = ort.SessionOptions()
+            options.intra_op_num_threads = threads  # measured on an i9-13900HX: 8 threads 1.2 s, the default 1.8 s
+            options.inter_op_num_threads = 1
+            return ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
+
+        self.device = "cpu"
+        if gpu_wanted(device, model_path.name, ort.get_available_providers()):
+            from app.voice.stt import add_cuda_dll_dirs
+
+            add_cuda_dll_dirs()  # cuBLAS, cuDNN, cuFFT, cuRAND and the CUDA runtime come from the nvidia-* wheels
+            try:
+                session = session_on([CUDA_PROVIDER, "CPUExecutionProvider"])
+                if session.get_providers()[0] != "CUDAExecutionProvider":
+                    raise RuntimeError("the CUDA provider did not load")
+                self._kokoro = Kokoro.from_session(session, str(voices_path))
+                self.device = "cuda"
+                self.synthesize("Ready.")  # a test line: missing CUDA DLLs fail here, not on the founder's first turn
+            except Exception as exc:  # any CUDA failure means the CPU, as before
+                self.device = "cpu"
+                self.note = f"Kokoro on the GPU failed, using the CPU: {exc}"
+                logger.warning(self.note)
+        elif device == "cuda":
+            self.note = "VOICE_TTS_DEVICE=cuda, but onnxruntime-gpu is not installed (or the model is int8): CPU"
+            logger.warning(self.note)
+        if self.device == "cpu":
+            self._kokoro = Kokoro.from_session(session_on(["CPUExecutionProvider"]), str(voices_path))
+            self.synthesize("Ready.")
+        logger.info(
+            "TTS Kokoro {} on {} ready in {:.0f} ms", self.model, self.device, (time.perf_counter() - started) * 1000
+        )
 
     def synthesize(self, text: str) -> np.ndarray:
         samples, rate = self._kokoro.create(text, voice=self.voice, speed=self.speed, lang="en-us")

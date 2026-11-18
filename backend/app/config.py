@@ -147,6 +147,9 @@ class Settings(BaseSettings):
     voice_tts: Literal["kokoro", "fake"] = "kokoro"
     voice_tts_model: str = "kokoro-v1.0.onnx"
     voice_tts_voice: str = "af_heart"
+    # auto: Kokoro on the GPU when onnxruntime-gpu is installed (scripts/enable_tts_gpu.py) and a test line works, else
+    # the CPU. cpu: always the CPU (the M5 behaviour).
+    voice_tts_device: Literal["auto", "cuda", "cpu"] = "auto"
     voice_models_dir: Path | None = None  # empty: <data_dir>/models
     # silero: Silero VAD v6 (ONNX, bundled with faster-whisper). energy: an RMS threshold (fallback, tests).
     voice_vad: Literal["silero", "energy"] = "silero"

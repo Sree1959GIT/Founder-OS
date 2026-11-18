@@ -65,6 +65,9 @@ if errorlevel 1 (
 )
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul || exit /b 1
 ".venv\Scripts\python.exe" -m pip install -e "backend[dev,gpu,voice]" || exit /b 1
+rem M6b: Kokoro on the GPU (about 3.5x faster speech). The pip install above brings the CPU onnxruntime back, so this
+rem runs every time; it is skipped without an NVIDIA GPU and never stops setup (on a problem Kokoro stays on the CPU).
+".venv\Scripts\python.exe" scripts\enable_tts_gpu.py
 
 rem --- Frontend ------------------------------------------------------------------
 echo Installing frontend dependencies ...

@@ -136,8 +136,15 @@ class VoiceService:
                 try:
                     folder = s.voice_models_path() / "kokoro"
                     tts = CachedTTS(
-                        KokoroTTS(folder / s.voice_tts_model, folder / "voices-v1.0.bin", voice=s.voice_tts_voice)
+                        KokoroTTS(
+                            folder / s.voice_tts_model,
+                            folder / "voices-v1.0.bin",
+                            voice=s.voice_tts_voice,
+                            device=s.voice_tts_device,
+                        )
                     )
+                    if tts.note:
+                        notes.append(f"TTS {tts.note}")
                 except Exception as exc:
                     tts = None
                     notes.append(f"TTS unavailable: {exc}")
