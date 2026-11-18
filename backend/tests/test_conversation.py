@@ -462,14 +462,15 @@ async def test_a_follow_up_to_the_dubai_answer_is_offered_not_run_at_once(financ
     first = await manager.turn("s40d", "Should we open a Dubai office?")
     run = manager.orchestrator.runs[first.run_id or ""]
     await run.task
-    offer = await manager.turn("s40d", "also make it a two person team")
-    assert offer.amendment_id and offer.reply == change_reminder("also make it a two person team")  # founder RL2
+    # Three, not two: two local hires is the frame's base case, so "two" is already in the answer (M6a, X3).
+    offer = await manager.turn("s40d", "also make it a three person team")
+    assert offer.amendment_id and offer.reply == change_reminder("also make it a three person team")  # founder RL2
     accepted = manager.answer_amendment("s40d", offer.amendment_id or "", True)
     new_run = manager.orchestrator.runs[accepted["run_id"]]
     await new_run.task
     assert new_run.plan is not None and new_run.plan.frame is not None and new_run.plan.frame.cost_model is not None
     hires = next(i for i in new_run.plan.frame.cost_model.items if i.key == "hires")
-    assert hires.base == 2 and hires.basis == "founder"
+    assert hires.base == 3 and hires.basis == "founder"
     assert [i.type for i in new_run.plan.team] == [i.type for i in run.plan.team]  # type: ignore[union-attr]
 
 

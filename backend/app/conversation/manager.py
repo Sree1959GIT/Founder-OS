@@ -20,6 +20,7 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agents.decision_frame import _NUMBER_WORDS as _COUNT_NAMES
 from app.agents.decision_frame import _place, inputs_question, parse_inputs, units_of
 from app.agents.events import AgentEvent, EventBus, EventType
 from app.agents.graph import AgentOrchestrator, RunContext
@@ -132,7 +133,9 @@ STOP_QUESTION = "Stop the team? Say yes to stop."
 # as yes ("stop", "restart"); "keep going" counts as no.
 _YES = re.compile(
     r"^(?:(?:yes|yeah|yep|yup|sure|ok|okay|correct|right|exactly|that's right|that is right|do it|go ahead|"
-    r"please do|confirm|i did|i do)\b[\s.!,]*)+(?:please|stop(?: it| the team)?|restart(?: it)?|ask it|i did)?"
+    r"please do|confirm|i did|i do)\b[\s.!,]*)+"
+    # M6a carry-over: "Yes, thank you." and "Yes sir." are a yes too.
+    r"(?:please|thanks|thank you|sir|stop(?: it| the team)?|restart(?: it)?|ask it|i did)?"
     r"[\s.!]*$",
     re.I,
 )
@@ -214,6 +217,7 @@ class Session:
         self.decision_run_id: str | None = None  # the last decision answered: what "that option" refers to
         self.asked: Asked | None = None
         self.more: tuple[str, str, list[str]] | None = None  # founder W3: (run, the offer, what yes says)
+        self.chose_asked: str | None = None  # founder Y2: the run whose either/or question a yes was asked about
 
 
 _LEFT_IN_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
@@ -245,6 +249,21 @@ def _ready_line(data: dict[str, Any]) -> str:
     if data.get("assumptions"):
         return "The answer is ready. It rests on assumptions you should confirm."
     return "The answer is ready." if data.get("verified") else "The answer is ready, but some of it is unverified."
+
+
+YES_TO_WHAT = "Yes to what? You can ask me about the risks or the other options."
+_EITHER_OR = re.compile(r"[:,]\s*(?P<choice>[^:,?]{2,80}?\s+or\s+[^:,?]{2,80}?)\s*\?\s*$", re.I)
+
+
+def either_or(answer: str) -> str:
+    """The two choices of the Advisor's closing either/or question ("What's your priority: extending runway or
+    expanding sales reach?" -> "extending runway or expanding sales reach"), or "". Never one with a figure in it."""
+    sentences = [s.strip() for s in split_sentences(answer.strip()) if s.strip()]
+    last = sentences[-1] if sentences else ""
+    match = _EITHER_OR.search(last) if last.endswith("?") else None
+    if match is None or extract_figures(match["choice"]) or re.search(r"\d", match["choice"]):
+        return ""
+    return match["choice"].strip()
 
 
 class ConversationError(ValueError):
@@ -722,7 +741,9 @@ class ConversationManager:
         if asked.kind == "more":
             # Founder W3: yes walks through the risks briefly; no does nothing.
             more, session.more = session.more, None
-            if not yes or more is None or more[0] != asked.ref:
+            if yes and (more is None or more[0] != asked.ref):
+                return self._bare_yes(session)  # founder Y2: a yes is never met with silence
+            if not yes:
                 return self._reply(session, Classified(kind="backchannel", by="rules"), "", session.run_id)
             return self._reply(session, by, " ".join(more[2]), session.run_id)
         if asked.kind == "stop":
@@ -748,6 +769,23 @@ class ConversationManager:
                 return self._accept(session, "amendment", outcome.amendment_id, True) or outcome
             return outcome
         return self._accept(session, asked.kind, asked.ref, yes)
+
+    def _bare_yes(self, session: Session) -> TurnOutcome:
+        """Founder Y2 (M6a, 2026-11-17): "Yeah." with no offer open got silence, twice. With the Advisor's either/or
+        question still open, the founder is asked which one (once per answer); otherwise what the yes is for."""
+        rules = Classified(kind="answerable_now", by="rules")
+        run_id = session.decision_run_id
+        if run_id is not None and session.chose_asked != run_id:
+            choice = either_or(self._answer_text(run_id))
+            if choice:
+                session.chose_asked = run_id
+                return self._reply(session, rules, f"Which comes first: {choice}?", session.run_id)
+        return self._reply(session, rules, YES_TO_WHAT, session.run_id)
+
+    def _answer_text(self, run_id: str) -> str:
+        run = self.orchestrator.runs.get(run_id)
+        result = run.result if run is not None else None
+        return str(getattr(result, "answer", "") or "") if result is not None else ""
 
     def answer_offer(self, session_id: str, what: str, ref: str, accept: bool) -> TurnOutcome | None:
         """For a listener that heard the answer itself (the voice: "restart", "ask it"). None: the offer has gone."""
@@ -823,6 +861,8 @@ class ConversationManager:
         if is_greeting(text):
             # Founder re-test U4: "Hello? Yes?" got the earlier answer's text back. A greeting gets a greeting.
             return self._reply(session, rules, GREETING, session.run_id)
+        if _YES.match(plain(text)):
+            return self._bare_yes(session)  # founder Y2: nothing is on offer, but a yes is never ignored
         if kind == "backchannel" or is_filler(text):
             return self._reply(session, Classified(kind="backchannel", by="rules"), "", session.run_id)
         if kind == "stop":
@@ -1012,7 +1052,37 @@ class ConversationManager:
             session_id=session.id, kind=classified.kind, classified_by=classified.by, reply=reply, run_id=run_id
         )
 
+    @staticmethod
+    def _already_in(running: RunContext, text: str) -> str:
+        """M6a carry-over (founder, M5 gate): "Assume two hires." when the answer already rests on two local hires is
+        not a change, so no restart is offered. Every number the founder gave must equal the base case of the frame
+        this run used; the reply names counts in words and other figures by name only (the lane states no figure)."""
+        frame = running.result.decision_frame if running.result is not None else None
+        if frame is None and running.plan is not None:
+            frame = running.plan.frame
+        if frame is None or frame.cost_model is None:
+            return ""
+        given = parse_inputs(text, frame.type)
+        items = {i.key: i for i in frame.cost_model.items}
+        if not given or any(k not in items or abs(items[k].base - v) > 1e-9 for k, v in given.items()):
+            return ""
+        words = {v: k for k, v in _COUNT_NAMES.items()}
+        parts = []
+        for key, value in given.items():
+            item = items[key]
+            if item.cadence == "count" and float(value).is_integer() and int(value) in words:
+                parts.append(f"{words[int(value)]} {item.name.lower()}")
+            else:
+                parts.append(f"that {item.name.lower()}")
+        what = parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
+        if running.task is not None and not running.task.done():
+            return f"The team is already assuming {what}. Nothing to restart."
+        return f"That's already in this answer: it assumes {what}. Nothing to restart."
+
     def _offer_amendment(self, session: Session, classified: Classified, running: RunContext, text: str) -> TurnOutcome:
+        same_as_answer = self._already_in(running, text)
+        if same_as_answer:
+            return self._reply(session, classified, same_as_answer, running.run_id)
         # A run whose team is still being chosen has no plan yet: only a run known not to be a decision is a
         # "request".
         known_other = running.plan is not None and not self._is_decision(running.run_id)

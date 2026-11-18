@@ -395,7 +395,8 @@ def test_a_decision_summary_always_ends_with_an_offer() -> None:
     )
     spoken = summarise(result)
     assert spoken.lead[-1].startswith("My proposal is Hire one first: ")
-    assert spoken.more and spoken.more[0].offer == "Want me to go through the costs?"
+    # Founder Y1 (M6a): with no costs to read out, the offer is the answer's own statements, never an empty one.
+    assert spoken.more and spoken.more[0].offer == "Want me to go on?" and spoken.more[0].lines == ["x"]
 
 
 # R5's "a listening noise brings the offer back" now holds only for an offer that was never said (founder re-test S2,
@@ -530,23 +531,24 @@ def test_a_percentage_is_a_percentage_where_the_decision_has_one() -> None:
 
 
 async def test_two_percent_is_confirmed_as_two_people_before_anything_changes(finance: Any) -> None:
+    # Three, not two: two local hires is already the base case (M6a, X3).
     manager = lane(finance)
     first = await manager.turn(None, DUBAI)
     await finished(manager, first.run_id)
-    asked = await manager.turn(first.session_id, "Make it a 2% team.")
-    assert (asked.kind, asked.reply) == ("confirm", "Did you mean two people?")
+    asked = await manager.turn(first.session_id, "Make it a 3% team.")
+    assert (asked.kind, asked.reply) == ("confirm", "Did you mean three people?")
     assert not asked.amendment_id and not asked.started_run
     assert not manager.sessions[first.session_id].amendments  # nothing offered, nothing applied
     no = await manager.turn(first.session_id, "No.")
     assert (
         no.reply.startswith("Okay, nothing has changed.") and manager.sessions[first.session_id].run_id == first.run_id
     )
-    await manager.turn(first.session_id, "two")
+    await manager.turn(first.session_id, "three")
     yes = await manager.turn(first.session_id, "Yes.")
     assert yes.started_run and yes.reply == "Restarting with your change."  # confirmed once, not asked twice
     new = await finished(manager, yes.run_id)
     hires = next(i for i in new.decision_frame.cost_model.items if i.key == "hires")
-    assert (hires.base, hires.basis) == (2.0, "founder") and new.message.endswith("Assume 2 hires")
+    assert (hires.base, hires.basis) == (3.0, "founder") and new.message.endswith("Assume 3 hires")
 
 
 async def test_a_percentage_changes_a_price_decision_without_a_question(finance: Any) -> None:

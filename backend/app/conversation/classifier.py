@@ -117,7 +117,10 @@ def is_noise(text: str) -> bool:
 _LEAVE = re.compile(
     r"^(?:(?:ok|okay|alright|all right|fine|no|yes|yeah|right|then|so)[,\s]+)*"
     r"(?:(?:i(?:'ll| will| would)?|let's|we(?:'ll| will)?|just)\s+)*"
-    r"(?:leave it|keep it|leave things|keep things)(?:\s+(?:as it is|as is|like that|like this|alone|there))?"
+    # M6a carry-over: "leave as it is" (no "it"), "leave that as it is", "keep as is", "leave it like it is".
+    r"(?:(?:leave|keep)\s+(?:it|this|that|things|everything)"
+    r"(?:\s+(?:as it is|as is|as they are|like that|like this|like it is|the way it is|alone|there))?"
+    r"|(?:leave|keep)\s+(?:as it is|as is|like that|like it is|the way it is)|let it be)"
     r"(?:\s+(?:then|for now|please))*[\s.!]*$"
     r"|^(?:(?:ok|okay|alright|no)[,\s]+)*(?:that's|that is|it's|it is|that'll do|that will do)\s*(?:fine|ok|okay|good)?"
     r"(?:\s+(?:then|for now|thanks|thank you))*[\s.!]*$",

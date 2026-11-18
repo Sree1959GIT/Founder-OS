@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from app.conversation.classifier import clear_request, is_filler, is_greeting, is_noise
-from app.conversation.manager import GREETING, RESTART_OFFER, change_reminder, fuzzy_agent
+from app.conversation.manager import GREETING, RESTART_OFFER, YES_TO_WHAT, change_reminder, fuzzy_agent
 from app.engine.calibration import CalibrationStore
 from app.engine.duckdb_engine import FinanceDB
 from app.engine.metrics import MetricsEngine
@@ -270,8 +270,8 @@ async def test_a_greeting_gets_a_short_greeting_and_never_an_earlier_answer(fina
     hello = await manager.turn(first.session_id, text, spoken=True)
     assert hello.reply == GREETING and not hello.started_run and len(manager.orchestrator.runs) == runs
     assert not any(s.strip() and s.strip() in hello.reply for s in old.answer.split(". ")[:3])
-    yes = await manager.turn(first.session_id, "Yes.", spoken=True)  # nothing on offer: nothing happens
-    assert (yes.reply, yes.started_run) == ("", False) and len(manager.orchestrator.runs) == runs
+    yes = await manager.turn(first.session_id, "Yes.", spoken=True)  # nothing on offer: founder Y2, never silence
+    assert (yes.reply, yes.started_run) == (YES_TO_WHAT, False) and len(manager.orchestrator.runs) == runs
 
 
 # --- the reminder -----------------------------------------------------------------------------------------------------

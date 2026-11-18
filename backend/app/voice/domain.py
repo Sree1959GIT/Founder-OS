@@ -42,7 +42,7 @@ TERMS = [
 PROMPT = (
     "FounderOS. The founder talks to the Advisor about the company: runway, burn, churn, MRR, gross margin, hires. "
     "Should we open a Dubai office? Re-run the Financial Analyst, assume three hires. Make it a two person team. "
-    "Redo the Devil's Advocate. What is our runway? Stop the team. Restart with my change."
+    "Redo the Devil's Advocate. What is our runway? Stop the team. Restart with my change. Yes. Yeah. Yes, please. No."
 )
 HOTWORDS = ", ".join(dict.fromkeys([*TERMS, *AGENT_NAMES, *(n.split(" (")[0] for n in METRIC_NAMES)]))
 
@@ -58,9 +58,17 @@ _RERUN_HEARD = re.compile(
 )
 
 
+# M6a carry-over (founder, M5 gate): a lone "yes" is sometimes written as another short word. Only a whole turn of one
+# of these is repaired, because none of them is a turn anyone would say to FounderOS on its own. The runner heard a
+# spoken "Yeah." as "Yaffen." (2026-11-17).
+_YES_HEARD = re.compile(r"^(?:yas+|yess+|yesh|yeas|yis|yus|jess?|yah|yea|yeh|ya|yaff?en|yeahh+)[\s.!?,]*$", re.I)
+
+
 def corrected(text: str) -> str:
     """The same words, with a command's opening repaired. Anything not listed above is left as it was heard."""
     out = text.strip()
+    if _YES_HEARD.match(out):
+        return "Yes."
     out = _SHOULD_BE.sub(lambda m: f"{m.group(1)} we ", out)
     if _RERUN_HEARD.match(out) and not re.match(r"^we\s+run\s+(?!the\b)", out, re.I):
         out = _RERUN_HEARD.sub("Re-run ", out, count=1)

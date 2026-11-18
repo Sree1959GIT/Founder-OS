@@ -1,6 +1,7 @@
 @echo off
-rem FounderOS one-time setup for Windows 11 (draft; finalised in M6).
-rem Creates .venv, installs backend and frontend dependencies, starts Qdrant and pulls Ollama models.
+rem FounderOS one-time setup for Windows 11. Safe to run again: it skips what is already done.
+rem Creates .venv, installs backend and frontend dependencies, starts Qdrant, pulls the Ollama models over HTTP
+rem (native app or Docker container at OLLAMA_BASE_URL) and downloads the voice models.
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
@@ -34,6 +35,16 @@ if errorlevel 1 (
   echo [ERROR] Node.js 22 LTS ^(or 20.19+^) not found. Install it from https://nodejs.org/ and re-run.
   exit /b 1
 )
+node -e "const [a,b]=process.versions.node.split('.').map(Number); process.exit(a>20||(a===20&&b>=19)?0:1)"
+if errorlevel 1 (
+  for /f "delims=" %%V in ('node --version') do echo [ERROR] Node.js %%V is too old: Vite needs 20.19+ ^(22 LTS recommended^). https://nodejs.org/
+  exit /b 1
+)
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] npm not found. Reinstall Node.js 22 LTS from https://nodejs.org/ ^(npm comes with it^).
+  exit /b 1
+)
 
 rem --- .env ----------------------------------------------------------------------
 if not exist ".env" (
@@ -54,8 +65,6 @@ if errorlevel 1 (
 )
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul || exit /b 1
 ".venv\Scripts\python.exe" -m pip install -e "backend[dev,gpu,voice]" || exit /b 1
-rem Voice models (Whisper, Kokoro) into data\models: about 900 MB once. A failure leaves text mode working.
-".venv\Scripts\python.exe" scripts\download_voice_models.py || echo Voice models not downloaded: run "python scripts\download_voice_models.py" later.
 
 rem --- Frontend ------------------------------------------------------------------
 echo Installing frontend dependencies ...
@@ -69,54 +78,38 @@ if not exist "sample_data\pnl.csv" (
 )
 
 rem --- Qdrant (Docker, optional) ------------------------------------------------
+rem Founder Y3: a Qdrant that already answers on port 6333 (another clone's container) is used as it is.
+curl.exe -s -f -m 3 http://localhost:6333/readyz >nul 2>nul
+if not errorlevel 1 (
+  echo [OK] Qdrant already running on port 6333.
+  goto :models
+)
 where docker >nul 2>nul
 if errorlevel 1 (
-  echo [WARN] Docker not found. Search will run in BM25-only mode until Docker Desktop is installed.
-) else (
-  docker compose up -d qdrant || echo [WARN] Could not start Qdrant. Is Docker Desktop running?
+  echo [WARN] Docker not found. Search runs in memory until Docker Desktop is installed ^(optional^).
+  goto :models
 )
+docker info >nul 2>nul
+if errorlevel 1 (
+  echo [WARN] Docker Desktop is installed but not running. Start it, then run setup.bat again for Qdrant ^(optional^).
+  goto :models
+)
+docker compose up -d qdrant
+if errorlevel 1 echo [WARN] Could not start the Qdrant container. Search runs in memory until it starts.
 
-rem --- Ollama models (optional) -------------------------------------------------
-rem Ollama is an external service at OLLAMA_BASE_URL: the native app or a Docker container (e.g. "ollama" shared
-rem with an n8n stack). It is detected over HTTP, so it works without the ollama command on PATH.
-set "OLLAMA_BASE_URL=http://localhost:11434"
-set "OLLAMA_CHAT_MODEL=qwen3:8b"
-set "OLLAMA_EMBED_MODEL=nomic-embed-text"
-for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
-  if /i "%%A"=="OLLAMA_BASE_URL" if not "%%B"=="" set "OLLAMA_BASE_URL=%%B"
-  if /i "%%A"=="OLLAMA_CHAT_MODEL" if not "%%B"=="" set "OLLAMA_CHAT_MODEL=%%B"
-  if /i "%%A"=="OLLAMA_EMBED_MODEL" if not "%%B"=="" set "OLLAMA_EMBED_MODEL=%%B"
-)
-set "OLLAMA_VERSION="
-for /f "delims=" %%V in ('powershell -NoProfile -Command "try { (Invoke-RestMethod -Uri '!OLLAMA_BASE_URL!/api/version' -TimeoutSec 5).version } catch { }" 2^>nul') do set "OLLAMA_VERSION=%%V"
-if not defined OLLAMA_VERSION (
-  echo [WARN] Ollama is not answering at !OLLAMA_BASE_URL!/api/version.
-  echo        Start the Ollama app or its Docker container ^(or set OLLAMA_BASE_URL in .env^), then pull:
-  echo        !OLLAMA_CHAT_MODEL! and !OLLAMA_EMBED_MODEL!  ^(Docker: docker exec ollama ollama pull ^<model^>^)
-) else (
-  echo Ollama !OLLAMA_VERSION! is running at !OLLAMA_BASE_URL!
-  call :ensure_model "!OLLAMA_CHAT_MODEL!"
-  call :ensure_model "!OLLAMA_EMBED_MODEL!"
+:models
+rem --- Models (once): qwen3:8b and nomic-embed-text through Ollama's HTTP API, Whisper small.en/base.en and Kokoro --
+rem A failure never stops setup: FounderOS starts without them and says what is missing.
+echo Downloading models ^(qwen3:8b about 5.2 GB, nomic-embed-text 0.3 GB, voice about 0.9 GB; skipped when present^) ...
+".venv\Scripts\python.exe" scripts\download_models.py
+if errorlevel 1 (
+  echo [WARN] Some models are missing. Fix what is named above, then run:
+  echo        .venv\Scripts\python.exe scripts\download_models.py
 )
 
 echo.
+".venv\Scripts\python.exe" scripts\preflight.py
+echo.
 echo Setup complete. Start FounderOS with run.bat
 endlocal
-exit /b 0
-
-rem --- :ensure_model <name>: report the model, pull it with the CLI, or print the docker exec command --------
-:ensure_model
-powershell -NoProfile -Command "try { $n = @((Invoke-RestMethod -Uri '%OLLAMA_BASE_URL%/api/tags' -TimeoutSec 10).models | ForEach-Object { $_.name }); if (($n -contains '%~1') -or ($n -contains '%~1:latest')) { exit 0 } else { exit 1 } } catch { exit 2 }" >nul 2>nul
-if not errorlevel 1 (
-  echo Ollama model %~1 is pulled
-  exit /b 0
-)
-where ollama >nul 2>nul
-if errorlevel 1 (
-  echo [WARN] Ollama model %~1 is not pulled and the ollama command is not on PATH ^(Ollama in Docker?^). Run:
-  echo        docker exec ollama ollama pull %~1
-  exit /b 0
-)
-set "OLLAMA_HOST=%OLLAMA_BASE_URL%"
-ollama pull "%~1" || echo [WARN] Could not pull %~1
 exit /b 0
