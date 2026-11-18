@@ -6,7 +6,8 @@
 
 It plays the WAV fixtures in backend/tests/fixtures/voice into /ws/voice in real time (hands-free mode, as a
 microphone would), so the backend's own VAD finds the end of speech. Then it asks the Dubai question and, as soon as
-FounderOS starts a line of six words or more (the team line), plays "Wait, stop..." over it. It prints the backend's measurements and VRAM.
+FounderOS starts a line of six words or more (the team line), plays "Wait, stop..." over it. It prints the backend's
+measurements and VRAM.
 Set "Ask before a team runs" to Never first, or the Dubai run waits for your approval.
 """
 
