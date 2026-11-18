@@ -43,7 +43,12 @@ data (run the reset in "Before the demo").
 - Say: **"Should we open a Dubai office?"**
 - *Hear* "On it." and one opening line naming the team (Librarian, Market Scout, Financial Analyst, People and Ops,
   Regulatory and Tax, Devil's Advocate). Then it works in silence.
-- *Open the Activity view (or watch the panel):* each agent's card, Local or Cloud, its brief, its steps.
+- *Click **Agents** at the top of the Advisor panel:* the agent window opens. Drag it by its title bar to a free
+  corner. It shows where the run is (Plan, Team, Verify, Answer), a ring per agent that fills as it works, its current
+  step and a bar on the run's clock. It stays open if you switch views; **Escape** closes it. (The Activity view still
+  has the full cards, with cancel and re-run.)
+- *Optional:* drag the edge of the Advisor panel to make the conversation wider, or fold it with the icon left of
+  "Executive Advisor" to give the numbers the whole width. The sizes are remembered in this browser.
 - **"A planner chose this team for this decision. They run in parallel, and a verifier checks every figure before I see
   it."**
 - When it is done, *hear* the short summary: the full office's cost and its effect on runway, the proposal (a

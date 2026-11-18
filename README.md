@@ -85,10 +85,17 @@ from `sample_data\vault\`. The next start reloads the Northwind financials. Your
 | Python 3.13+ warning | Install Python 3.12, delete `.venv`, run `setup.bat` |
 
 ### VRAM and latency (measured on the founder's RTX 4080 Laptop, 12 GB)
-- `qwen3:8b` about 5.9 GB, Whisper `small.en` +0.5 to 0.7 GB, `nomic-embed-text` 0.3 GB; total about 7.4 GB of 12 GB.
-  Kokoro runs on the CPU. Avoid a second chat model on the GPU: a reload of qwen3:8b takes minutes.
-- First spoken words p50 about 0.9 s; a spoken metric answer p50 about 1.7 s; barge-in pauses speech in about 70 ms
-  and stops it after about 1 s of the founder's speech (`VOICE_BARGE_IN_MS`). Measure on your PC with
+- `qwen3:8b` about 5.9 GB, Whisper `small.en` +0.5 to 0.7 GB, Kokoro on the GPU +0.5 GB, `nomic-embed-text` 0.3 GB;
+  about 8.5 GB of 12 GB at the peak. Avoid a second chat model on the GPU: a reload of qwen3:8b takes minutes.
+- **Kokoro on the GPU (M6b).** `setup.bat` runs `scripts\enable_tts_gpu.py`, which swaps `onnxruntime` for
+  `onnxruntime-gpu` 1.23.2 (CUDA 12, the same DLLs as Whisper) when an NVIDIA GPU is present. Measured with
+  `scripts\voice_bench.py` (2026-11-18): spoken metric answer p50 **2.38 s on the CPU, 1.66 s on the GPU**; first words
+  1.09 s / 0.74 s. Kokoro falls back to the CPU by itself if CUDA fails at start-up (`/api/voice/status` shows the
+  device and the reason). Back to the CPU for good: `.venv\Scripts\python.exe scripts\enable_tts_gpu.py --undo`, or
+  `VOICE_TTS_DEVICE=cpu` in `.env`. The 8-bit Kokoro model is no faster on the CPU here (under 15 %) and very slow on
+  the GPU, so it is not used.
+- First spoken words p50 under 1 s; barge-in pauses speech in about 70 ms and stops it after about 1 s of the
+  founder's speech (`VOICE_BARGE_IN_MS`). Measure on your PC with
   `scripts\voice_bench.py`.
 
 ## Linux / macOS (development)
