@@ -3,6 +3,7 @@ import { cloudOn, slotsInUse, useCatalog } from "@/hooks/useCatalog";
 import { safeStep, seconds, STATUS_WORDS, stepWords } from "@/lib/format";
 import { teamOf, useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
+import type { CSSProperties } from "react";
 
 const dot = (status: string) =>
   status === "done"
@@ -13,7 +14,7 @@ const dot = (status: string) =>
         ? "bg-muted-foreground"
         : "bg-signal";
 
-export function AgentRail() {
+export function AgentRail({ width }: { width?: number } = {}) {
   const { currentRun: run } = useWorkspace();
   const catalog = useCatalog();
   const slots = slotsInUse(run);
@@ -21,7 +22,11 @@ export function AgentRail() {
   return (
     <aside
       aria-label="Agents"
-      className="hidden w-[300px] shrink-0 flex-col gap-3 border-l border-border bg-panel px-4 py-4 xl:sticky xl:top-0 xl:flex xl:h-[calc(100vh-61px)] xl:overflow-y-auto"
+      style={width !== undefined ? ({ "--rail-w": `${width}px` } as CSSProperties) : undefined}
+      className={cn(
+        "hidden w-[var(--rail-w,300px)] shrink-0 flex-col gap-3 bg-panel px-4 py-4 xl:sticky xl:top-0 xl:flex xl:h-[calc(100vh-61px)] xl:overflow-y-auto",
+        width === undefined && "border-l border-border",
+      )}
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Agents</span>

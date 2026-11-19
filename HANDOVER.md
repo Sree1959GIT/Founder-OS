@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M6: Windows packaging, polish & demo** (M6a in progress on `claude/m6a-packaging-demo`: packaging, demo, M5 carry-overs; M6b = F panels and G pop-up agent window). M0 to M5 are ACCEPTED and merged.
+- **Next milestone:** **M6: Windows packaging, polish & demo**, built: M6a merged (PR #11), M6b on `claude/m6b-polish-demo` (F panels, G agent window, Kokoro on the GPU, re-run fix), awaiting the **M6 Major gate** (checklist MG1–MG9). M0 to M5 are ACCEPTED and merged.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-17 (M6a fix: PK1–PK6 PASS, PK7 FAIL; Y1–Y3 fixed, awaiting PK7, PK7b, PK1b)
+- **Last updated:** 2026-11-19 (M6 gate fix round D1–D7; awaiting the founder's re-test MR1–MR8)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -20,7 +20,7 @@
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
 | M5 | Voice pipeline | DONE, awaiting Major gate (live check RM1–RM6) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Round 8, 2026-11-16: W1–W5 (a repeated change, the badge after a change, one offer after every decision answer, "leave it", re-run from the last decision team). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
-| M6 | Windows packaging, polish & demo | IN PROGRESS (~45 %) | **M6a** (Light gate): `run.bat`/`setup.bat` from a fresh clone (port check naming the old process, Docker/Qdrant, preflight for Ollama at `OLLAMA_BASE_URL`), `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5. **M6b** next: F panels, G pop-up agent window, TTS latency, then the Major gate (fresh install with `run.bat`) |
+| M6 | Windows packaging, polish & demo | DONE, awaiting Major gate (MG1–MG9) | **M6a** (merged, PR #11; PK1–PK8 pass): `run.bat`/`setup.bat` from a fresh clone, `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5 and Y1–Y3. **M6b** (2026-11-18): F resizable and foldable panels (remembered per viewer), G movable agent window, Kokoro on the GPU (metric answer p50 2.38 s → 1.66 s on this PC), a re-run with a change already in the answer re-runs only that agent |
 
 ## Review gates (every PR passes all four)
 | # | Gate | Who | Pass condition |
@@ -60,9 +60,30 @@
 | M3c Decision models | [Sree1959GIT/Founder-OS#8](https://github.com/Sree1959GIT/Founder-OS/pull/8) | Light | ACCEPTED (SM, 2026-11-06), Light; C2–C4 and RF2–RF5 pass on Windows; P1–P7 approved; Laya/Jev deferred to after M5 |
 | M4 Canvas UI | [Sree1959GIT/Founder-OS#9](https://github.com/Sree1959GIT/Founder-OS/pull/9) | **Major** | ACCEPTED (SM, 2026-11-08), Major; W0–W15, RW, RX and RY re-tests pass on Windows after 3 fix rounds; open items carried to M5 |
 | M5 Voice | [Sree1959GIT/Founder-OS#10](https://github.com/Sree1959GIT/Founder-OS/pull/10) | **Major** | ACCEPTED (SM, 2026-11-16), Major; RL2a–RL2d and RM2–RM6 pass on Windows after 8 fix rounds; carried to M6 bug-fix pass: closing offer sometimes missing, "leave as it is" not recognised, restart offered for a change already in the answer, "yes" sometimes misheard by Whisper. History: live check RM1–RM6 after fix round 8 of 2026-11-16 (W1 a repeated change shows its reminder again; W3 one offer said and shown after every decision answer, yes walks the risks, no does nothing; W4 "leave it" keeps things; W5 re-run from the last decision team; W2 not reproduced, see Founder feedback). Founder live check 2026-11-16 after round 7: CI green; RL2a, RL2b, RL2c, RL2d PASS. Before that, live check RL1, RL2a–RL2d, RL3–RL5 after fix round 7 of 2026-11-16 (a change said in any stage, over the summary or after the run is said aloud; stage line; `FOUNDEROS_STAGE_DELAY_S`; runner RL2a–RL2d added). Founder RL2 2026-11-16 failed: offer shown, not spoken. Before that, live check RL1–RL5 after fix round 6 of 2026-11-15 (scripted runner `scripts/voice_scenarios.py`: S1–S7 typed and spoken all PASS on this PC). Founder RZ re-test 2026-11-15: S6 analyst re-run and S7 stop pass; S1, S3, S4, S5 and the librarain re-run failed on the PC. Before that, fix round 5 (U0–U5, reminder). Founder re-test of RY, 2026-11-15: restart with "Yes.", T4 and T5 pass; RY4 and RY6 failed; RY2 and RY5 partly. Before that, fix round 4 (T1–T5). Founder re-test 2026-11-15: RX2, RX3 and RX6 text pass; RX4 failed in voice (the click on the card worked). Before that, fix round 3 of 2026-11-14 (S1–S5). Founder re-test 2026-11-14: RW3, RW4, RW6, RW7, RW8, RW9 pass; RW2 partly; RW5 failed. Founder's PC (RW10): first words p50 890 ms, metric answer p50 1738 ms, barge-in pause 64 ms / cancel ~990 ms, STT p50 291 ms, TTS first 596 ms, VRAM 7.43 / 12 GB, Whisper +0.70 GB. Before that, fix round 2 of 2026-11-13 (R1–R8). Founder re-test 2026-11-13: RV2 (headphones), RV3 (speakers), RV7, RV8, RV10 pass; RV9 partly; RV4, RV5, RV6 failed (fixed, re-test RW2 to RW9). Founder review before that: V3, V4, V5, V6, V8, V9 pass. Founder's PC (RV11, headphones): first words p50 931 ms, metric answer p50 1869 ms (target ~3 s: met), barge-in pause 62–71 ms / cancel 574–582 ms, STT p50 396 ms, TTS first 591 ms, VRAM 7.4 / 12 GB, Whisper +0.52 GB |
-| M6a Packaging, demo, M5 carry-overs (partial) | [Sree1959GIT/Founder-OS#11](https://github.com/Sree1959GIT/Founder-OS/pull/11) | Light | PK1–PK6 PASS, PK7 FAIL (Y1–Y3, fixed 2026-11-17); AWAITING FOUNDER (PK7, PK7b, PK1b, PK8) |
+| M6a Packaging, demo, M5 carry-overs (partial) | [Sree1959GIT/Founder-OS#11](https://github.com/Sree1959GIT/Founder-OS/pull/11) | Light | ACCEPTED (merged; PK1–PK8 pass after the Y1–Y3 fix of 2026-11-17) |
+| M6 Windows packaging, polish & demo (M6b) | [Sree1959GIT/Founder-OS#12](https://github.com/Sree1959GIT/Founder-OS/pull/12) | **Major** | ACCEPTED (SM, 2026-11-19), Major; MG1, MG2, MG5 and re-test MR1–MR8 pass on Windows (fresh clone D:\FounderOS-fresh2, demo script §1–§7, memo from the frame, panels, agent window, bench p50 first words 749 ms, metric answer 1681 ms, barge-in 60 ms); carried to v1.1: resizable floating agent window, Matrix entry shows a score instead of "Not scored yet", a half-sentence ("Should we?") gets queued and run. History after the D1–D7 fix round of 2026-11-19). Founder run 2026-11-18/19 (fresh copy `D:\FounderOS-fresh2`): MG1, MG2, MG5, DEMO_SCRIPT §1, §7, §4 (frame, risks, three hires) and MG4 fold + voice PASS; D1–D7 found (see Founder feedback) |
 
 ## Current session
+- Started (UTC): 2026-11-19 14:50 (local Windows session, **M6 Major gate fix round**, time-box 90 minutes), branch `claude/m6b-polish-demo`, PR #12 (open). Fix only D1–D7; no new features.
+- Plan, in the founder's order:
+  - [x] Record the founder's MG results (D1–D7) first
+  - [x] Reproduce D1–D3 in tests (`backend/tests/test_m6_gate.py`), then fix: D1 memo from the open decision's latest frame + Matrix entry, D2 what-if is a new question with both levers, D3 stop phrases
+  - [x] D4 citations only to files in this vault; per-install Qdrant collection
+  - [x] D5 DEMO_SCRIPT (audience vs app lines, §2 label); D6 handles (12 px, grip, window-level drag), Playwright at scale 1.25 in Chromium and Edge
+  - [x] D7 bench GPU vs CPU with qwen3:8b loaded
+  - [x] Checks, HANDOVER (feedback resolved, Gate log, MR1–MR8), push, CI
+
+Previous session (2026-11-18, M6b):
+- Started (UTC): 2026-11-18 04:26 (local Windows session, **M6b**, the rest of M6, PR "M6: Windows packaging, polish & demo", **Major** gate, time-box 2 hours), branch `claude/m6b-polish-demo` from `origin/main` (M6a merged, PR #11; PK1–PK8 pass).
+- Plan, in the founder's order:
+  - [x] (1) F: expandable left and right panels, collapsible left panel, sizes remembered per viewer
+  - [x] (2) TTS latency: int8 (CPU and GPU) and onnxruntime-gpu measured; Kokoro fp32 on the GPU kept (metric answer p50 2.38 s → 1.66 s), Whisper still on CUDA
+  - [x] (3) G: movable pop-up agent window with a graphical view of each agent's status and work, from the Advisor panel (done in about 15 minutes, inside the 40-minute box)
+  - [x] (4) Next-steps item 4: a re-run with a change already in the base case re-runs only that agent
+  - [x] (5) npm deprecation warnings: checked, none safe to change without a reinstall and a major upgrade (left, see Open questions)
+  - [x] Checks, self-review, Major-gate checklist (fresh clone `D:\FounderOS-fresh2`, DEMO_SCRIPT, F, G, voice timing), PR, CI
+
+Previous session (2026-11-17, M6a bug-fix):
 - Started (UTC): 2026-11-17 16:00 (local Windows session, **M6a bug-fix** after the founder's PK run, time-box 30 minutes), branch `claude/m6a-packaging-demo`, PR #11 (open, not merged). M6b (F, G, TTS) not started.
 - Plan: [x] record PK1–PK7; [x] runner scenario Y1+Y2 before any fix; [x] Y1, Y2, Y3 fixed with tests; [x] Y1+Y2, X4, X5 typed and spoken; [x] HANDOVER, push, CI.
 
@@ -254,6 +275,41 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### M6 gate fix round (2026-11-19): D1–D7
+- What changed is under Founder feedback → "[M6b] M6 Major gate run 2026-11-18/19". Tests: `backend/tests/test_m6_gate.py`; runner scenarios **D2**, **D3** in `scripts/voice_scenarios.py` (written, not run live this session: the tests reproduce both); Playwright `frontend/e2e/panels-scaled.spec.ts` (Chromium and Edge).
+- **D7 bench** (this PC, 2026-11-19, `scripts/voice_bench.py --turns 5` against an isolated backend, qwen3:8b loaded in Docker Ollama, Whisper `small.en` on CUDA in both; first turn cold):
+
+  | p50 (ms) | Kokoro on GPU (`VOICE_TTS_DEVICE=cuda`) | Kokoro on CPU (`VOICE_TTS_DEVICE=cpu`) |
+  |---|---|---|
+  | first_audio (first words) | **738** | 1242 |
+  | first_answer_audio (metric answer) | **1690** | 2433 |
+  | stt | **190** | 661 |
+  | barge_in_pause / stop | 64 / 954 | 63 / 996 |
+  | VRAM in use (of 12 GB) | 10.0 | 9.0 |
+
+  **The GPU is faster on every line, so the default stays `auto` (Kokoro on the GPU)**; nothing changed in code. Your 1495 ms first_audio and 542 ms tts_first do not match either column here. A likely cause is **two FounderOS backends running at once** (the fresh copy and `D:\Founder-OS`), each loading Whisper and Kokoro on the one GPU beside qwen3:8b: with one backend, VRAM is already at 10 of 12 GB. MR1 checks that only one runs, and MR8 measures again on your main copy. If MR8 is still around 1.5 s, set `VOICE_TTS_DEVICE=cpu` in `.env`, run the bench again, and write both numbers in the Gate log.
+
+### Polish (M6b, 2026-11-18)
+- **F: panels.** Drag the edge between the Advisor panel and the canvas, or between the canvas and the Agents panel (or focus the edge and use the arrow keys; Home or a double-click is the default width). Advisor 280–720 px (default 380), Agents 240–560 px (default 300); the canvas always keeps at least 420 px. The icon left of "Executive Advisor" folds the panel to a 44 px rail (unfold, and open the agent window, from there). **Folding keeps the conversation and voice running**: the panel is hidden, not unmounted, so a hands-free session carries on. Sizes and the fold are kept per viewer in this browser (`localStorage` key `founderos.layout.v1`); a width saved on a big screen is drawn narrower on a small one and comes back on the big one. `frontend/src/lib/layout.ts`, `components/layout/ResizeHandle.tsx`.
+- **G: agent window.** **Agents** at the top of the Advisor panel (with a count of agents working) opens a window you move by its title bar. It shows the current question and its stage line, four steps (Plan, Team, Verify, Answer: waiting, working, done or stopped), counts (done, working, waiting, stopped), the approval link when the team waits, and per agent: a ring that fills with its status and its two-letter code, Local/Cloud, its current step (the same safe words as the Activity tab, no figures) with elapsed time, and a bar on the run's clock. It stays open across views (so it can watch a run from the Activity tab or a memo), its place is remembered and pulled back on screen after a resize, Escape or × closes it. Cancel, re-run and briefs stay on the Activity tab, which it links to. `components/activity/AgentWindow.tsx`, `lib/agentGraph.ts`.
+- **Kokoro on the GPU.** `setup.bat` now runs `scripts/enable_tts_gpu.py` after `pip install`: with an NVIDIA GPU it removes the CPU `onnxruntime` and installs `onnxruntime-gpu==1.23.2` without dependencies, plus `nvidia-cuda-runtime-cu12`, `nvidia-cufft-cu12`, `nvidia-curand-cu12`; then it checks that a real CUDA session starts. It runs every time because the `pip install` brings the CPU package back (both installed overwrite each other's files). `--check` reports, `--undo` goes back to the CPU. `VOICE_TTS_DEVICE` (`auto` default, `cuda`, `cpu`): Kokoro starts on CUDA with cuDNN's HEURISTIC search and a test line; any failure falls back to the CPU with a note in `/api/voice/status` (`tts.device`, `notes`). **On this PC the swap is done** (the venv now has `onnxruntime-gpu 1.23.2`, previously `onnxruntime 1.31.1`).
+- **Measured on this PC** (2026-11-18, `scripts/voice_bench.py` against an isolated backend, Ollama in Docker with qwen3:8b, 5 runway turns; the first is cold):
+
+  | What | Kokoro on CPU (8 threads) | Kokoro on GPU |
+  |---|---|---|
+  | Metric answer p50 (end of speech to first answer sentence) | 2381 ms | **1681 ms** (1657 in a second run) |
+  | First words p50 | 1087 ms | **721 ms** |
+  | STT p50 (Whisper `small.en`, CUDA) | 408–906 ms | **175–191 ms** |
+  | Barge-in: pause / stop | 79 / 995 ms | **66 / 1000 ms** |
+  | VRAM with qwen3:8b loaded | about 7.4 GB | about 8.5 GB peak of 12 (Kokoro +0.53 GB) |
+
+  Kokoro alone (`tts_micro`, a 100-character clause): CPU fp32 4.2 s, CPU int8 3.5–4.2 s, **GPU fp32 1.1 s**, GPU int8 30 s (its quantised operators fall back to the CPU, 550 copies). So int8 is not used; `gpu_wanted` never puts an int8 model on CUDA. `onnxruntime-gpu` 1.31.1 needs CUDA 13 (`cublasLt64_13.dll`), so it is pinned to 1.23.2, which runs on the CUDA 12 / cuDNN 9 DLLs Whisper already uses.
+- **The 3.8 s in M5's table was stale**: with the M5 fixes the CPU figure was already 2.4 s here (your RW10: 1.74 s). The target (~3 s) is met either way; the GPU makes speech start sooner everywhere.
+- **voice_bench.py barge-in step** now talks over the first line of six words or more (the team line). With Kokoro on the GPU, the 0.6 s "On it." finishes before 1 s of speech is heard, so barging into it measured a new turn ("Wait, stop…" offered as a change), not a barge-in: three runs in a row. **The turn-taking rules are unchanged**: runner RL2c spoken (a change said over the spoken summary cuts it off) PASS with Kokoro on the GPU.
+- **Re-run with a change already in the answer** (Next steps item 4): after a Dubai answer (two hires in the base case), "Re-run the analyst, assume two hires." now says "That's already in this answer: it assumes two local hires. Re-running only the Financial Analyst again. The rest of the team's findings stand." and runs only that agent, with no change added to the request. A real change ("assume three hires") still runs the whole team, as before.
+- **npm deprecation warnings** (`npm ci`): eslint 9 ("no longer supported"), recharts 2 ("bump to v3") and `whatwg-encoding` (pulled in by jsdom 26). Each fix is a major upgrade (eslint 10, recharts 3 with its chart API changes, jsdom 27) and a reinstall of `node_modules`, so none is "safe": left, see Open questions.
+- **Not done:** nothing in the M6b scope is open. G is the minimal-but-complete version: a "graph" of nodes and edges between agents (who read whose findings) was not attempted, because the lane has no per-agent dependency data to draw from.
+
 ### Packaging and demo (M6a, 2026-11-17)
 - **`run.bat`** is the one command. On a fresh clone (no `.venv` or no `frontend\node_modules`) it runs `setup.bat` first. Every start: it refuses ports 8000 and 3000 when taken and names the process (`scripts/check_ports.ps1`: PID, name, command line, "an old FounderOS backend" when the command line has `app.main:create_app`, and the `Stop-Process -Id` to run); checks Docker is installed **and running** (`docker info`) before `docker compose up -d qdrant`; prints a preflight (`scripts/preflight.py`: Ollama at `OLLAMA_BASE_URL` with its version and the configured models, Qdrant `/readyz`, the voice models), each line OK or MISSING with the command that fixes it; then waits up to 90 s for `/api/health` before opening the browser. Nothing missing stops the start; only a taken port does.
 - **`setup.bat`** also checks Node 20.19+ and npm, and that Docker is running, and downloads the models with **`scripts/download_models.py`**: the Ollama models (`OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, `FAST_LANE_MODEL`) through Ollama's HTTP `/api/pull` with progress, so Ollama in Docker needs no `docker exec`; then Whisper `small.en`/`base.en` and Kokoro through the existing `download_voice_models.py`. `--check` only reports; `--no-voice` / `--no-ollama`. The old `:ensure_model` block is gone.
@@ -795,17 +851,42 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (for the M6b session)
-0. **Gate check:** M6a is a Light partial PR. The founder runs PK1–PK8 below and merges it. Act on any "Founder feedback" first.
-1. **M6b (PRD §8, founder decisions of 2026-11-13):** F expandable left and right panels with a collapsible left panel; G a movable pop-up agent window with a graphical view of each agent's work (time-boxed).
-2. **TTS latency:** try Kokoro on the GPU (`onnxruntime-gpu`, checked against faster-whisper's Silero use) or `kokoro-v1.0.int8.onnx` (`download_voice_models.py --kokoro-int8`); measure with `scripts/voice_bench.py`.
-3. **X1** (closing offer sometimes missing) was not reproduced. If the founder sees it again, note the question and the chat line, and add a runner scenario with that question. The code paths that can drop it: a frame with no options, or the "costs" fallback with no cost sentence (`app/voice/spoken.py` `summarise`).
-4. A re-run with a change *after* the answer ("Re-run the analyst, assume two hires") still re-runs the team when the number is already the base case (`_already_in` covers the offer path only).
-5. **M6 Major gate:** a fresh clone into a new folder, `run.bat`, then `docs/DEMO_SCRIPT.md` end to end.
-6. After M6: Laya fine-tuning (C8) and Jev (C9); Dubai verification of figures quoted from a decision on record; smaller ideas (reload a conversation after refresh, a mapping form for failing Excel files, Jev in the cost ledger, a cash metric, `OllamaEmbedder` delegating to `OllamaProvider.embed`).
+## Next steps (after the M6 gate fix round, 2026-11-19)
+0. **Gate check:** M6 is a **Major** gate. The founder runs the re-test **MR1–MR8** below (MG1–MG9 were run 2026-11-18/19) and writes ACCEPTED (or the issues) in the Gate log. Until then, the next session works only on that feedback, on the existing branch `claude/m6b-polish-demo` (PR open), reproducing voice issues with `scripts/voice_scenarios.py` first.
+1. If Kokoro on the GPU misbehaves on the founder's PC: `VOICE_TTS_DEVICE=cpu` in `.env` is the switch, `scripts\enable_tts_gpu.py --undo` the full revert. Re-measure with `scripts/voice_bench.py`.
+2. **X1** (closing offer sometimes missing) was not reproduced in M6a. If seen again: note the question and the chat line, add a runner scenario. Code paths: a frame with no options, or the "costs" fallback (`app/voice/spoken.py` `summarise`, `_offer_always`).
+3. npm upgrades as their own small PR, if the founder wants them: eslint 10 (check `eslint-plugin-react-hooks` / `react-refresh` support), recharts 3 (migration guide; ScenarioSimulator and the Monte Carlo fan), jsdom 27 (drops `whatwg-encoding`). Each needs a fresh `npm install` and the Playwright specs.
+4. After M6: Laya fine-tuning (C8) and Jev (C9); Dubai verification of figures quoted from a decision on record; smaller ideas (reload a conversation after refresh, a mapping form for failing Excel files, Jev in the cost ledger, a cash metric, `OllamaEmbedder` delegating to `OllamaProvider.embed`); G could later draw which agent read whose findings, if the lane records it.
 
 ## Windows verification checklist (for the founder)
-**M6a (Light gate), about 15 minutes. Run this one first: PK1 to PK8.** Windows PowerShell 5.1.
+**M6 re-test after the D1–D7 fix round of 2026-11-19, about 30 minutes. Run this one first: MR1 to MR8.** Windows PowerShell 5.1, headphones, Ollama in Docker, approval at **Never**, Hands-free. Write ACCEPTED, or what you saw, in the Gate log.
+
+- **MR1. Fresh copy up to date.** Close every FounderOS window (`Get-NetTCPConnection -LocalPort 8000,3000 -State Listen -ErrorAction SilentlyContinue` shows nothing: a backend left on 8000 from `D:\Founder-OS` would serve the fresh copy's page with the other vault). Then `Set-Location D:\FounderOS-fresh2; git pull; .\reset_demo.bat` (answer `y`), `.\run.bat`. **Expect:** browser up, Runway 10.65 mo. The first start re-embeds the vault once (new collection name, D4).
+- **MR2 (D2). DEMO_SCRIPT §3.** Say **"What if we raise prices 10% and churn goes up two points?"** **Expect:** a team runs (never "already assuming… Nothing to restart"); the answer and the spoken summary say **"Change prices by +10 % with churn +2 pts"** with its runway effect. Then say it again after a Dubai answer (MR3): still a new question, no change card.
+- **MR3 (§4, D1).** "Should we open a Dubai office?", then **"Assume three hires."**, **"Yes."** (as you did; it passed).
+- **MR4 (D1). §5 Record the decision.** Say **"Record the decision on the Dubai office."** **Hear/see:** "Writing the memo from this answer: its options, costs and goal check. The team's findings stand."; only the Memo Writer works. Open **Decisions**. **Expect in the memo:** Goal check says it **moves you away** from the runway goal (no "aligns with"); **Cost model** with low/base/high and "Local hires: 3 people (you said)"; **Options**: the five Dubai options with costs and runway, the proposed one marked, **no SDRs**; **Open numbers to confirm**: four lines ending "Give me the real figure." (setup, rent, travel, compliance). Then **Workspace → Prioritisation Matrix**: a new entry "Open a Dubai office: …" marked "Not scored yet".
+- **MR5 (D3). §6.** Ask "Should we hire two more engineers?" and over the spoken summary say **"Wait, stop there."** **Expect:** it stops and stays silent, listening; **no** change card, no "isn't in this answer". Also try "Hold on." over a later summary: the same.
+- **MR6 (D4).** In the fresh copy, ask "What have we decided about Dubai?" before §5. **Expect:** no citation of `decisions/2026-11-06-open-dubai-office.md` (that file is only in `D:\Founder-OS`'s vault).
+- **MR7 (D6). Panels in Edge at 125 %.** On Workspace you now see a **grip** (a short grey bar) on each panel edge; the pointer turns into ↔ over it. Drag the left edge right and the right edge left: both move. **F5**: both widths kept. **Double-click** each edge: back to default. Open **Agents**, drag the window to a corner, **F5**, open **Agents** again: same place.
+- **MR8 (D7, MG7, MG8, MG9). Voice.** In `D:\Founder-OS` (fresh copy closed): `git checkout claude/m6b-polish-demo; git pull; .\run.bat`. Run MG7 and MG8 below. Then `.\.venv\Scripts\python.exe scripts\voice_bench.py --turns 5` (approval Never) and `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms`. **Expect:** about the numbers under Current state → "D7 bench"; write yours in the Gate log.
+
+**Superseded by MR above (done 2026-11-18/19: results under "Founder feedback"): MG1 to MG9.**
+**M6 Major gate (PR "M6: Windows packaging, polish & demo"), about 40 minutes. Run this one first: MG1 to MG9.** Windows PowerShell 5.1, headphones, Ollama running in Docker. Write ACCEPTED, or what you saw, in the Gate log.
+
+- **MG1. Fresh clone, one command.** Close **every** FounderOS window (`Get-NetTCPConnection -LocalPort 8000,3000 -State Listen -ErrorAction SilentlyContinue` shows nothing). Then:
+  `git clone -b claude/m6b-polish-demo https://github.com/Sree1959GIT/Founder-OS.git D:\FounderOS-fresh2; Set-Location D:\FounderOS-fresh2; .\run.bat`
+  **Expect:** "First run: … setup.bat runs now", the install, then **new**: an `onnxruntime packages:` block and `[OK] onnxruntime-gpu 1.23.2: Kokoro will run on the GPU (VOICE_TTS_DEVICE=auto).` (it downloads about 300 MB of CUDA wheels once), the model step ("have qwen3:8b", voice models about 0.9 GB), `[OK] Qdrant already running on port 6333.` if `D:\Founder-OS`'s Qdrant is up, the preflight, "Backend is up", and the browser with Runway 10.65 mo.
+- **MG2. Kokoro is on the GPU.** `Invoke-RestMethod http://127.0.0.1:8000/api/voice/status | Select-Object -Expand tts` **Expect:** `device : cuda`, `note` empty. Also `(Invoke-RestMethod http://127.0.0.1:8000/api/voice/status).vram_gb` **Expect:** `used_now` about 7.4–8.5 (of 12) once qwen3:8b is loaded. Then `.venv\Scripts\python.exe scripts\enable_tts_gpu.py --check` **Expect:** `[OK] onnxruntime 1.23.2: Kokoro on the GPU`.
+- **MG3. The demo, end to end.** In this fresh copy, follow `docs\DEMO_SCRIPT.md` from "Before the demo" (step 1 there is `.\reset_demo.bat`, fine on a fresh copy) to section 7. Note any step that does not do what the script says, with its number.
+- **MG4. F: panels.** On the Workspace view: drag the edge right of the Advisor panel to the right. **Expect:** the conversation widens, the canvas narrows but never below a usable width. Drag the edge left of the Agents panel to the left: it widens. Press **F5**. **Expect:** both widths kept. Double-click an edge: back to the default. Click the fold icon left of "EXECUTIVE ADVISOR". **Expect:** a slim rail on the left, the canvas uses the width. With **Hands-free on**, fold it and ask "What is our runway?" by voice. **Expect:** it still hears and answers aloud while folded. Unfold: the conversation is all there.
+- **MG5. G: the agent window.** Click **Agents** (top of the Advisor panel). Say or type **"Should we open a Dubai office?"**. **Expect:** a window with Plan → Team → Verify → Answer lighting up in turn, one row per agent with a ring that fills and turns green, its current step and a bar on a shared clock, and "N done · N working · N waiting". Drag it by its title bar to another corner. Switch to **Activity** and back: it stays open and in place. Press **F5**, open it again: same place. **Escape** closes it.
+- **MG6. Voice timing.** After a few spoken turns: `$m = Invoke-RestMethod http://127.0.0.1:8000/api/voice/metrics; $m.p50_ms` **Expect:** `first_audio` about 0.7–0.9 s, `first_answer_audio` about 1.7 s or less (was 1.74 s on the CPU in your RW10), `barge_in_pause` under 150 ms. Or run the bench (approval at Never): `.venv\Scripts\python.exe scripts\voice_bench.py --turns 5` **Expect:** p50 metric answer about 1.7 s, "barge-in: audio paused ~70 ms … interrupted=True".
+- **MG7. Barge-in still feels the same.** During the spoken Dubai summary, say "Assume three hires." over it. **Expect:** it stops and says "Your change to three hires isn't in this answer yet. Say yes to restart with it." A short "mm" over it does not stop it.
+- **MG8. Re-run with a change already in the answer.** After a Dubai answer, say **"Re-run the analyst, assume two hires."** **Hear:** "That's already in this answer: it assumes two local hires. Re-running only the Financial Analyst again. The rest of the team's findings stand." **See:** only the Financial Analyst works. Then **"Re-run the analyst, assume three hires."** **Hear:** "That changes the decision, so the whole team runs again with it, …".
+- **MG9. Back on your main copy.** Close the fresh copy's windows. In `D:\Founder-OS`: `git fetch origin; git checkout claude/m6b-polish-demo; git pull` and `.\run.bat`. (This PC's `.venv` already has `onnxruntime-gpu`; I swapped it while measuring.) If anything voice-related is worse on the GPU: `.venv\Scripts\python.exe scripts\enable_tts_gpu.py --undo` puts the CPU package back; tell me what you heard. Delete `D:\FounderOS-fresh2` when done, or keep it.
+
+**Done (M6a, PK1–PK8 PASS 2026-11-17, PR #11 merged): PK1 to PK8, kept for reference.**
+**M6a (Light gate), about 15 minutes. PK1 to PK8.** Windows PowerShell 5.1.
 
 - **PK7 (re-test after the fix). Yes, then the risks; a yes is never ignored (Y1, Y2).** After a fresh Dubai answer, **see and hear** "The answer is ready… Want me to go through the risks?" (or "Want me to go on?" / "…the costs?"), even when the answer ends on the Advisor's own question. Say **"Yeah."** **Hear:** the risks, no new team. Say **"Yeah."** again. **Hear:** "Which comes first: … or …?" if the answer ended on an either/or question, otherwise "Yes to what? You can ask me about the risks or the other options." Never silence.
 - **PK7b. A third yes.** Straight after PK7, say **"Yes."** once more. **Hear:** "Yes to what? You can ask me about the risks or the other options." No team, no "Did you say…?".
@@ -1339,6 +1420,30 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M6b] M6 Major gate run 2026-11-18/19 (fresh copy `D:\FounderOS-fresh2`): D1–D7 RESOLVED on this PC (fix session 2026-11-19), awaiting re-test MR1–MR8
+**Passed:** MG1, MG2, MG5; DEMO_SCRIPT §1, §7; §4 frame, risks on "yes", three hires ($43,771, −2.58) pass; MG4 fold + voice while folded.
+**To fix, in the founder's order:**
+- **D1 (serious).** §5 "Record the decision" memo contradicts the analysis: "aligns with the goal to extend runway" (the goal check says it moves away), "Cost model: Not modelled" (the frame has a low/base/high model, three hires as the founder's figure), options mention "two SDRs" (mixed up with `decisions/2026-09-hire-two-sdrs.md`), "Open numbers to confirm: None" (there are 4). The memo must be built by code from the latest frame of the open decision; the LLM writes only the prose around it, checked by the Verifier. The Prioritisation Matrix stays empty after the decision.
+- **D2.** §3 "What if we raise prices 10% and churn goes up two points?" got "The team is already assuming that price change. Nothing to restart." The "already in this answer" check must apply only to a change for the open decision's frame; the what-if must apply both levers and say both.
+- **D3.** §6 "Wait, stop there." over the summary stopped the voice, then made a change card. Stop phrases must stop and listen, never become a change.
+- **D4.** The fresh copy's Librarian cited `decisions/2026-11-06-open-dubai-office.md`, which is not in that vault (Qdrant collection shared by two clones). Drop citations to files not in the vault; collection name unique per install.
+- **D5.** DEMO_SCRIPT §2 mentions a "written by code" label that does not exist; mark what is said to the audience vs. to the app (the "mm" line was taken as a request).
+- **D6.** F: dragging the panel edges and double-click reset do not work on the founder's PC (Edge, 2560×1600, 125 %). Visible handles ≥ 8 px, `col-resize`, Playwright at 1.25 scale, widths kept after F5; the agent window comes back in the same place after F5.
+- **D7.** `/api/voice/metrics` p50 first_audio 1495 ms (was 890 ms with Kokoro on the CPU), tts_first 542, barge_in_pause 59.5. Bench GPU vs CPU with qwen3:8b loaded; keep the faster as default.
+
+**Reproduced first** in tests on the unchanged code (`backend/tests/test_m6_gate.py`, 11 tests): D2 (`parse_inputs` read "+10 % price" but not "churn goes up **two** points", and a what-if was matched against a frame's base case), D3 (`by_rules("Wait, stop there.")` was `amendment`: "wait" opened the amendment rule and "stop there" was not a stop), D1 (the memo run rebuilt its frame from the words "Record the decision on the Dubai office"), D6 (Playwright at 2048×1280, scale 1.25: the handle's hit area was 6 px with a 1 px line).
+
+**Causes and what changed:**
+- **D1:** "Record the decision…" started a fresh decision run whose frame came from those words, not from the answer on screen, so the Memo Writer had no cost model ("Not modelled"), no placeholders to list ("None") and no goal check to guard its prose (so "aligns with the goal" and the SDR mix-up got through). Now (`_record`, `app/conversation/manager.py`) it takes the **latest frame of the open decision** (with three hires after that change; or the latest answered decision on the same place, so a reload loses nothing), keeps the team's findings, and runs only the Memo Writer: "Writing the memo from this answer: its options, costs and goal check. The team's findings stand." In the memo, **every option is written by code** from the frame with its cost and runway (the model's option notes are dropped), the cost model has "3 people (you said)", the goal check is code's (and the prose is checked against it, as before), and **"Open numbers to confirm" lists each placeholder input** ("… Give me the real figure."). The Verifier still checks the model's prose. The **Prioritisation Matrix** gets the decision as an entry "<title>: <proposed option>", unscored ("Not scored yet"), via `add_initiative` (`app/api/priorities.py`).
+- **D2:** a "what if" is a change to the open decision only when its numbers belong to that decision's frame ("What if we hired three instead?" on a hire/office). One that brings levers of its own (price, churn), or the run's own request said again, is a new question: it runs (or is queued while a team works), never "already in this answer" (`_new_what_if`). Number words are read for % and points ("two points" = +2). The pricing options name both levers: "Change prices by +10 % with churn +2 pts" (and "+5 % with churn +1 pt").
+- **D3:** "Wait.", "Wait, stop there.", "Stop there.", "Hold on.", "Hang on a second." are stops (`_STOP`, `STOP_WORD`). Over the spoken summary (no team running) a spoken stop now gets **no reply**: the voice has stopped and it listens; never a change card. Typed, "Nothing is running." as before; while a team runs, the R1 rule (spoken stop is asked about) is unchanged. "Wait, assume three hires." is still a change.
+- **D4:** search already returned only files of this vault's own index, so the stray citation could not come from a hit; I could not find how it got into the answer (a backend on port 8000 from `D:\Founder-OS` serving the fresh copy's page would explain it). Both guards are in anyway: a passage is a source only while its file is in this vault (`Evidence.resolves`, `app/agents/sources.py`), so a sentence citing a missing file is removed with the usual note, and the citations keep only files in this vault (`_keep_used_sources`). The Qdrant collection name now carries a hash of the vault folder (`founderos_default_<model>_<vault>`), so two copies on one PC never share or delete each other's vectors. The first start after this re-embeds the vault once (about a minute); the old collection stays in Qdrant, unused.
+- **D5:** `docs/DEMO_SCRIPT.md` marks every line 🗣️ **Say to FounderOS** or 👥 **Say to the room**, with how to keep the room lines away from the app (Voice mode Hold to talk). §2 no longer promises a "written by code" label (the card says "local", or "written by code" only when no model was used). §3, §5, §6 describe the fixed behaviour.
+- **D6:** in Chromium and **in Edge** (`E2E_CHANNEL=msedge`) at 2048×1280 and scale 1.25 the old handle did drag when hit exactly, so the likely cause is the 6 px target with a 1 px line beside the panels' own borders. The handle is now a 12 px hit area reaching over both borders, with a grip drawn in its middle, `col-resize`, and a drag follows the pointer on the whole window (no pointer capture needed). New spec `frontend/e2e/panels-scaled.spec.ts`: hit area ≥ 8 px and on top (hit-tested), drag both edges, F5 keeps both widths, double-click resets each, the agent window comes back in the same place after F5 and reopening.
+- **D7:** see the bench numbers under Current state.
+
+**Checks on this PC:** backend 1465 tests pass (1463 in the full run, plus the two I fixed after it), ruff clean; frontend lint, tsc, vitest 53, build pass; Playwright `panels-scaled` (Chromium and Edge) and `panels` pass. Not run live: the D2/D3 runner scenarios (the tests cover them), and nothing was tried with a microphone. **Known and unchanged:** run alone, `turns.spec.ts` passes; run serially after `panels` and `smoke` on their shared test backend, it fails, and it fails the same way with this round's backend changes stashed, so the cause is older. In one parallel local run `smoke.spec.ts` also failed once. CI runs Playwright with a retry.
+
 ### [M6a] PK run 2026-11-17: PK1–PK6 PASS, PK7 FAIL (Y1, Y2), setup warning (Y3): RESOLVED on this PC, awaiting PK7, PK7b, PK1b
 **Founder's items:** Y1 no "The answer is ready… Want me to go through the risks?" (chat or aloud) after a Dubai answer that ended on the Advisor's own question ("What's your priority: extending runway or expanding sales reach?"). Y2 "Yeah." (heard correctly) after it, twice: total silence. Y3 `setup.bat` in a second clone: "container name /founderos-qdrant is already in use", `[WARN] Could not start Qdrant`, then `[OK] Qdrant`.
 
@@ -1806,6 +1911,12 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
+0f. **From M6b (2026-11-18), none blocking:**
+   - **I changed this PC's `.venv`**: `onnxruntime 1.31.1` → `onnxruntime-gpu 1.23.2` plus three CUDA wheels (about 300 MB), because your note asked for onnxruntime-gpu to be measured with `voice_bench.py`, which needs the real backend. Your standing rule is not to reinstall; I read the note as permission for this one package. `scripts\enable_tts_gpu.py --undo` reverts it. Say if you would rather keep Kokoro on the CPU (`VOICE_TTS_DEVICE=cpu`).
+   - **setup.bat now swaps the package on every PC with an NVIDIA GPU.** On a PC without one it does nothing. If a PC's driver is too old for CUDA 12.9, Kokoro falls back to the CPU by itself, with a note in `/api/voice/status`.
+   - **npm deprecation warnings left as they are**: all three need major upgrades (eslint 10, recharts 3, jsdom 27) and a reinstall. Want them as a small separate PR after M6?
+   - **G is the minimal-but-complete version** (steps, rings, steps text, clock bars, movable, remembered). A picture of which agent read whose findings would need the lane to record that; say if you want it after M6.
+   - **The voice_bench barge-in step changed** (it talks over the team line, not "On it."). Numbers from before and after are comparable for the pause and stop; only the line it lands on moved.
 0e. **From M6a (2026-11-17), none blocking:**
    - **X3 compares with the base case only.** The Dubai frame's hires are low 1 / base 2 / high 3. "Assume two hires" now counts as already in the answer, although a restart would also narrow low and high to 2. That is my reading of "two hires = default"; say if you want that narrowing restart offered instead.
    - **Reset keeps your Settings** (`ui_settings.json`: approval policy, cloud switch, voice mode). `reset_demo.bat --settings` resets them too. Say if the default should be the other way.
@@ -1837,6 +1948,13 @@ Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
 2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
+## Decisions made (M6b session, 2026-11-18)
+- Kokoro fp32 on the GPU by default (`VOICE_TTS_DEVICE=auto`), `onnxruntime-gpu` pinned to 1.23.2 (CUDA 12), swapped in by `scripts/enable_tts_gpu.py` from `setup.bat`; the int8 model is never put on CUDA (PRD §12).
+- F: panel limits Advisor 280–720 px, Agents 240–560 px, canvas at least 420 px; sizes per viewer in `localStorage`; folding hides the Advisor panel without unmounting it (voice keeps running).
+- G: the agent window shows status and steps only (no figures), stays open across views, and leaves cancel and re-run to the Activity tab.
+- A re-run whose change equals the answer's base case re-runs only that agent and says the change is already in.
+- npm deprecation warnings: not changed (major upgrades only).
+
 ## Decisions made (M6a session, 2026-11-17)
 - Kokoro licence for v1: keep `kokoro-onnx` with phonemizer/espeak-ng, installed from PyPI by setup; swap to a permissive G2P before any sale (founder; PRD §12).
 - PRD §9 item 6 follows the 1 s barge-in decision (founder; PRD §12).
@@ -1859,6 +1977,11 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M6b session (2026-11-18)
+- Plan committed. F (resize handles, fold, `localStorage`) and G (agent window) with vitest and a Playwright spec; screenshots checked.
+- Re-run with a change already in the base case re-runs only that agent (test_m6b).
+- Kokoro measured: CPU fp32/int8, GPU fp32/int8 in a scratch venv, then `onnxruntime-gpu` 1.23.2 in the venv; `voice_bench.py` CPU 2381 ms → GPU 1681 ms metric answer; `VOICE_TTS_DEVICE`, CPU fallback, `scripts/enable_tts_gpu.py`, setup.bat; bench barge-in fixed to a long line; RL2c spoken PASS on the GPU.
+- Self-review: saved widths now drawn to fit a smaller window. README, DEMO_SCRIPT (agent window), .env.example, MG1–MG9.
 ### M6a bug-fix (2026-11-17)
 - Recorded PK1–PK6 PASS, PK7 FAIL; runner scenario Y1+Y2 reproduced Y2 (second "Yeah." silent); fixed Y1 (offer always), Y2 (a yes is always answered), Y3 (Qdrant already running) with tests; HANDOVER PK7, PK7b, PK1b.
 ### M6a session (2026-11-17)

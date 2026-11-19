@@ -6,7 +6,8 @@
 
 It plays the WAV fixtures in backend/tests/fixtures/voice into /ws/voice in real time (hands-free mode, as a
 microphone would), so the backend's own VAD finds the end of speech. Then it asks the Dubai question and, as soon as
-FounderOS starts speaking, plays "Wait, stop..." over it. It prints the backend's measurements and VRAM.
+FounderOS starts a line of six words or more (the team line), plays "Wait, stop..." over it. It prints the backend's
+measurements and VRAM.
 Set "Ask before a team runs" to Never first, or the Dubai run waits for your approval.
 """
 
@@ -75,7 +76,10 @@ async def turn(url: str, name: str, *, barge_with: str | None = None, timeout: f
                 out["barge_in"] = message["barge_in"]
             elif kind == "say":
                 out.setdefault("said", []).append(f"[{message['lane']}] {message['text']}")
-                if barge_with and barging is None:  # interrupt the first thing FounderOS says
+                # Interrupt the first line long enough to talk over (M6b: with Kokoro on the GPU a 0.6 s "On it." has
+                # finished before 1 s of speech has been heard, so barging into it measured a new turn, not a barge-in).
+                long_enough = len(str(message.get("text", "")).split()) >= 6
+                if barge_with and barging is None and long_enough:
                     await sender
                     barging = asyncio.create_task(play(ws, pcm(barge_with)))
                 if not barge_with and message["lane"] == "answer":

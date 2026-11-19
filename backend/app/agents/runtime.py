@@ -656,7 +656,7 @@ class AgentRunner:
             # Seen live: a small model can return nothing, twice. Or nothing it said could be backed.
             result.text = RULE_TEXT[spec.name]
         self._finish_specialist(spec, inst, result)
-        _keep_used_sources(result)
+        _keep_used_sources(result, vault_checker(self.ctx_factory(inst.id)))
         return self._finish(inst, result, started)
 
     async def _metric_written_by_code(
@@ -1325,9 +1325,12 @@ def _surface_decisions(result: AgentResult) -> None:
     result.text = " ".join([result.text, *(n for n in notes if n)]).strip()
 
 
-def _keep_used_sources(result: AgentResult) -> None:
-    """Citations are the sources the answer names, not everything a search happened to return."""
+def _keep_used_sources(result: AgentResult, exists: Callable[[str], bool] | None = None) -> None:
+    """Citations are the sources the answer names, not everything a search happened to return; and only files that
+    are in this vault (founder M6 gate D4)."""
     used = named_paths(result.text, {c.path for c in result.retrieved})
+    if exists is not None:
+        used = {path for path in used if exists(path)}
     result.citations = [c for c in result.retrieved if c.path in used]
     result.artifacts = [a for a in result.artifacts if a.kind != "citation" or any(c.path in used for c in a.citations)]
 

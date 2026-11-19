@@ -1,11 +1,12 @@
-import { BellOff, Bell, SendHorizontal } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { BellOff, Bell, PanelLeftClose, PanelLeftOpen, SendHorizontal, Workflow } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
 import { AnswerCard } from "@/components/chat/AnswerCard";
 import { VoiceControls } from "@/components/chat/VoiceControls";
 import { ErrorNote } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { useWorkspace, type Turn } from "@/lib/workspace";
+import { cn } from "@/lib/utils";
+import { teamOf, useWorkspace, type Turn } from "@/lib/workspace";
 
 const STARTERS = ["What is our runway?", "Should we open a Dubai office?", "Why did burn change last month?"];
 
@@ -72,7 +73,40 @@ function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "adv
   );
 }
 
-export function AdvisorPanel() {
+interface PanelProps {
+  /** Width on screens where the panels sit side by side (founder decision F). */
+  width?: number;
+  collapsed?: boolean;
+  onToggle?: () => void;
+  /** Opens the pop-up agent window (founder decision G). */
+  onAgents?: () => void;
+  agentsOpen?: boolean;
+}
+
+function AgentsButton({ onAgents, agentsOpen, compact }: { onAgents: () => void; agentsOpen: boolean; compact?: boolean }) {
+  const { currentRun } = useWorkspace();
+  const working = teamOf(currentRun).filter((a) => !["done", "failed", "cancelled"].includes(a.status)).length;
+  return (
+    <button
+      type="button"
+      aria-pressed={agentsOpen}
+      aria-label={compact ? "Agent window" : undefined}
+      onClick={onAgents}
+      className="relative inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-2 text-xs text-muted-foreground hover:bg-accent"
+      title="Open the agent window: what each agent is doing, in a window you can move."
+    >
+      <Workflow aria-hidden="true" className="h-3.5 w-3.5" />
+      {compact ? null : "Agents"}
+      {working > 0 ? (
+        <span className="num rounded-full bg-signal px-1.5 text-[10px] font-semibold leading-4 text-[#1A1206]" aria-label={`${working} working`}>
+          {working}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, agentsOpen = false }: PanelProps = {}) {
   const { state, send, toggleQuiet } = useWorkspace();
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
@@ -104,13 +138,53 @@ export function AdvisorPanel() {
     void send(question);
   };
 
+  const sized = width !== undefined;
   return (
+    <>
+    {collapsed ? (
+      <aside
+        aria-label="Executive Advisor (folded)"
+        className="flex w-full shrink-0 items-center gap-2 border-b border-border bg-panel p-2 md:sticky md:top-0 md:h-[calc(100vh-61px)] md:w-11 md:flex-col md:border-b-0 md:border-r"
+      >
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label="Show the Advisor panel"
+          title="Show the Advisor panel"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong bg-card text-muted-foreground hover:bg-accent"
+        >
+          <PanelLeftOpen aria-hidden="true" className="h-4 w-4" />
+        </button>
+        {onAgents ? <AgentsButton onAgents={onAgents} agentsOpen={agentsOpen} compact /> : null}
+      </aside>
+    ) : null}
     <aside
       aria-label="Executive Advisor"
-      className="flex min-w-0 flex-[1_1_340px] flex-col border-r border-border bg-panel md:sticky md:top-0 md:h-[calc(100vh-61px)] md:max-w-[380px]"
+      hidden={collapsed}
+      style={sized ? ({ "--advisor-w": `${width}px` } as CSSProperties) : undefined}
+      className={cn(
+        "min-w-0 flex-[1_1_340px] flex-col bg-panel md:sticky md:top-0 md:h-[calc(100vh-61px)]",
+        collapsed ? "hidden" : "flex",
+        sized ? "md:w-[var(--advisor-w)] md:max-w-none md:flex-none" : "border-r border-border md:max-w-[380px]",
+      )}
     >
       <div className="flex items-center justify-between gap-2 px-5 pb-2 pt-4">
-        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Executive Advisor</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          {onToggle ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label="Fold the Advisor panel"
+              title="Fold the Advisor panel (the conversation and voice carry on)"
+              className="-ml-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+            >
+              <PanelLeftClose aria-hidden="true" className="h-4 w-4" />
+            </button>
+          ) : null}
+          <span className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Executive Advisor</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+        {onAgents ? <AgentsButton onAgents={onAgents} agentsOpen={agentsOpen} /> : null}
         <button
           type="button"
           aria-pressed={state.quiet}
@@ -121,6 +195,7 @@ export function AdvisorPanel() {
           {state.quiet ? <BellOff aria-hidden="true" className="h-3.5 w-3.5" /> : <Bell aria-hidden="true" className="h-3.5 w-3.5" />}
           {state.quiet ? "Quiet on" : "Quiet off"}
         </button>
+        </span>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-2" aria-live="polite" aria-relevant="additions">
@@ -189,5 +264,6 @@ export function AdvisorPanel() {
         <VoiceControls />
       </form>
     </aside>
+    </>
   );
 }

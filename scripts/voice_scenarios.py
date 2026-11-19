@@ -949,7 +949,65 @@ async def y1_y2(ch: Channel, r: Result) -> None:
             return
 
 
+# --- M6 gate fix round (founder run 2026-11-18/19) --------------------------------------------------------------------
+WHAT_IF = "What if we raise prices 10% and churn goes up two points?"
+
+
+async def d2(ch: Channel, r: Result) -> None:
+    """D2: the what-if is its own question (also right after a Dubai answer), and it applies and says both levers."""
+    if await _answered_dubai(ch, r) is None:
+        return
+    s = await ch.say(WHAT_IF, settle=2)
+    r.steps.append(s)
+    s.check('no "already"', _has(s.lines, "already") == 0 and _has(s.lines, "nothing to restart") == 0)
+    s.check("no change card", s.cards == 0)
+    if not s.check("a team started", s.run_started):
+        return
+    await ch.wait_finished(s.run_started)
+    run = (await ch.http.get(f"/api/runs/{s.run_started}")).json()
+    answer = str((run.get("result") or {}).get("answer") or "")
+    s.notes.append(f"answer: {answer[:300]}")
+    s.check("the answer names both levers", "+10 % with churn +2 pts" in answer)
+
+
+async def d3(ch: Channel, r: Result) -> None:
+    """D3: "Wait, stop there." said over the spoken summary stops it and listens: no change card, nothing said."""
+    if not isinstance(ch, Spoken):
+        s = await ch.say("Wait, stop there.", settle=2)
+        r.steps.append(s)
+        s.check("no change card", s.cards == 0)
+        s.check("no team started", s.run_started is None)
+        return
+    s = await ch.say(DUBAI, settle=1)
+    r.steps.append(s)
+    if not s.check("a team started", s.run_started):
+        return
+    run_id = s.run_started
+    assert run_id is not None
+    await ch.wait_finished(run_id)
+    deadline = time.time() + 40
+    while time.time() < deadline:
+        if any(m.get("type") == "say" and m.get("lane") == "answer" and m.get("run_id") == run_id for m in ch.inbox):
+            break
+        await asyncio.sleep(0.1)
+    await asyncio.sleep(1.0)
+    inbox_mark, mark = len(ch.inbox), ch.events.mark()
+    c = await ch.say("Wait, stop there.", settle=4, over_voice=True)
+    r.steps.append(c)
+    c.notes.append("timeline: " + ch.timeline(inbox_mark))
+    later = ch.inbox[inbox_mark:]
+    cut = next((i for i, m in enumerate(later) if m.get("type") == "interrupt"), None)
+    c.check("the summary was stopped (interrupt)", cut is not None)
+    after = [str(m.get("text")) for m in later[(cut or 0) :] if m.get("type") == "say"]
+    c.notes.append(f"said after the stop: {after}")
+    c.check("nothing said after the stop", not after)
+    offered = ch.events.since(mark, type="amendment.offered", session_id=ch.session_id)
+    c.check("no change card", not offered)
+
+
 SCENARIOS = {
+    "D2": d2,
+    "D3": d3,
     "S1+S2": s1_s2,
     "S3": s3,
     "S4": s4,

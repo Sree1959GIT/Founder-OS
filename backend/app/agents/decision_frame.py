@@ -297,8 +297,16 @@ def _value_in_clause(item: ItemTemplate, clause: str) -> float | None:
         word = match.group(1).lower()
         return float(word) if word.isdigit() else float(_NUMBER_WORDS[word])
     if item.cadence in ("percent", "points"):
-        match = re.search(r"(-?\d+(?:\.\d+)?)\s?(?:%|percent|points?|pts?\b)", clause, re.I)
-        return float(match.group(1)) if match else None
+        # Founder M6 gate D2: "churn goes up two points" is said in words as often as in digits.
+        match = re.search(
+            r"(-?\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine)\s?(?:%|percent|points?|pts?\b)",
+            clause,
+            re.I,
+        )
+        if match is None:
+            return None
+        word = match.group(1).lower()
+        return float(_NUMBER_WORDS[word]) if word in _NUMBER_WORDS else float(word)
     money = [
         m for m in _MONEY.finditer(clause) if not re.match(r"\s?(%|months?|people|hires?)", clause[m.end() :], re.I)
     ]
@@ -805,6 +813,11 @@ def _options(
         churn = _lever(model.items, "churn", "base")
         notice = _lever(model.items, "notice", "base")
         half = price / 2
+
+        def with_churn(pts: float) -> str:
+            # Founder M6 gate D2: both levers are applied, so both are said ("+10 % with churn +2 pts").
+            return f" with churn {pts:+g} {'pt' if abs(pts) == 1 else 'pts'}" if pts else ""
+
         return [
             _option(finance, "No price change", "Keep prices as they are."),
             _option(
@@ -817,13 +830,13 @@ def _options(
             ),
             _option(
                 finance,
-                f"Change prices by {half:+g} %",
+                f"Change prices by {half:+g} %{with_churn(churn / 2)}",
                 "A smaller step, for less churn risk.",
                 notice,
                 price_change_pct=half,
                 churn_change_pts=churn / 2,
             ),
-            named(f"Change prices by {price:+g} %", "The full change, for all customers."),
+            named(f"Change prices by {price:+g} %{with_churn(churn)}", "The full change, for all customers."),
         ], "New customers only"
     if kind == "new_product":
         return [
