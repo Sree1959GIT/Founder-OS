@@ -27,18 +27,28 @@ def build_embedder(settings: Settings) -> Embedder:
     return OllamaEmbedder(settings.ollama_base_url, settings.ollama_embed_model)
 
 
-def collection_name(workspace_id: str, embedder_name: str) -> str:
-    """One Qdrant collection per workspace *and* embedding model, so vectors from two models never mix."""
-    return f"founderos_{workspace_id}_{hashlib.sha1(embedder_name.encode('utf-8')).hexdigest()[:8]}"
+def collection_name(workspace_id: str, embedder_name: str, vault_dir: Path | str | None = None) -> str:
+    """One Qdrant collection per workspace *and* embedding model, so vectors from two models never mix; and per
+    install (founder M6 gate D4): two copies of FounderOS on one PC share the Qdrant container, so the vault's own
+    folder is part of the name, and one copy never sees or deletes the other's vectors."""
+    name = f"founderos_{workspace_id}_{hashlib.sha1(embedder_name.encode('utf-8')).hexdigest()[:8]}"
+    if vault_dir is None:
+        return name
+    place = str(Path(vault_dir).resolve()).casefold()
+    return f"{name}_{hashlib.sha1(place.encode('utf-8')).hexdigest()[:8]}"
 
 
-def build_store(settings: Settings, workspace_id: str, embedder_name: str) -> tuple[VectorStore | None, str | None]:
+def build_store(
+    settings: Settings, workspace_id: str, embedder_name: str, vault_dir: Path | str | None = None
+) -> tuple[VectorStore | None, str | None]:
     """(store, warning). `auto` uses Qdrant when it answers, else the in-memory store (PRD R3)."""
     if settings.vector_store == "memory":
         return InMemoryVectorStore(), None
     base = f"http://{settings.qdrant_host}:{settings.qdrant_port}"
     qdrant = QdrantVectorStore(
-        base, collection_name(workspace_id, embedder_name), timeout_s=max(settings.health_probe_timeout_s, 5.0)
+        base,
+        collection_name(workspace_id, embedder_name, vault_dir),
+        timeout_s=max(settings.health_probe_timeout_s, 5.0),
     )
     try:
         qdrant.ping()
@@ -96,7 +106,7 @@ class VaultService:
         store, self.store_note = (
             (self._store, None)
             if self._store is not None
-            else build_store(self.settings, self.workspace_id, embedder.name)
+            else build_store(self.settings, self.workspace_id, embedder.name, self.vault.root)
         )
         self.index = HybridIndex(
             self.vault, embedder, store, get_tokenizer(self.settings.tokenizer), store_warning=self.store_note

@@ -27,12 +27,14 @@ TURN_QUESTION = (
 
 # A whole turn, about the work itself: "Cancel the Acme contract" and "Stop hiring contractors" are requests.
 _STOP = re.compile(
-    r"^(please\s+)?(stop|cancel|abort|halt|hold it|never ?mind|forget it)"
-    r"(\s+(it|that|this|the run|the team|the work|everything|now|please))*[\s.!]*$",
+    r"^(please\s+)?(stop|cancel|abort|halt|hold it|hold on|hang on|wait|pause|never ?mind|forget it)"
+    r"([\s,]+(it|that|this|there|here|the run|the team|the work|everything|now|please|stop|wait|"
+    r"a (sec|second|moment|minute)|one (sec|second|moment)))*[\s.!,]*$",
     re.I,
 )
-# Founder re-test R1: only these words can stop a team. A model's guess never does.
-STOP_WORD = re.compile(r"\b(stop|cancel|abort|halt|hold it|never ?mind|forget it)\b", re.I)
+# Founder re-test R1: only these words can stop a team. A model's guess never does. Founder M6 gate D3: "Wait, stop
+# there." and "Hold on." stop and listen; they are never a change.
+STOP_WORD = re.compile(r"\b(stop|cancel|abort|halt|hold it|hold on|hang on|never ?mind|forget it)\b", re.I)
 _BACKCHANNEL = re.compile(
     r"^(ok|okay|k|thanks|thank you|thx|got it|cool|great|nice|sure|yes|yeah|yep|right|good|fine|mm+|hm+|"
     r"uh[- ]?huh|mm+[- ]?hm+|mhm+|i see|go on|go ahead|continue|sounds good|understood)[\s.!,]*(thanks|thank you)?"

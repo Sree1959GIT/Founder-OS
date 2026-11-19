@@ -21,11 +21,11 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.agents.decision_frame import _NUMBER_WORDS as _COUNT_NAMES
-from app.agents.decision_frame import _place, inputs_question, parse_inputs, units_of
+from app.agents.decision_frame import _place, classify_decision, inputs_question, parse_inputs, units_of
 from app.agents.events import AgentEvent, EventBus, EventType
 from app.agents.graph import AgentOrchestrator, RunContext
 from app.agents.registry import REGISTRY
-from app.agents.runtime import Plan, single_metric
+from app.agents.runtime import Plan, _instance, single_metric
 from app.agents.verifier import extract_figures, split_sentences
 from app.conversation.classifier import (
     Classified,
@@ -106,6 +106,13 @@ _WHAT_ABOUT = re.compile(
     r"(?P<rest>[^?]+?)\s*\??$",
     re.I,
 )
+# Founder M6 gate D1: "Record the decision on the Dubai office." writes the memo of the decision on screen.
+_RECORD = re.compile(
+    r"^(?:(?:please|now|ok|okay|so|and|then|can you|could you|let's|let us)[,\s]+)*"
+    r"(?:record|write(?: up)?|draft|log|save|document)\b.{0,60}\b(?:decision|memo)\b",
+    re.I,
+)
+_WHAT_IF = re.compile(r"^(?:(?:and|so|ok|okay|then|also|now|but)[,\s]+)*what if\b", re.I)
 # "Why that option?", "why this one?", "why not the full office?": answered from the open decision, by code.
 _WHY_OPTION = re.compile(
     r"^(?:(?:and|but|so|ok|okay)[,\s]+)*why\b(?:\s*\??$|.*\b(?:that|this|the)\s+(?:option|one|proposal|choice|pick)\b|"
@@ -642,13 +649,13 @@ class ConversationManager:
         if rerun is not None:
             return rerun
         if running is None:
-            return await self._turn_when_idle(session, text)
+            return await self._turn_when_idle(session, text, spoken)
         if self._gives_inputs(running, text):
             return self._offer_amendment(session, Classified(kind="amendment", by="rules"), running, text)
         classified = await self.classifier.classify(text, running.message)
         running = self._running(session)  # the run may have ended while the classifier was thinking
         if running is None:
-            return await self._turn_when_idle(session, text)
+            return await self._turn_when_idle(session, text, spoken)
         self._emit(session, "turn.classified", kind=classified.kind, by=classified.by, text=text)
         match classified.kind:
             case "backchannel":
@@ -832,7 +839,7 @@ class ConversationManager:
             return False
         return bool(parse_inputs(text, frame.type))
 
-    async def _turn_when_idle(self, session: Session, text: str) -> TurnOutcome:
+    async def _turn_when_idle(self, session: Session, text: str, spoken: bool = False) -> TurnOutcome:
         """Rules only. With nothing to protect, an unclear turn is simply a request: no model call before the run."""
         last = self.orchestrator.runs.get(session.run_id) if session.run_id else None
         why = self._why_reply(session, text)
@@ -844,6 +851,9 @@ class ConversationManager:
         # once the founder says yes (founder re-test 40). Plain figures in reply to the lane's question re-run at once.
         if kind == "amendment" and last is not None and self._is_decision(last.run_id):
             return self._offer_amendment(session, Classified(kind=kind, by="rules"), last, text)
+        recorded = self._record(session, text)
+        if recorded is not None:
+            return recorded
         if self._gives_inputs(last, text) and last is not None:
             edited = f"{last.message}\nThe founder then added: {text}"
             run = self._start_run(
@@ -866,7 +876,10 @@ class ConversationManager:
         if kind == "backchannel" or is_filler(text):
             return self._reply(session, Classified(kind="backchannel", by="rules"), "", session.run_id)
         if kind == "stop":
-            return self._reply(session, Classified(kind=kind, by="rules"), "Nothing is running.", session.run_id)
+            # Founder M6 gate D3: "Wait, stop there." said over the spoken summary stops the voice and listens; it is
+            # never a change. Typed, it says nothing is running.
+            reply = "" if spoken else "Nothing is running."
+            return self._reply(session, Classified(kind=kind, by="rules"), reply, session.run_id)
         if not (clear_request(text) or single_metric(text)):
             # Founder rule U0: an unclear, very short or unrecognised turn never starts a team. It is read back,
             # and only a yes runs it.
@@ -1094,7 +1107,80 @@ class ConversationManager:
                 parts.append(f"that {item.name.lower()}")
         return parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
 
+    def _decision_to_record(self, session: Session, text: str) -> RunContext | None:
+        """The decision "record the decision" means: the one open in this session, else the latest answered decision
+        on the same place ("the Dubai office") from any session, so a reload of the page loses nothing."""
+        place = _place(text)
+        open_ = self._open_decision(session)
+        if open_ is not None and (not place or _place(open_.message) == place):
+            return open_
+        for run in reversed(list(self.orchestrator.runs.values())):
+            done = run.result is not None and run.result.status == "done" and run.result.decision_frame is not None
+            if done and run.plan is not None and (not place or _place(run.message) == place):
+                return run
+        return None
+
+    def _record(self, session: Session, text: str) -> TurnOutcome | None:
+        """Founder M6 gate D1: the memo is written from the latest frame of the open decision (its options with their
+        costs and runway, the cost model with the founder's own figures, the goal check, what is still to confirm),
+        never from a frame rebuilt from the words "record the decision". The team's findings are kept as they were;
+        only the Memo Writer runs."""
+        if not _RECORD.match(text.strip()):
+            return None
+        decision = self._decision_to_record(session, text)
+        if decision is None or decision.plan is None or decision.result is None:
+            return None
+        frame = decision.result.decision_frame
+        earlier = {r.agent_id: r for r in decision.result.agents}
+        team, reuse = [], {}
+        for old in decision.plan.team:
+            if old.type == "memo_writer":
+                continue
+            fresh = old.model_copy(update={"id": f"agt_{uuid.uuid4().hex[:8]}"})
+            if old.id in earlier and earlier[old.id].status == "done":
+                reuse[fresh.id] = earlier[old.id]
+            team.append(fresh)
+        brief = f"Write the decision memo for: {decision.message}"
+        team.append(_instance("memo_writer", brief, self.orchestrator.router))
+        plan = decision.plan.model_copy(update={"team": team, "frame": frame, "intent": "decision"})
+        run = self._start_run(session, decision.message, amendment_of=decision.run_id, plan_override=plan, reuse=reuse)
+        session.decision_run_id = decision.run_id
+        reply = "Writing the memo from this answer: its options, costs and goal check. The team's findings stand."
+        return self._reply(session, Classified(kind="new_question", by="rules"), reply, run.run_id).model_copy(
+            update={"started_run": True}
+        )
+
+    def _frame_type(self, run: RunContext) -> str | None:
+        frame = run.result.decision_frame if run.result is not None else None
+        if frame is None and run.plan is not None:
+            frame = run.plan.frame
+        return frame.type if frame is not None else None
+
+    def _new_what_if(self, running: RunContext, text: str) -> bool:
+        """Founder M6 gate D2: "What if we raise prices 10% and churn goes up two points?" is a question of its own,
+        not a change to the open decision. A "what if" is a change only when its numbers belong to that decision's
+        own frame ("What if we hired three instead?" for a hire); the run's own request said again is never one."""
+        if _same(text, running.message):
+            return True
+        if not _WHAT_IF.match(text.strip()):
+            return False
+        kind = self._frame_type(running)
+        if kind is not None and parse_inputs(text, kind):
+            return False  # its numbers are this decision's own: a change to it
+        own = classify_decision(text)
+        return own != kind and bool(parse_inputs(text, own))  # it brings levers of its own
+
+    def _as_new_question(self, session: Session, classified: Classified, running: RunContext, text: str) -> TurnOutcome:
+        if running.task is not None and not running.task.done():
+            if _same(text, running.message):
+                return self._reply(session, classified, "The team is working on that now.", running.run_id)
+            return self._enqueue(session, Classified(kind="new_question", by="rules"), running, text)
+        run = self._start_run(session, text)
+        return TurnOutcome(session_id=session.id, reply="", run_id=run.run_id, started_run=True)
+
     def _offer_amendment(self, session: Session, classified: Classified, running: RunContext, text: str) -> TurnOutcome:
+        if self._new_what_if(running, text):
+            return self._as_new_question(session, classified, running, text)
         same_as_answer = self._already_in(running, text)
         if same_as_answer:
             return self._reply(session, classified, same_as_answer, running.run_id)

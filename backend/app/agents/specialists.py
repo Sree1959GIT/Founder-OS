@@ -13,6 +13,7 @@ import re
 import uuid
 from typing import Any
 
+from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
 from app.agents.decision_frame import (
@@ -819,7 +820,14 @@ def _cost_section(frame: DecisionFrame | None) -> str:
 
 
 def _option_lines(draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
-    costs = {o.name: o for o in frame.options} if frame is not None else {}
+    if frame is not None and frame.options:
+        # Founder M6 gate D1: the options are the frame's, written by code with their costs and runway. The model's
+        # notes are left out: one mixed this decision up with a past one ("two SDRs" in a Dubai memo).
+        return [
+            f"{o.line(frame.currency)} **(proposed)**" if o.name == draft.chosen else o.line(frame.currency)
+            for o in frame.options
+        ]
+    costs: dict[str, Any] = {}
     lines = []
     for option in draft.options:
         known = costs.get(option.name)
@@ -900,6 +908,13 @@ def render_body(
 def _open_lines(moved: list[str], draft: MemoDraft, frame: DecisionFrame | None) -> list[str]:
     """This section speaks to the founder too. What was taken out for its figure can still claim what is not true."""
     lines = [_OUR_WORD.sub(lambda m: _OUR_WORDS[m.group()], line) for line in dict.fromkeys(moved)]
+    model = frame.cost_model if frame is not None else None
+    if model is not None:
+        # Founder M6 gate D1: every placeholder input of the cost model is a number to confirm, written by code.
+        lines = [
+            *(f"{model.item_line(i)} Give me the real figure." for i in model.items if i.basis == "assumption"),
+            *lines,
+        ]
     return [
         line
         for line in lines
@@ -959,6 +974,12 @@ def write_memo(
     if not written:
         raise ValueError(f"could not find a free file name for {base}")
     ctx.vault.apply_changes({written})
+    from app.api.priorities import add_initiative  # here: the API module imports the vault layer, not the agents
+
+    try:
+        add_initiative(ctx.vault, f"{draft.title}: {draft.chosen}" if draft.chosen else draft.title)
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        logger.warning("The decision could not be added to the Prioritisation Matrix: {}", exc)
     if ctx.finance is not None:
         # A starter is arithmetic on the cost model, not a forecast anyone made, so it is not scored.
         for prediction in [p for p in draft.predictions if not p.starter]:

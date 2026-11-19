@@ -98,13 +98,16 @@ class Evidence:
     exists: Callable[[str], bool] | None = None
 
     def resolves(self, source: str) -> bool:
-        if source in self.passages or source in self.data_files:
+        short = f"/{source}"
+        if source in self.data_files or any(path.endswith(short) for path in self.data_files):
             return True
         if source.startswith(("http://", "https://")):
-            return False  # no page exists for us unless a search returned it
-        short = f"/{source}"
-        if any(path.endswith(short) for path in [*self.passages, *self.data_files]):
-            return True
+            return source in self.passages  # no page exists for us unless a search returned it
+        returned = [p for p in self.passages if p == source or p.endswith(short)]
+        if returned:
+            # Founder M6 gate D4: a passage is only a source while its file is in this vault. A search index shared
+            # with another copy of FounderOS once returned a memo this vault does not have.
+            return self.exists is None or any(self.exists(p) for p in returned)
         if self.exists is None:
             return False
         return self.exists(source) or ("." not in source.rsplit("/", 1)[-1] and self.exists(f"{source}.md"))

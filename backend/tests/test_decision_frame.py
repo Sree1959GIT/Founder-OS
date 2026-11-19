@@ -474,7 +474,7 @@ def test_a_note_the_line_already_holds_is_not_said_twice(ctx: ToolContext) -> No
     frame = build_frame(DUBAI, ctx)
     full = next(o for o in frame.options if o.is_full)
     draft = MemoDraft(chosen=full.name, options=[MemoOption(name=full.name, note=full.note)])
-    line = _option_lines(draft, frame)[0]
+    line = next(x for x in _option_lines(draft, frame) if x.startswith(full.name))  # every option of the frame
     assert line.count(full.note.strip(" .")) == 1
 
 
@@ -1153,7 +1153,7 @@ def test_new_customers_only_is_modelled_and_never_proposed_unmodelled(ctx: ToolC
     by_name = {o.name: o for o in frame.options}
     only_new = by_name["New customers only"]
     assert only_new.modelled and only_new.runway_change_months is not None
-    everyone = by_name["Change prices by +10 %"]
+    everyone = next(o for name, o in by_name.items() if name.startswith("Change prices by +10 %"))
     assert everyone.runway_change_months is not None
     assert 0 < only_new.runway_change_months < everyone.runway_change_months  # new customers only: smaller gain
     assert all(o.modelled for o in frame.options)

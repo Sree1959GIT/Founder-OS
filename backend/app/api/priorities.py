@@ -88,3 +88,17 @@ def put_priorities(request: ScoringRequest, vault: VaultDep) -> dict[str, Any]:
     rel = vault.vault.write_note(PRIORITIES_NOTE, None, frontmatter=frontmatter, body=_body(request))
     vault.apply_changes({rel})
     return _view(request.criteria, request.options)
+
+
+def add_initiative(vault: Any, name: str) -> bool:
+    """Founder M6 gate D1: a recorded decision gets its entry in the Prioritisation Matrix, unscored (the middle of
+    every criterion), so the founder places it. An entry of the same name is kept as it is. False: nothing written."""
+    name = name.strip()[:120]
+    view = get_priorities(vault)
+    if not name or "warning" in view or any(o["name"] == name for o in view["options"]):
+        return False
+    criteria = [Criterion(**c) for c in view["criteria"]]
+    middle = {c.name: 3.0 for c in criteria}
+    options = [*(ScoredOption(**o) for o in view["options"]), ScoredOption(name=name, scores=middle)]
+    put_priorities(ScoringRequest(criteria=criteria, options=options), vault)
+    return True
