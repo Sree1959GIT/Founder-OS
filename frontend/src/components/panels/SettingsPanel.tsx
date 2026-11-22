@@ -90,6 +90,8 @@ export function SettingsPanel() {
 
   const pending = saved && view ? changedSettings(saved, view) : {};
   const dirty = Object.keys(pending).length > 0;
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
@@ -137,8 +139,14 @@ export function SettingsPanel() {
   const refreshCloud = useCallback(() => {
     fetchSettings()
       .then((fresh) => {
+        // A pending (unsaved) edit of "Allow cloud agents" is kept; otherwise the draft follows the server.
+        const before = savedRef.current;
+        setView((v) => {
+          if (!v) return fresh;
+          const edited = before !== null && v.cloud_allowed !== before.cloud_allowed;
+          return { ...v, cloud_allowed: edited ? v.cloud_allowed : fresh.cloud_allowed, spend: fresh.spend };
+        });
         setSaved((s) => (s ? { ...s, cloud_allowed: fresh.cloud_allowed, spend: fresh.spend } : fresh));
-        setView((v) => (v ? { ...v, cloud_allowed: fresh.cloud_allowed, spend: fresh.spend } : fresh));
       })
       .catch(() => undefined);
   }, []);
@@ -236,7 +244,7 @@ export function SettingsPanel() {
             </label>
             <div className="flex items-center justify-between gap-3">
               <label htmlFor="deep-provider" className="text-[13px]">
-                Deep-work provider
+                Deep-work provider (.env keys; the AI model card above wins once you choose there)
               </label>
               <select
                 id="deep-provider"

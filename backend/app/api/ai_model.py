@@ -148,7 +148,9 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
         if not key:
             return {"ok": False, "code": "missing", "message": "Paste your API key first.", "view": _view(request)}
     timeout = settings.ai_model_test_timeout_s
-    provider = build_provider(preset, model, key, base_url=base_url, timeout_s=timeout, max_tokens=TEST_MAX_TOKENS)
+    # Anthropic needs a token limit; OpenAI-style servers get none (newer OpenAI models refuse `max_tokens`).
+    limit = TEST_MAX_TOKENS if preset.kind == "anthropic" else None
+    provider = build_provider(preset, model, key, base_url=base_url, timeout_s=timeout, max_tokens=limit)
     try:
         await probe_key(provider, timeout)
     except (LLMError, TimeoutError) as exc:

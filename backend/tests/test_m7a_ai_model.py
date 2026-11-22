@@ -251,6 +251,7 @@ def test_custom_needs_a_public_https_address(client: TestClient, server: Server)
     assert server.seen == []
     good = custom("https://llm.example.com/v1/")
     assert good["ok"] is True and good["message"] == "Custom · my-model · key verified"
+    assert "max_tokens" not in json.loads(server.seen[0].content)  # newer OpenAI models refuse it (review finding)
     assert str(server.seen[0].url) == "https://llm.example.com/v1/chat/completions"
     assert server.seen[0].headers["authorization"] == f"Bearer {KEY}"
 

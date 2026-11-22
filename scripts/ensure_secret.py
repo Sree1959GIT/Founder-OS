@@ -18,7 +18,7 @@ from cryptography.fernet import Fernet
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "FOUNDEROS_SECRET_KEY"
-LINE = re.compile(rf"^\s*{NAME}\s*=\s*(\S*)\s*$", re.MULTILINE)
+LINE = re.compile(rf"^[ \t]*{NAME}[ \t]*=[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 
 
 def has_secret(text: str) -> bool:

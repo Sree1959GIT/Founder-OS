@@ -108,6 +108,16 @@ from `sample_data\vault\`. The next start reloads the Northwind financials. Your
 All settings live in `.env` (git-ignored). See [`.env.example`](.env.example) for every key. By default everything
 runs locally and nothing is sent to a cloud model (`CLOUD_ALLOWED=false`).
 
+### AI model (M7a)
+
+**Settings → AI model** picks the model for the deep-work agents: Qwen on this server (the default, through Ollama),
+or your own API key for Claude, Gemini, OpenAI, OpenRouter, Groq, Ollama Cloud or any OpenAI-compatible server.
+**Test key** sends one tiny request, and the key is kept only when that passes. It is stored encrypted (Fernet) in
+`data/<workspace>/ai_model.json` under `FOUNDEROS_SECRET_KEY`, which `setup.bat` / `run.bat` write to `.env` once
+(`python scripts/ensure_secret.py`). The API only ever shows the last four characters. Subscription sign-ins
+(Claude Pro/Max, Google AI Pro/Ultra, ChatGPT) are not supported. Voice and the local agents always stay on Qwen, and
+any cloud failure falls back to Qwen. Arm64 status (for the hosted server): `docs/ARM64.md`.
+
 ## Demo data
 `sample_data/` holds "Northwind Analytics", a fictional B2B SaaS company (24 months of P&L, bank balance, customers,
 subscriptions, pipeline, marketing spend and headcount). Regenerate it with:

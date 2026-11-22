@@ -5,7 +5,7 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M7a: AI model settings** (M7 "Members Beta", hosted for Business Growth Academy members, target 15 Dec 2026), IN PROGRESS on `claude/zealous-bell-ymy3uq`. v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
+- **Next milestone:** **M7b: Decision Room UI redesign** (Major), after the founder's M7a Medium gate (AM1–AM9). M7a (AI model settings) is built on `claude/zealous-bell-ymy3uq`. v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
 - **Last updated:** 2026-11-22 (M7a session)
 
@@ -21,7 +21,7 @@
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
 | M5 | Voice pipeline | DONE, awaiting Major gate (live check RM1–RM6) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Round 8, 2026-11-16: W1–W5 (a repeated change, the badge after a change, one offer after every decision answer, "leave it", re-run from the last decision team). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | DONE (merged, PR #12; Major gate ACCEPTED 2026-11-19; tagged `v1.0-local`) | **M6a** (merged, PR #11; PK1–PK8 pass): `run.bat`/`setup.bat` from a fresh clone, `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5 and Y1–Y3. **M6b** (2026-11-18): F resizable and foldable panels (remembered per viewer), G movable agent window, Kokoro on the GPU (metric answer p50 2.38 s → 1.66 s on this PC), a re-run with a change already in the answer re-runs only that agent |
-| M7a | AI model settings | IN PROGRESS | Settings → AI model card, Test key, encrypted per-workspace keys, deep-work routing with Qwen fallback, Arm CI job, `docs/ARM64.md` |
+| M7a | AI model settings | DONE, awaiting Medium gate (checklist AM1–AM9) | Settings → AI model card (8 presets, Test key with a 15 s limit, green chip, plain-English errors), Fernet keys per workspace, deep-work routing with Qwen fallback, `scripts/ensure_secret.py`, arm64 CI job, `docs/ARM64.md` |
 | M7b | Decision Room UI redesign: Welcome screen and Glass Boardroom, desktop and phone | NOT STARTED | |
 | M7c | Invite login and per-member encrypted workspaces | NOT STARTED | |
 | M7d | Oracle Cloud Always Free Arm VM deploy behind Cloudflare HTTPS | NOT STARTED | |
@@ -81,12 +81,12 @@
 - Started (UTC): 2026-11-22 16:05 (cloud session, **M7a AI model settings**, Medium gate, time-box 2 hours), branch `claude/zealous-bell-ymy3uq` from `origin/main` (fb4e776, M6 merged).
 - Plan:
   - [x] Record M7a–M7g in PRD §8 and §12 and in the milestones table; fix the stale "Next milestone" line
-  - [ ] Backend: presets, Fernet key store per workspace, `/api/settings/ai-model` (view, test-and-save, use Qwen, remove key), plain-English test errors
-  - [ ] Router: the chosen model drives the deep-work agents, fallback to Qwen, privacy filter and cap kept, voice local
-  - [ ] `scripts/ensure_secret.py` in setup/run; `.env.example`; tests with fakes
-  - [ ] Frontend: AI model card in Settings (current styling), vitest
-  - [ ] CI job on `ubuntu-24.04-arm`; `docs/ARM64.md`
-  - [ ] Checks, self-review, HANDOVER (checklist, Gate log), PR, CI
+  - [x] Backend: presets, Fernet key store per workspace, `/api/settings/ai-model` (view, test-and-save, use Qwen, remove key), plain-English test errors
+  - [x] Router: the chosen model drives the deep-work agents, fallback to Qwen, privacy filter and cap kept, voice local
+  - [x] `scripts/ensure_secret.py` in setup/run; `.env.example`; tests with fakes
+  - [x] Frontend: AI model card in Settings (current styling), vitest
+  - [x] CI job on `ubuntu-24.04-arm`; `docs/ARM64.md`
+  - [x] Checks, self-review, HANDOVER (checklist, Gate log), PR, CI
 
 Previous session (2026-11-19, M6 gate fix round):
 - Started (UTC): 2026-11-19 14:50 (local Windows session, **M6 Major gate fix round**, time-box 90 minutes), branch `claude/m6b-polish-demo`, PR #12 (open). Fix only D1–D7; no new features.
@@ -300,6 +300,18 @@ Previous session (M3a):
   - [x] Real Ollama run ("What's our runway?" → 10.65 with lineage), wrap-up, PR
 
 ## Current state
+### AI model settings (M7a, 2026-11-22)
+- **Settings → AI model** (top of the Settings page, current styling). Pick a provider: **Qwen on our server (free, private, slower)** (default, Ollama), Claude (Anthropic API key), Gemini (AI Studio key), OpenAI, OpenRouter, Groq, Ollama Cloud, Custom (any OpenAI-compatible base URL + key + model). Model defaults come from config (`CLAUDE_MODEL`, `GEMINI_MODEL`, `OPENAI_MODEL`, `OPENROUTER_MODEL`, `GROQ_MODEL`, `OLLAMA_CLOUD_MODEL`); the member can edit the model.
+- **Test key** sends one tiny request ("Reply with the single word OK.", 15 s, `AI_MODEL_TEST_TIMEOUT_S`). The card is grey until it passes; then a fluorescent-green chip `<Provider> · <model> · key verified`. **A key is only stored when the test passes**, and then it is used at once. A failure stores nothing and shows one line: *Wrong key*, *No credit*, *Rate limited*, *Can't reach the server*, *Model not found* (or a general "refused the test (HTTP n)"). The provider's own error text is never shown or logged. **Use Qwen** goes back to Qwen and keeps the key unused; **Remove key** deletes it. The card's buttons act at once (not through the page's Save bar).
+- **Storage:** `data/<workspace>/ai_model.json` (per workspace, ready for M7c): preset, model, base URL, the key as a **Fernet token** under `FOUNDEROS_SECRET_KEY`, and its mask `••••abcd` (last 4; shorter than 12 characters shows `••••` only). The API never returns a key. `scripts/ensure_secret.py` (run by `setup.bat`, `setup.sh` and `run.bat`) writes the secret to `.env` once and never prints it. With no secret, the card says to run setup and no key can be saved. If the secret changes, the saved key reads as unreadable and Qwen is used.
+- **Routing:** a verified key sets the default deep-work provider (`router.cloud`) and turns **Allow cloud agents** on. `AGENT_MODELS` per-agent routes still win. Agents marked local (Advisor, Planner, Analyst, Librarian, Verifier) and the voice path never use it. Any failure falls back to Qwen (`fallback_from`). The privacy filter runs on every payload. The monthly cap still applies: a model with no known price is counted at a conservative $15/$75 per million tokens. **Allow cloud agents off** is still the kill switch (the card then says "Paused").
+- **Ollama Cloud** is called at `https://ollama.com/v1` (OpenAI-compatible, `Authorization: Bearer`; read from Ollama's docs on GitHub on 2026-11-22: `docs.ollama.com` itself was not reachable from this container). Its cloud models have no structured output, so for Ollama Cloud, Groq and Custom the JSON schema goes in the instructions instead of `response_format`.
+- **Custom** base URLs must be `https://` on a public address (no localhost, LAN, link-local or metadata IPs). `AI_MODEL_ALLOW_PRIVATE_URLS=true` allows http and LAN servers for a local install. A saved key is only ever re-sent to the same preset and base URL it was tested with.
+- **No subscription sign-ins** (Claude Pro/Max, Google AI Pro/Ultra, Sign in with ChatGPT). `CLAUDE_CODE_OAUTH_TOKEN` is not read anywhere (the Agent SDK path was removed in M3b); members never use it.
+- **Arm:** CI job `backend-arm64` on `ubuntu-24.04-arm` (repo is public, so the runner is free): base install + full pytest. `docs/ARM64.md`: Ollama, Qdrant, DuckDB, faster-whisper/CTranslate2, Kokoro/onnxruntime and torch all have arm64 builds (CPU only on the Ampere A1).
+- **Tested with fakes only** (`backend/tests/test_m7a_ai_model.py`, 27 tests; `frontend/src/components/panels/AIModelCard.test.tsx`, 5 tests). **No real provider was called**: there is no key here. The error wording is matched on the providers' documented status codes and error texts; a real key on your PC is the first live check (AM3–AM5).
+- **Known limits:** (1) With the default `TEAM_APPROVAL=cloud_only`, once a key is verified, a decision team with a cloud agent waits for your approval (set **Ask before a team runs → Never** to skip it). (2) The Custom URL's address is checked at test time only (DNS rebinding later is possible): harden in M7d. (3) The endpoints have no login, like the rest of the app: M7c must guard `/api/settings/ai-model`. (4) Voice and the Advisor stay on Qwen by design, so the answer you hear is still Qwen's; the cloud model writes the specialists' findings (risks, market, memo).
+
 ### M6 gate fix round (2026-11-19): D1–D7
 - What changed is under Founder feedback → "[M6b] M6 Major gate run 2026-11-18/19". Tests: `backend/tests/test_m6_gate.py`; runner scenarios **D2**, **D3** in `scripts/voice_scenarios.py` (written, not run live this session: the tests reproduce both); Playwright `frontend/e2e/panels-scaled.spec.ts` (Chromium and Edge).
 - **D7 bench** (this PC, 2026-11-19, `scripts/voice_bench.py --turns 5` against an isolated backend, qwen3:8b loaded in Docker Ollama, Whisper `small.en` on CUDA in both; first turn cold):
@@ -876,7 +888,14 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (after the M6 gate fix round, 2026-11-19)
+## Next steps (after M7a, 2026-11-22)
+0. **Gate check:** M7a is a **Medium** gate: the founder runs AM1–AM9 below and merges the PR. M7b (Major) starts after the merge.
+1. **M7b** Decision Room UI redesign (Welcome screen, Glass Boardroom, desktop and phone). Restyle the AI model card there; keep its test ids (`ai-model-card`, `ai-model-verified`).
+2. **M7c** must put the AI model endpoints behind login and map each member to a `workspace_id` (the key store is already per workspace). Decide the hosted default for `TEAM_APPROVAL`.
+3. **M7d** on the Ampere VM: run `docs/ARM64.md`'s checks (Qwen tokens/s, voice CPU bench); pin or re-check Custom URLs at call time.
+4. Earlier items below still stand.
+
+Earlier next steps (after the M6 gate fix round, 2026-11-19):
 0. **Gate check:** M6 is a **Major** gate. The founder runs the re-test **MR1–MR8** below (MG1–MG9 were run 2026-11-18/19) and writes ACCEPTED (or the issues) in the Gate log. Until then, the next session works only on that feedback, on the existing branch `claude/m6b-polish-demo` (PR open), reproducing voice issues with `scripts/voice_scenarios.py` first.
 1. If Kokoro on the GPU misbehaves on the founder's PC: `VOICE_TTS_DEVICE=cpu` in `.env` is the switch, `scripts\enable_tts_gpu.py --undo` the full revert. Re-measure with `scripts/voice_bench.py`.
 2. **X1** (closing offer sometimes missing) was not reproduced in M6a. If seen again: note the question and the chat line, add a runner scenario. Code paths: a frame with no options, or the "costs" fallback (`app/voice/spoken.py` `summarise`, `_offer_always`).
@@ -884,6 +903,18 @@ Known issues / notes:
 4. After M6: Laya fine-tuning (C8) and Jev (C9); Dubai verification of figures quoted from a decision on record; smaller ideas (reload a conversation after refresh, a mapping form for failing Excel files, Jev in the cost ledger, a cash metric, `OllamaEmbedder` delegating to `OllamaProvider.embed`); G could later draw which agent read whose findings, if the lane records it.
 
 ## Windows verification checklist (for the founder)
+**M7a AI model settings (Medium gate), about 15 minutes. Run this one first: AM1 to AM9.** Windows PowerShell 5.1, Ollama in Docker. Have one real API key ready (Claude or Gemini is enough). Write the results in the Gate log.
+
+- **AM1. Update and start.** `git fetch origin; git checkout claude/zealous-bell-ymy3uq; git pull; .\.venv\Scripts\python.exe -m pip install -e backend[dev,gpu,voice]; .\run.bat` **Expect:** a line `[OK] Created FOUNDEROS_SECRET_KEY in .env (…)` the first time (later starts: `[OK] FOUNDEROS_SECRET_KEY is set in .env`). The key itself is never printed. `Select-String FOUNDEROS_SECRET_KEY .env` shows one line (don't share it).
+- **AM2. The card.** Open **Settings**. **Expect:** an **AI model** card at the top, grey, "In use: Qwen on our server · qwen3:8b". The Model provider list has 8 entries, first "Qwen on our server (free, private, slower)", with no subscription sign-in anywhere.
+- **AM3. A wrong key.** Pick **Claude (Anthropic API key)**, paste `sk-ant-wrong-000000000000`, **Test key**. **Expect:** within 15 s a red line starting "Wrong key: Claude did not accept it."; the card stays grey; Qwen still in use.
+- **AM4. A model that does not exist.** With your real key, change Model to `claude-nope-1`, **Test key**. **Expect:** "Model not found: …" (Gemini: same with `gemini-nope`). Nothing saved.
+- **AM5. The real key.** Put the model back (the field's default), paste your real key, **Test key**. **Expect:** the card turns green with the chip **"Claude · claude-sonnet-5-5 · key verified"**; the key box empties; "Saved: Claude · … · ••••abcd" shows only the last 4. The **Cloud** section now has **Allow cloud agents** ticked. `Get-Content data\default\ai_model.json` shows a long `key_token` (gAAAA…), never your key. `Select-String -Path data\default\*.json*,.env -Pattern '<first 10 characters of your key>'` finds nothing, and the backend window shows "AI model set for the deep-work agents: Claude claude-sonnet-5-5" with no key (the log goes to that window only).
+- **AM6. It drives the deep-work agents.** Set **Ask before a team runs → Never**, Save. Ask **"Should we open a Dubai office?"**. **Expect:** the Agent Activity panel shows the Market Scout / Devil's Advocate (cloud-allowed agents) on **Cloud** with your model, the Analyst and Librarian on **Local**; the spoken answer still comes from Qwen. `Invoke-RestMethod http://127.0.0.1:8000/api/agents` shows cloud calls with an estimated cost.
+- **AM7. Fallback.** Settings → AI model: pick **Custom**, address `https://example.com/v1`, model `x`, any key, **Test key**. **Expect:** a plain-English failure, nothing changes (still green with your real key). Then turn off Wi-Fi briefly and ask a decision question: the team still answers (on Qwen), and `/api/agents` shows `fallback_from`. Wi-Fi back on.
+- **AM8. Use Qwen and Remove key.** Pick **Qwen on our server**, **Use Qwen**. **Expect:** grey card, "In use: Qwen…", "Saved: … (not in use)". Pick Claude again, leave the key box empty, **Test key**: green again without retyping. Then **Remove key**. **Expect:** grey, no "Saved" line; `ai_model.json` has an empty `key_token`.
+- **AM9. CI.** On the PR, all checks are green, including **Backend on arm64 (pytest) / ubuntu-24.04-arm**.
+
 **M6 re-test after the D1–D7 fix round of 2026-11-19, about 30 minutes. Run this one first: MR1 to MR8.** Windows PowerShell 5.1, headphones, Ollama in Docker, approval at **Never**, Hands-free. Write ACCEPTED, or what you saw, in the Gate log.
 
 - **MR1. Fresh copy up to date.** Close every FounderOS window (`Get-NetTCPConnection -LocalPort 8000,3000 -State Listen -ErrorAction SilentlyContinue` shows nothing: a backend left on 8000 from `D:\Founder-OS` would serve the fresh copy's page with the other vault). Then `Set-Location D:\FounderOS-fresh2; git pull; .\reset_demo.bat` (answer `y`), `.\run.bat`. **Expect:** browser up, Runway 10.65 mo. The first start re-embeds the vault once (new collection name, D4).
@@ -1936,6 +1967,9 @@ M1–M11 otherwise pass. The run was "Should we open a Dubai office? Write a dec
   Re-test: checklist step 11.
 
 ## Open questions for founder
+- **(M7a) Approval after a verified key.** With the default `TEAM_APPROVAL=cloud_only`, verifying a key makes every decision team with a cloud agent wait for approval. For members in M7c: keep asking (safer, one click) or default to Never (smoother)? Recommendation: keep `cloud_only` and show the approval inline in the M7b Boardroom.
+- **(M7a) Prices for members' models.** A model with no known price is counted at $15/$75 per million tokens so the cap still protects the member, which overstates cheap models (Groq, OpenRouter). Should M7f/M7c let members type the price, or should we keep a fuller price table?
+
 0f. **From M6b (2026-11-18), none blocking:**
    - **I changed this PC's `.venv`**: `onnxruntime 1.31.1` → `onnxruntime-gpu 1.23.2` plus three CUDA wheels (about 300 MB), because your note asked for onnxruntime-gpu to be measured with `voice_bench.py`, which needs the real backend. Your standing rule is not to reinstall; I read the note as permission for this one package. `scripts\enable_tts_gpu.py --undo` reverts it. Say if you would rather keep Kokoro on the CPU (`VOICE_TTS_DEVICE=cpu`).
    - **setup.bat now swaps the package on every PC with an NVIDIA GPU.** On a PC without one it does nothing. If a PC's driver is too old for CUDA 12.9, Kokoro falls back to the CPU by itself, with a note in `/api/voice/status`.
@@ -1973,6 +2007,15 @@ Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
 2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
+## Decisions made (M7a session, 2026-11-22)
+- M7 "Members Beta" recorded as M7a–M7g in PRD §8 and §12 and in the milestones table (founder's list, gates as given).
+- A key is kept only after Test key passes, and is used at once: "test and save" is one step. Use Qwen keeps a saved key unused; Remove key deletes it.
+- Verifying a key turns Allow cloud agents on (the member's opt-in). Turning it off is still the kill switch.
+- An AI model card choice overrides `DEEP_PROVIDER` from `.env` (choosing Qwen there also means Qwen, not the `.env` provider). `AGENT_MODELS` per-agent routes still win.
+- A chosen model with no known price is counted at $15/$75 per million tokens (above every listed price), so the cap still applies.
+- Ollama Cloud, Groq and Custom get the JSON schema in the instructions (no `response_format`). Custom URLs: https and public only unless `AI_MODEL_ALLOW_PRIVATE_URLS=true`.
+- The secret is made by `scripts/ensure_secret.py` (setup and run), never by the running app.
+
 ## Decisions made (M6b session, 2026-11-18)
 - Kokoro fp32 on the GPU by default (`VOICE_TTS_DEVICE=auto`), `onnxruntime-gpu` pinned to 1.23.2 (CUDA 12), swapped in by `scripts/enable_tts_gpu.py` from `setup.bat`; the int8 model is never put on CUDA (PRD §12).
 - F: panel limits Advisor 280–720 px, Agents 240–560 px, canvas at least 420 px; sizes per viewer in `localStorage`; folding hides the Advisor panel without unmounting it (voice keeps running).
@@ -2002,6 +2045,8 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M7a session (2026-11-22)
+- M7 recorded in PRD/HANDOVER; backend card (presets, Fernet store, test-and-save, routing), `ensure_secret.py`, frontend card, arm64 CI job + `docs/ARM64.md`; self-review fixes (no `max_tokens` on OpenAI-style tests, unsaved cloud toggle kept, secret regex).
 ### M6b session (2026-11-18)
 - Plan committed. F (resize handles, fold, `localStorage`) and G (agent window) with vitest and a Playwright spec; screenshots checked.
 - Re-run with a change already in the base case re-runs only that agent (test_m6b).
