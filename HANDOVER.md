@@ -2048,6 +2048,7 @@ Second planning round (2026-11-02):
 ## Progress log
 ### M7a session (2026-11-22)
 - M7 recorded in PRD/HANDOVER; backend card (presets, Fernet store, test-and-save, routing), `ensure_secret.py`, frontend card, arm64 CI job + `docs/ARM64.md`; self-review fixes (no `max_tokens` on OpenAI-style tests, unsaved cloud toggle kept, secret regex).
+- CI: the Playwright `turns.spec.ts` failure (also red on `main` after PR #12's merge) was order-dependent: the specs share one backend and `smoke.spec.ts` sets approval to Never. `turns.spec.ts` now sets `team_approval: always` itself and Playwright runs one worker. Reproduced (old spec fails after smoke) and fixed locally (4/4).
 ### M6b session (2026-11-18)
 - Plan committed. F (resize handles, fold, `localStorage`) and G (agent window) with vitest and a Playwright spec; screenshots checked.
 - Re-run with a change already in the base case re-runs only that agent (test_m6b).
