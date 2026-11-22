@@ -528,6 +528,57 @@ export const putMapping = (key: string, mapping: SheetMapping) =>
 export const loadSample = () => send<{ tables: unknown[] }>("/api/data/load-sample", "POST");
 
 export const fetchSettings = () => request<SettingsView>("/api/settings");
+
+/** M7a: the AI model card. The API never returns a key: only `key_masked` ("••••abcd"). */
+export interface AIModelPreset {
+  id: string;
+  label: string;
+  title: string;
+  needs_key: boolean;
+  custom_base_url: boolean;
+  base_url: string;
+  default_model: string;
+  key_hint: string;
+}
+export interface AIModelView {
+  in_use: { preset: string; label: string; model: string; verified: boolean; local: boolean };
+  saved: {
+    preset: string;
+    label: string;
+    model: string;
+    base_url: string;
+    key_masked: string;
+    verified_at: string | null;
+    unreadable: boolean;
+  } | null;
+  cloud_paused: boolean;
+  secret_ready: boolean;
+  secret_problem: string | null;
+  test_timeout_s: number;
+  presets: AIModelPreset[];
+}
+export type AIModelCode =
+  | "ok"
+  | "wrong_key"
+  | "no_credit"
+  | "rate_limited"
+  | "unreachable"
+  | "model_not_found"
+  | "bad_url"
+  | "missing"
+  | "no_secret"
+  | "other";
+export interface AIModelTestResult {
+  ok: boolean;
+  code: AIModelCode;
+  message: string;
+  view: AIModelView;
+}
+export const fetchAIModel = () => request<AIModelView>("/api/settings/ai-model");
+export const testAIModel = (body: { preset: string; model: string; base_url: string; api_key: string }) =>
+  send<AIModelTestResult>("/api/settings/ai-model/test", "POST", body);
+export const switchToLocalAIModel = () => send<AIModelView>("/api/settings/ai-model/use-local", "POST");
+export const removeAIModelKey = () => send<AIModelView>("/api/settings/ai-model/key", "DELETE");
 export const putSettings = (update: Partial<SettingsView>) => send<SettingsView>("/api/settings", "PUT", update);
 
 export const fetchPriorities = () => request<PrioritiesView>("/api/priorities");

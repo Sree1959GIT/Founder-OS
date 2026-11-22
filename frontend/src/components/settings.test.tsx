@@ -24,6 +24,15 @@ const putSettings = vi.fn(async (update: Partial<SettingsView>) => ({ ...base, .
 vi.mock("@/lib/api", () => ({
   fetchSettings: vi.fn(async () => base),
   putSettings: (update: Partial<SettingsView>) => putSettings(update),
+  fetchAIModel: vi.fn(async () => ({
+    in_use: { preset: "qwen_local", label: "Qwen", model: "qwen3:8b", verified: false, local: true },
+    saved: null,
+    cloud_paused: false,
+    secret_ready: true,
+    secret_problem: null,
+    test_timeout_s: 15,
+    presets: [],
+  })),
 }));
 
 const { SettingsPanel } = await import("@/components/panels/SettingsPanel");

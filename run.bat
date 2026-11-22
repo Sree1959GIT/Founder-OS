@@ -33,6 +33,8 @@ curl.exe -s -f -m 3 http://localhost:6333/readyz >nul 2>nul
 if not errorlevel 1 (
   echo [OK] Qdrant already running on port 6333.
   goto :preflight
+rem --- M7a: the server secret for saved API keys (made once in .env when missing, never printed) ----------------------
+".venv\Scripts\python.exe" scripts\ensure_secret.py
 )
 where docker >nul 2>nul
 if errorlevel 1 (

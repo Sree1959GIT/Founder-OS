@@ -68,6 +68,8 @@ if errorlevel 1 (
 rem M6b: Kokoro on the GPU (about 3.5x faster speech). The pip install above brings the CPU onnxruntime back, so this
 rem runs every time; it is skipped without an NVIDIA GPU and never stops setup (on a problem Kokoro stays on the CPU).
 ".venv\Scripts\python.exe" scripts\enable_tts_gpu.py
+rem M7a: the server secret that encrypts saved API keys (made once in .env, never printed)
+".venv\Scripts\python.exe" scripts\ensure_secret.py || exit /b 1
 
 rem --- Frontend ------------------------------------------------------------------
 echo Installing frontend dependencies ...

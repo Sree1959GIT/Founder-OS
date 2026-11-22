@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ErrorNote, Pill, Section } from "@/components/common";
+import { AIModelCard } from "@/components/panels/AIModelCard";
 import { Button } from "@/components/ui/button";
 import { leaveTo, setNavigationGuard } from "@/hooks/useRoute";
 import { fetchSettings, putSettings, type SettingsView } from "@/lib/api";
@@ -132,6 +133,16 @@ export function SettingsPanel() {
     }
   }, [saved, view]);
 
+  // The AI model card acts at once: a verified key turns cloud on, so the page re-reads that without touching edits.
+  const refreshCloud = useCallback(() => {
+    fetchSettings()
+      .then((fresh) => {
+        setSaved((s) => (s ? { ...s, cloud_allowed: fresh.cloud_allowed, spend: fresh.spend } : fresh));
+        setView((v) => (v ? { ...v, cloud_allowed: fresh.cloud_allowed, spend: fresh.spend } : fresh));
+      })
+      .catch(() => undefined);
+  }, []);
+
   const discard = () => {
     setView(saved);
     setSavedNote(false);
@@ -208,6 +219,8 @@ export function SettingsPanel() {
         <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
         <p className="text-[13px] leading-relaxed text-foreground">{view.privacy_note}</p>
       </section>
+
+      <AIModelCard onChanged={refreshCloud} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section title="Cloud">
