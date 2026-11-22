@@ -24,6 +24,8 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "watchfiles>=0.24",
     "langgraph>=1.0,<2",
+    # Fernet: members' API keys are encrypted at rest (M7a).
+    "cryptography>=42",
 ]
 
 # Cloud providers (Anthropic, Gemini, OpenAI, OpenAI-compatible) are called over REST with httpx: no extra package.

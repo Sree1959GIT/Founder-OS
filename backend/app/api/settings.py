@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 from app.agents.registry import REGISTRY
 from app.agents.setup import build_decisions
 from app.config import DeepProvider, Settings
+from app.llm.ai_model import CONSERVATIVE_PRICE, AIModelStore, SecretBox, build_provider, preset_for
+from app.llm.base import LLMProvider
 from app.llm.router import build_cloud_provider, build_routes
 
 router = APIRouter(tags=["settings"])
@@ -27,7 +29,7 @@ PRIVACY_NOTE = (
     "Local by default: your numbers, notes and customers stay on this PC. A cloud agent runs only when cloud is on, "
     "its provider has a key and the monthly cap allows it, and every cloud payload goes through the privacy filter: "
     "no raw financial rows, and customer and person names replaced by stand-ins. Agents marked local never use the "
-    "cloud. Keys are kept in .env and are never shown here."
+    "cloud. Keys are kept encrypted or in .env and are never shown here."
 )
 
 
@@ -73,9 +75,14 @@ def _apply(app: Any, settings: Settings, choices: dict[str, Any]) -> Settings:
     llm = orchestrator.router
     llm.cloud_allowed = effective.cloud_allowed
     llm.cloud = build_cloud_provider(effective)
+    chosen, member_model = ai_model_provider(effective)
+    if chosen:  # the AI model card decides the deep-work model; per-agent routes below still apply
+        llm.cloud = member_model
     llm.routes = build_routes(effective)
     if llm.ledger is not None:
         llm.ledger.monthly_cap_usd = effective.cloud_monthly_cap_usd
+        if member_model is not None and member_model.model not in llm.ledger.prices:
+            llm.ledger.prices[member_model.model] = CONSERVATIVE_PRICE  # the cap still counts it (PRD §12, M7a)
     orchestrator.approval_policy = effective.team_approval
     if effective.decision_provider == "jev":  # a cloud service: "cloud off" must mean nothing leaves the PC
         orchestrator.decisions = build_decisions(effective, llm)
@@ -91,6 +98,50 @@ def _apply(app: Any, settings: Settings, choices: dict[str, Any]) -> Settings:
         )
     app.state.effective_settings = effective
     return effective
+
+
+def ai_model_provider(settings: Settings) -> tuple[bool, LLMProvider | None]:
+    """(chosen, provider) from the workspace's AI model card. Not chosen: `.env` decides, as before M7a.
+
+    Chosen with Qwen, or a saved key that can no longer be read (the server secret changed): (True, None), so the
+    deep-work agents use Qwen rather than an `.env` provider the member did not pick.
+    """
+    choice = AIModelStore(settings.workspace_data_dir()).load()
+    if choice is None:
+        return False, None
+    if not choice.active or not choice.has_key:
+        return True, None
+    key = SecretBox.from_settings(settings).decrypt(choice.key_token)
+    if key is None:
+        logger.warning("The saved AI model key cannot be read (the server secret changed?); using Qwen")
+        return True, None
+    try:
+        preset = preset_for(choice.preset)
+        return True, build_provider(
+            preset, choice.model, key, base_url=choice.base_url, timeout_s=settings.llm_timeout_s
+        )
+    except ValueError as exc:
+        logger.warning("Ignoring the saved AI model: {}", exc)
+        return True, None
+
+
+def save_choices(app: Any, update: dict[str, Any]) -> Settings:
+    """Merge `update` into `ui_settings.json`, write it atomically and apply it to the running app."""
+    base: Settings = app.state.base_settings
+    choices = {**_load(base), **update}
+    effective = _apply(app, base, choices)
+    path = _file(base)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(choices, indent=2), encoding="utf-8")
+    temporary.replace(path)
+    return effective
+
+
+def reapply(app: Any) -> Settings:
+    """Apply the saved choices again (after the AI model card changed what the deep-work agents use)."""
+    base: Settings = app.state.base_settings
+    return _apply(app, base, _load(base))
 
 
 def _current(request: Request) -> Settings:
@@ -128,12 +179,5 @@ async def get_settings_view(request: Request) -> dict[str, Any]:
 
 @router.put("/settings")
 async def update_settings(body: SettingsUpdate, request: Request) -> dict[str, Any]:
-    base: Settings = request.app.state.base_settings
-    choices = {**_load(base), **body.model_dump(mode="json", exclude_none=True)}
-    _apply(request.app, base, choices)
-    path = _file(base)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(choices, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    save_choices(request.app, body.model_dump(mode="json", exclude_none=True))
     return _view(request)

@@ -42,10 +42,11 @@ def _http_error(provider: str, exc: Exception, secret: str = "") -> LLMError:
         if secret:
             detail = detail.replace(secret, "***")
         if status in (401, 403, 408, 429) or status >= 500:
-            return LLMUnavailable(f"{provider} unavailable (HTTP {status}): {detail}")
-        return LLMError(f"{provider} rejected the request (HTTP {status}): {detail}")
+            return LLMUnavailable(f"{provider} unavailable (HTTP {status}): {detail}", status=status, detail=detail)
+        return LLMError(f"{provider} rejected the request (HTTP {status}): {detail}", status=status, detail=detail)
     if isinstance(exc, httpx.HTTPError):
-        return LLMUnavailable(f"{provider} not reachable ({type(exc).__name__}: {exc})")
+        text = str(exc).replace(secret, "***") if secret else str(exc)
+        return LLMUnavailable(f"{provider} not reachable ({type(exc).__name__}: {text})", network=True)
     return LLMError(f"{provider} returned an unreadable response ({type(exc).__name__}: {exc})")
 
 
@@ -365,11 +366,17 @@ class OpenAICompatibleProvider(LLMProvider):
         name: str = "openai",
         base_url: str = "https://api.openai.com/v1",
         timeout_s: float = 120.0,
+        json_mode: Literal["schema", "prompt"] = "schema",
+        max_tokens: int | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        """`json_mode="prompt"`: the endpoint has no structured output (Ollama Cloud, read 2026-11-22), so the schema is
+        put in the instructions instead of `response_format`."""
         self.name = name
         self.model = model
         self._key = api_key
+        self._json_mode = json_mode
+        self._max_tokens = max_tokens
         self._base_url = base_url.rstrip("/") + "/"
         self._timeout = httpx.Timeout(timeout_s, connect=10.0)
         self._transport = transport
@@ -403,10 +410,15 @@ class OpenAICompatibleProvider(LLMProvider):
         self, messages: list[Message], tools: list[ToolSpec] | None, json_schema: dict[str, Any] | None
     ) -> Completion:
         timer = Timer()
+        if json_schema is not None and self._json_mode == "prompt":
+            instruction = "Reply with only one JSON object that matches this JSON Schema, and nothing else:\n"
+            messages = [*messages, Message.system(instruction + json.dumps(json_schema))]
         body: dict[str, Any] = {"model": self.model, "messages": self._messages(messages)}
+        if self._max_tokens is not None:
+            body["max_tokens"] = self._max_tokens
         if tools:
             body["tools"] = [t.openai_style() for t in tools]
-        if json_schema is not None:
+        if json_schema is not None and self._json_mode == "schema":
             body["response_format"] = {"type": "json_schema", "json_schema": {"name": "respond", "schema": json_schema}}
         try:
             async with httpx.AsyncClient(
