@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M6: Windows packaging, polish & demo**, built: M6a merged (PR #11), M6b on `claude/m6b-polish-demo` (F panels, G agent window, Kokoro on the GPU, re-run fix), awaiting the **M6 Major gate** (checklist MG1–MG9). M0 to M5 are ACCEPTED and merged.
+- **Next milestone:** **M7a: AI model settings** (M7 "Members Beta", hosted for Business Growth Academy members, target 15 Dec 2026), IN PROGRESS on `claude/zealous-bell-ymy3uq`. v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-19 (M6 gate fix round D1–D7; awaiting the founder's re-test MR1–MR8)
+- **Last updated:** 2026-11-22 (M7a session)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -20,7 +20,14 @@
 | M3c | Decision models (Laya / Jev) | DONE (merged, PR #8; Light gate ACCEPTED 2026-11-06) | Laya and Jev built against their documented APIs and tested with fakes, not measured; measuring them is deferred until after M5 |
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
 | M5 | Voice pipeline | DONE, awaiting Major gate (live check RM1–RM6) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Round 8, 2026-11-16: W1–W5 (a repeated change, the badge after a change, one offer after every decision answer, "leave it", re-run from the last decision team). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
-| M6 | Windows packaging, polish & demo | DONE, awaiting Major gate (MG1–MG9) | **M6a** (merged, PR #11; PK1–PK8 pass): `run.bat`/`setup.bat` from a fresh clone, `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5 and Y1–Y3. **M6b** (2026-11-18): F resizable and foldable panels (remembered per viewer), G movable agent window, Kokoro on the GPU (metric answer p50 2.38 s → 1.66 s on this PC), a re-run with a change already in the answer re-runs only that agent |
+| M6 | Windows packaging, polish & demo | DONE (merged, PR #12; Major gate ACCEPTED 2026-11-19; tagged `v1.0-local`) | **M6a** (merged, PR #11; PK1–PK8 pass): `run.bat`/`setup.bat` from a fresh clone, `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5 and Y1–Y3. **M6b** (2026-11-18): F resizable and foldable panels (remembered per viewer), G movable agent window, Kokoro on the GPU (metric answer p50 2.38 s → 1.66 s on this PC), a re-run with a change already in the answer re-runs only that agent |
+| M7a | AI model settings | IN PROGRESS | Settings → AI model card, Test key, encrypted per-workspace keys, deep-work routing with Qwen fallback, Arm CI job, `docs/ARM64.md` |
+| M7b | Decision Room UI redesign: Welcome screen and Glass Boardroom, desktop and phone | NOT STARTED | |
+| M7c | Invite login and per-member encrypted workspaces | NOT STARTED | |
+| M7d | Oracle Cloud Always Free Arm VM deploy behind Cloudflare HTTPS | NOT STARTED | |
+| M7e | Data lifecycle: 30-day auto-delete, reminders day 23 and 29, Download/Delete, Decision Pack export and revive, India DPDP privacy and consent | NOT STARTED | |
+| M7f | Onboarding: quick figures, Excel/CSV templates, Tally import, currency auto-detect and confirm | NOT STARTED | |
+| M7g | Round-table team: intros with distinct voices, Quick/Thorough mode with time estimate, talk to an agent by name, Geopolitical Analyst | NOT STARTED | Members Beta gate |
 
 ## Review gates (every PR passes all four)
 | # | Gate | Who | Pass condition |
@@ -46,6 +53,13 @@
 | M4 Canvas UI | **Major** (first full demo) |
 | M5 Voice | **Major** (latency and barge-in on the GPU) |
 | M6 Packaging | **Major** (fresh install with `run.bat`) |
+| M7a AI model settings | Medium |
+| M7b Decision Room UI | **Major** |
+| M7c Invite login, encrypted workspaces | Medium |
+| M7d Oracle Arm deploy | Medium |
+| M7e Data lifecycle, DPDP | Medium |
+| M7f Onboarding | Medium |
+| M7g Round-table team | **Major** (Members Beta gate) |
 | Partial-milestone PRs and bug-fix PRs | Light |
 
 ### Gate log
@@ -64,6 +78,17 @@
 | M6 Windows packaging, polish & demo (M6b) | [Sree1959GIT/Founder-OS#12](https://github.com/Sree1959GIT/Founder-OS/pull/12) | **Major** | ACCEPTED (SM, 2026-11-19), Major; MG1, MG2, MG5 and re-test MR1–MR8 pass on Windows (fresh clone D:\FounderOS-fresh2, demo script §1–§7, memo from the frame, panels, agent window, bench p50 first words 749 ms, metric answer 1681 ms, barge-in 60 ms); carried to v1.1: resizable floating agent window, Matrix entry shows a score instead of "Not scored yet", a half-sentence ("Should we?") gets queued and run. History after the D1–D7 fix round of 2026-11-19). Founder run 2026-11-18/19 (fresh copy `D:\FounderOS-fresh2`): MG1, MG2, MG5, DEMO_SCRIPT §1, §7, §4 (frame, risks, three hires) and MG4 fold + voice PASS; D1–D7 found (see Founder feedback) |
 
 ## Current session
+- Started (UTC): 2026-11-22 16:05 (cloud session, **M7a AI model settings**, Medium gate, time-box 2 hours), branch `claude/zealous-bell-ymy3uq` from `origin/main` (fb4e776, M6 merged).
+- Plan:
+  - [x] Record M7a–M7g in PRD §8 and §12 and in the milestones table; fix the stale "Next milestone" line
+  - [ ] Backend: presets, Fernet key store per workspace, `/api/settings/ai-model` (view, test-and-save, use Qwen, remove key), plain-English test errors
+  - [ ] Router: the chosen model drives the deep-work agents, fallback to Qwen, privacy filter and cap kept, voice local
+  - [ ] `scripts/ensure_secret.py` in setup/run; `.env.example`; tests with fakes
+  - [ ] Frontend: AI model card in Settings (current styling), vitest
+  - [ ] CI job on `ubuntu-24.04-arm`; `docs/ARM64.md`
+  - [ ] Checks, self-review, HANDOVER (checklist, Gate log), PR, CI
+
+Previous session (2026-11-19, M6 gate fix round):
 - Started (UTC): 2026-11-19 14:50 (local Windows session, **M6 Major gate fix round**, time-box 90 minutes), branch `claude/m6b-polish-demo`, PR #12 (open). Fix only D1–D7; no new features.
 - Plan, in the founder's order:
   - [x] Record the founder's MG results (D1–D7) first
