@@ -103,7 +103,26 @@ PRESETS: dict[str, Preset] = {
 }
 
 
+# Founder F3: the provider from the key's shape, so a member only pastes a key. Most specific prefix first
+# ("sk-ant-" and "sk-or-" before OpenAI's plain "sk-"). The provider list on the card stays as a manual override.
+KEY_SHAPES: tuple[tuple[str, str], ...] = (
+    ("sk-ant-", "claude"),
+    ("sk-or-", "openrouter"),
+    ("gsk_", "groq"),
+    ("AIza", "gemini"),
+    ("sk-proj-", "openai"),
+    ("sk-", "openai"),
+)
+
+
+def detect_preset(key: str) -> str | None:
+    """The preset id a key's prefix belongs to, or None (Ollama Cloud and Custom keys have no fixed shape)."""
+    key = key.strip()
+    return next((preset for prefix, preset in KEY_SHAPES if key.startswith(prefix)), None)
+
+
 def default_model(preset: Preset, settings: Settings) -> str:
+    """The configured model, used only when the provider cannot list its models (see `ai_model.pick_models`)."""
     return {
         LOCAL_PRESET: settings.ollama_chat_model,
         "claude": settings.claude_model,

@@ -26,18 +26,21 @@ from app.llm.ai_model import (
     CONSERVATIVE_PRICE,
     AIModelChoice,
     AIModelStore,
+    ModelInfo,
     SecretBox,
     build_provider,
     check_base_url,
     explain_failure,
+    list_models,
     mask,
+    pick_models,
     probe_key,
 )
 from app.llm.base import LLMError, Message
 from app.llm.cloud import AnthropicAPIProvider, OpenAICompatibleProvider
 from app.llm.costs import CostLedger
 from app.llm.fake import FakeProvider
-from app.llm.presets import LOCAL_PRESET, PRESETS
+from app.llm.presets import LOCAL_PRESET, PRESETS, detect_preset
 from app.llm.router import LLMRouter
 from app.main import create_app
 
@@ -45,7 +48,63 @@ KEY = "sk-ant-api03-REALLYSECRET-9f3c"
 SECRET = Fernet.generate_key().decode()
 
 
+# What each provider's models endpoint lists for the fake key (founder F3): chat models mixed with ones that are not.
+ANTHROPIC_MODELS = {
+    "data": [
+        {"id": "claude-opus-5-5", "display_name": "Claude Opus 5.5", "created_at": "2026-09-01T00:00:00Z"},
+        {"id": "claude-sonnet-5-5", "display_name": "Claude Sonnet 5.5", "created_at": "2026-09-01T00:00:00Z"},
+        {"id": "claude-haiku-5-5", "display_name": "Claude Haiku 5.5", "created_at": "2026-09-01T00:00:00Z"},
+        {"id": "claude-sonnet-4-5-20250929", "display_name": "Claude Sonnet 4.5", "created_at": "2025-09-29T00:00:00Z"},
+    ],
+    "has_more": False,
+}
+GEMINI_MODELS = {
+    "models": [
+        {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+        {
+            "name": "models/gemini-3.8-flash",
+            "displayName": "Gemini 3.8 Flash",
+            "supportedGenerationMethods": ["generateContent", "countTokens"],
+        },
+        {"name": "models/gemini-4.0-flash-preview-11-2026", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-3.8-pro", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-3.8-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-3.8-flash-image", "supportedGenerationMethods": ["generateContent"]},
+        {"name": "models/gemini-embedding-002", "supportedGenerationMethods": ["embedContent"]},
+        {"name": "models/imagen-5.0-generate", "supportedGenerationMethods": ["predict"]},
+    ]
+}
+OPENAI_MODELS = {
+    "data": [
+        {"id": "gpt-6.1-terra", "created": 1790000000},
+        {"id": "gpt-6-mini", "created": 1780000000},
+        {"id": "gpt-6-mini-2026-05-01", "created": 1780000000},
+        {"id": "gpt-5-mini", "created": 1750000000},
+        {"id": "text-embedding-3-large", "created": 1700000000},
+        {"id": "whisper-1", "created": 1700000000},
+        {"id": "gpt-image-2", "created": 1790000000},
+        {"id": "tts-1-hd", "created": 1700000000},
+        {"id": "omni-moderation-latest", "created": 1700000000},
+        {"id": "gpt-6-realtime", "created": 1790000000},
+    ]
+}
+
+
+def models_reply(request: httpx.Request) -> httpx.Response | None:
+    if request.method != "GET":
+        return None
+    url = str(request.url)
+    if "anthropic" in url:
+        return httpx.Response(200, json=ANTHROPIC_MODELS)
+    if "generativelanguage" in url:
+        return httpx.Response(200, json=GEMINI_MODELS)
+    return httpx.Response(200, json=OPENAI_MODELS)
+
+
 def ok_reply(request: httpx.Request) -> httpx.Response:
+    listed = models_reply(request)
+    if listed is not None:
+        return listed
     if "anthropic" in str(request.url):
         return httpx.Response(200, json={"content": [{"type": "text", "text": "OK"}], "usage": {}})
     if "generativelanguage" in str(request.url):
@@ -60,6 +119,11 @@ class Server:
         self.reply: Any = ok_reply
         self.seen: list[httpx.Request] = []
 
+    @property
+    def posts(self) -> list[httpx.Request]:
+        """The model calls (the key test's tiny request), without the GET of the models list."""
+        return [r for r in self.seen if r.method == "POST"]
+
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.seen.append(request)
         if isinstance(self.reply, Exception):
@@ -72,6 +136,7 @@ def server(monkeypatch: pytest.MonkeyPatch) -> Server:
     srv = Server()
     transport = httpx.MockTransport(srv.handle)
     monkeypatch.setattr(ai_api, "build_provider", functools.partial(build_provider, transport=transport))
+    monkeypatch.setattr(ai_api, "list_models", functools.partial(list_models, transport=transport))
 
     async def public(host: str) -> list[str]:
         return {"llm.example.com": ["93.184.216.34"], "intranet.example.com": ["10.0.0.5"]}.get(host, ["8.8.8.8"])
@@ -125,8 +190,9 @@ def test_a_passing_key_is_saved_encrypted_and_drives_the_deep_work_agents(
     assert body["message"] == "Claude · claude-sonnet-5-5 · key verified"
     assert body["view"]["in_use"]["verified"] is True and body["view"]["in_use"]["label"] == "Claude"
     assert body["view"]["saved"]["key_masked"] == "••••9f3c"
-    # One tiny request, to the preset's own server, with the key in the header only.
-    (request,) = server.seen
+    # The models list, then one tiny request, to the preset's own server, with the key in the header only.
+    listing, request = server.seen
+    assert str(listing.url).startswith("https://api.anthropic.com/v1/models") and listing.headers["x-api-key"] == KEY
     assert str(request.url) == "https://api.anthropic.com/v1/messages"
     assert request.headers["x-api-key"] == KEY
     assert json.loads(request.content)["max_tokens"] == 16
@@ -251,9 +317,10 @@ def test_custom_needs_a_public_https_address(client: TestClient, server: Server)
     assert server.seen == []
     good = custom("https://llm.example.com/v1/")
     assert good["ok"] is True and good["message"] == "Custom · my-model · key verified"
-    assert "max_tokens" not in json.loads(server.seen[0].content)  # newer OpenAI models refuse it (review finding)
-    assert str(server.seen[0].url) == "https://llm.example.com/v1/chat/completions"
-    assert server.seen[0].headers["authorization"] == f"Bearer {KEY}"
+    assert "max_tokens" not in json.loads(server.posts[0].content)  # newer OpenAI models refuse it (review finding)
+    assert str(server.posts[0].url) == "https://llm.example.com/v1/chat/completions"
+    assert server.posts[0].headers["authorization"] == f"Bearer {KEY}"
+    assert str(server.seen[0].url) == "https://llm.example.com/v1/models"  # the list asked of the same server only
 
 
 def test_a_saved_key_is_reused_only_for_its_own_preset_and_address(client: TestClient, server: Server) -> None:
@@ -427,3 +494,193 @@ def test_ensure_secret_script_creates_once_and_never_prints_it(
     assert secret not in capsys.readouterr().out
     assert module.main(["--env-file", str(env)]) == 0 and env.read_text(encoding="utf-8") == text  # left alone
     assert module.main(["--env-file", str(tmp_path / "none.env"), "--check"]) == 1
+
+
+# --- founder F3: key-only setup ---------------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("key", "preset"),
+    [
+        ("AIzaSyA-fake-gemini-key-000000000", "gemini"),
+        ("sk-ant-api03-fake-000000000000", "claude"),
+        ("sk-or-v1-fake-0000000000000000", "openrouter"),
+        ("gsk_fake0000000000000000000000", "groq"),
+        ("sk-proj-fake00000000000000000000", "openai"),
+        ("sk-fake000000000000000000000000", "openai"),
+        ("  sk-ant-api03-padded-0000000000  ", "claude"),
+        ("0123abcd.ollama-ish-key", None),
+        ("", None),
+    ],
+)
+def test_the_provider_is_found_from_the_key_shape(key: str, preset: str | None) -> None:
+    assert detect_preset(key) == preset
+
+
+@pytest.mark.parametrize(
+    ("key", "preset", "label", "model"),
+    [
+        ("sk-ant-api03-fake-key-0000-9f3c", "claude", "Claude", "claude-sonnet-5-5"),
+        # Not gemini-2.5-flash (older), not the 4.0 preview, not -lite or -image: the newest stable Flash.
+        ("AIzaSyFAKE-gemini-key-00000-9f3c", "gemini", "Gemini", "gemini-3.8-flash"),
+        ("sk-proj-fake-openai-key-0000-9f3c", "openai", "OpenAI", "gpt-6-mini"),
+    ],
+)
+def test_only_a_key_picks_the_provider_and_the_best_model_it_has(
+    client: TestClient, server: Server, key: str, preset: str, label: str, model: str
+) -> None:
+    body = client.post("/api/settings/ai-model/test", json={"api_key": key}).json()
+    assert body["ok"] is True and body["preset"] == preset
+    assert body["message"] == f"{label} · {model} · key verified"
+    assert body["view"]["in_use"] == {
+        "preset": preset,
+        "label": label,
+        "model": model,
+        "verified": True,
+        "local": False,
+    }
+    ids = [m["id"] for m in body["view"]["saved"]["models"]]
+    assert ids[0] == model
+    for not_chat in ("embedding", "whisper", "image", "tts", "moderation", "realtime", "imagen"):
+        assert not any(not_chat in i for i in ids), (not_chat, ids)
+    assert len(server.posts) == 1 and server.seen[0].method == "GET"
+    assert key not in json.dumps(body)
+
+
+def test_gemini_lists_with_the_key_in_a_header_not_the_address(client: TestClient, server: Server) -> None:
+    key = "AIzaSyFAKE-gemini-key-00000-9f3c"
+    client.post("/api/settings/ai-model/test", json={"api_key": key})
+    listing = server.seen[0]
+    assert listing.url.path == "/v1beta/models" and listing.headers["x-goog-api-key"] == key
+    assert key not in str(listing.url)
+
+
+def test_a_key_with_no_known_shape_asks_for_the_provider_and_sends_nothing(client: TestClient, server: Server) -> None:
+    body = client.post("/api/settings/ai-model/test", json={"api_key": "0123abcd.ollama-ish-key"}).json()
+    assert body["ok"] is False and body["code"] == "unknown_provider" and "Pick the provider" in body["message"]
+    assert server.seen == []
+    picked = client.post(
+        "/api/settings/ai-model/test", json={"preset": "ollama_cloud", "api_key": "0123abcd.ollama-ish-key"}
+    ).json()
+    assert picked["ok"] is True and str(server.seen[0].url) == "https://ollama.com/v1/models"  # the list overrides
+
+
+def test_the_list_overrides_the_key_shape(client: TestClient, server: Server) -> None:
+    """An OpenRouter-style proxy key in the Custom preset: the member's pick wins over the shape."""
+    body = client.post(
+        "/api/settings/ai-model/test",
+        json={"preset": "custom", "base_url": "https://llm.example.com/v1", "api_key": "sk-ant-proxied-000000000"},
+    ).json()
+    assert body["ok"] is True and body["preset"] == "custom" and server.seen[0].url.host == "llm.example.com"
+
+
+def test_a_wrong_key_fails_at_the_models_list_and_no_model_is_tried(client: TestClient, server: Server) -> None:
+    server.reply = lambda _r: httpx.Response(401, json={"error": {"type": "authentication_error"}})
+    body = client.post("/api/settings/ai-model/test", json={"api_key": KEY}).json()
+    assert body["code"] == "wrong_key" and body["preset"] == "claude" and server.posts == []
+
+
+def test_a_listed_model_that_refuses_the_key_is_skipped_for_the_next_best(client: TestClient, server: Server) -> None:
+    """Like gemini-2.5-flash for new users: listed, but not open to this key."""
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and "gemini-3.8-flash:" in request.url.path:
+            return httpx.Response(
+                404, json={"error": {"message": "models/gemini-3.8-flash is not found for API version v1beta"}}
+            )
+        return ok_reply(request)
+
+    server.reply = reply
+    body = client.post("/api/settings/ai-model/test", json={"api_key": "AIzaSyFAKE-gemini-key-00000-9f3c"}).json()
+    assert body["ok"] is True and body["message"] == "Gemini · gemini-2.5-flash · key verified"
+    assert [r.url.path.split("/")[-1] for r in server.posts] == [
+        "gemini-3.8-flash:generateContent",
+        "gemini-2.5-flash:generateContent",
+    ]
+
+
+def test_change_model_uses_the_saved_key_and_keeps_the_list(client: TestClient, server: Server) -> None:
+    first = client.post("/api/settings/ai-model/test", json={"api_key": KEY}).json()
+    assert first["view"]["in_use"]["model"] == "claude-sonnet-5-5"
+    server.seen.clear()
+    changed = client.post("/api/settings/ai-model/test", json={"preset": "claude", "model": "claude-haiku-5-5"}).json()
+    assert changed["ok"] is True and changed["message"] == "Claude · claude-haiku-5-5 · key verified"
+    assert server.posts[0].headers["x-api-key"] == KEY and json.loads(server.posts[0].content)["model"] == (
+        "claude-haiku-5-5"
+    )
+    assert [m["id"] for m in changed["view"]["saved"]["models"]][:3] == [
+        "claude-sonnet-5-5",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-5-5",
+    ]
+
+
+def test_a_server_with_no_models_list_needs_the_model_name_under_advanced(client: TestClient, server: Server) -> None:
+    def reply(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "no such route"}) if request.method == "GET" else ok_reply(request)
+
+    server.reply = reply
+    custom = {"preset": "custom", "base_url": "https://llm.example.com/v1", "api_key": KEY}
+    body = client.post("/api/settings/ai-model/test", json=custom).json()
+    assert body["code"] == "missing" and "under Advanced" in body["message"] and server.posts == []
+    named = client.post("/api/settings/ai-model/test", json={**custom, "model": "my-model"}).json()
+    assert named["ok"] is True and named["message"] == "Custom · my-model · key verified"
+
+
+async def test_openrouter_and_groq_lists_keep_text_models_only() -> None:
+    def reply(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "openrouter.ai":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "google/gemini-3.8-flash", "architecture": {"output_modalities": ["text"]}},
+                        {
+                            "id": "google/gemini-3.8-flash-image",
+                            "architecture": {"output_modalities": ["image", "text"]},
+                        },
+                        {"id": "anthropic/claude-sonnet-5-5", "architecture": {"output_modalities": ["text"]}},
+                        {"id": "openai/gpt-6-mini", "architecture": {"output_modalities": ["text"]}},
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "llama-3.3-70b-versatile", "active": True},
+                    {"id": "openai/gpt-oss-120b", "active": True},
+                    {"id": "whisper-large-v3", "active": True},
+                    {"id": "meta-llama/llama-guard-4-12b", "active": True},
+                    {"id": "old-model-retired", "active": False},
+                    {"id": "playai-tts", "active": True},
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(reply)
+    settings = Settings(_env_file=None)
+    routed, _ = await list_models(PRESETS["openrouter"], KEY, transport=transport)
+    ranked = pick_models(routed, settings.ai_model_preferences["openrouter"])
+    assert [m.id for m in ranked] == ["google/gemini-3.8-flash", "anthropic/claude-sonnet-5-5", "openai/gpt-6-mini"]
+    groq, _ = await list_models(PRESETS["groq"], KEY, transport=transport)
+    assert [m.id for m in pick_models(groq, settings.ai_model_preferences["groq"])] == [
+        "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile",
+    ]
+
+
+def test_pick_models_prefers_stable_and_newest_within_a_family() -> None:
+    ids = ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-4.0-flash-preview-11-2026", "gemini-3.8-pro", "gemini-x"]
+    ranked = [
+        m.id
+        for m in pick_models([ModelInfo(id=i) for i in ids], Settings(_env_file=None).ai_model_preferences["gemini"])
+    ]
+    assert ranked == [
+        "gemini-3.8-flash",
+        "gemini-2.5-flash",
+        "gemini-4.0-flash-preview-11-2026",
+        "gemini-3.8-pro",
+        "gemini-x",
+    ]
+    only_preview = pick_models([ModelInfo(id="gemini-4.0-flash-preview-11-2026")], ["gemini-*-flash"])
+    assert [m.id for m in only_preview] == ["gemini-4.0-flash-preview-11-2026"]  # used when it is all the key has
+    assert pick_models([ModelInfo(id="gemini-flash-latest")], [])[0].id == "gemini-flash-latest"

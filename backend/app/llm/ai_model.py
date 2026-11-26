@@ -3,6 +3,8 @@
 - `SecretBox` encrypts keys with Fernet under `FOUNDEROS_SECRET_KEY` (in `.env`, written by `scripts/ensure_secret.py`).
 - `AIModelStore` keeps one choice per workspace in `<data>/<ws>/ai_model.json`: the preset, model, base URL, the
   encrypted key and its last four characters. The key itself is never written in clear, logged or returned.
+- `list_models` asks the provider which models the key can use (founder F3), keeps the text/chat ones and `pick_models`
+  ranks them by the preference families in config, so the member never types a model name.
 - `probe_key` sends one tiny request; `explain_failure` turns any failure into one plain-English line.
 - `check_base_url` keeps a custom base URL on https and a public address, so a hosted server cannot be pointed at its
   own network.
@@ -13,12 +15,15 @@ A key is saved only after its test passed (see `app/api/ai_model.py`), so the mo
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import ipaddress
 import json
+import re
 import socket
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -28,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings
 from app.llm.base import LLMError, LLMProvider, Message
-from app.llm.cloud import AnthropicAPIProvider, GeminiProvider, OpenAICompatibleProvider
+from app.llm.cloud import AnthropicAPIProvider, GeminiProvider, OpenAICompatibleProvider, _http_error
 from app.llm.presets import LOCAL_PRESET, PRESETS, Preset
 
 FILE_NAME = "ai_model.json"
@@ -91,6 +96,11 @@ def mask(key: str) -> str:
     return f"••••{key[-4:]}" if len(key) >= 12 else "••••"
 
 
+class ModelInfo(BaseModel):
+    id: str
+    label: str = ""  # the provider's display name, when it gives one
+
+
 class AIModelChoice(BaseModel):
     """What `ai_model.json` holds. `active` false: Qwen is in use, and any saved key waits unused."""
 
@@ -101,6 +111,7 @@ class AIModelChoice(BaseModel):
     base_url: str = ""
     key_token: str = ""  # Fernet token of the API key
     key_last4: str = ""  # the masked form, so the card can show it without decrypting
+    models: list[ModelInfo] = Field(default_factory=list)  # what the key could use at its test, best first (F3)
     verified_at: datetime | None = None
     saved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -287,3 +298,138 @@ def explain_failure(exc: BaseException, label: str, model: str, timeout_s: float
         )
     code = f" (HTTP {status})" if status else ""
     return "other", f"{label} refused the test{code}. Check the key and the model name, then test again."
+
+
+# --- which models a key can use (founder F3) -------------------------------------------------------------------------
+# Words in a model id that mean it is not a text/chat model (embeddings, speech, images, video, moderation, realtime).
+NOT_CHAT = re.compile(
+    r"embed|whisper|tts|speech|transcribe|audio|realtime|dall-e|image|imagen|veo|sora|moderation|guard|aqa|"
+    r"(^|[-/])live([-:]|$)|babbage|davinci|turbo-instruct|computer-use|robotics|codex|search-preview|"
+    r"playai|orpheus|-ocr",
+    re.IGNORECASE,
+)
+UNSTABLE = re.compile(r"preview|(^|[-_.])exp(erimental)?([-_.]|$)|beta|alpha|(^|[-_.])test", re.IGNORECASE)
+DATED = re.compile(r"\d{8}|\d{4}-\d{2}-\d{2}|-\d{2}-\d{4}|-\d{4}$")
+VERSION = re.compile(r"\d+(?:[.-]\d+)*")
+MAX_MODELS = 200  # OpenRouter lists hundreds; the dropdown keeps the best ranked
+
+
+def is_chat_model(model_id: str) -> bool:
+    return bool(model_id) and NOT_CHAT.search(model_id) is None
+
+
+def _version(model_id: str) -> tuple[int, ...]:
+    """The first version number in an id: claude-sonnet-4-5-20250929 → (4, 5), gemini-3.8-flash → (3, 8)."""
+    match = VERSION.search(model_id.rsplit("/", 1)[-1])
+    if match is None:
+        return ()
+    return tuple(int(part) for part in re.split(r"[.-]", match.group()) if len(part) < 4)
+
+
+def _rank(model: ModelInfo, created: dict[str, float]) -> tuple[Any, ...]:
+    """Stable before preview, newest version, newest release, then the plain alias before a dated snapshot."""
+    return (
+        UNSTABLE.search(model.id) is None,
+        _version(model.id),
+        created.get(model.id, 0.0),
+        DATED.search(model.id) is None,
+        -len(model.id),
+    )
+
+
+def pick_models(
+    models: list[ModelInfo], preferences: list[str], created: dict[str, float] | None = None
+) -> list[ModelInfo]:
+    """The models, best first: the first preference family (fnmatch on the id) the key has, then the next, then the
+    rest. Within a family: stable, then the newest version. Nothing is hard-coded: only models the key listed."""
+    created = created or {}
+    unique = list({m.id: m for m in models if is_chat_model(m.id)}.values())
+
+    def tier(model: ModelInfo) -> int:
+        lowered = model.id.lower()
+        matches = (i for i, pattern in enumerate(preferences) if fnmatch.fnmatchcase(lowered, pattern.lower()))
+        return next(matches, len(preferences))
+
+    ordered = sorted(unique, key=lambda m: _rank(m, created), reverse=True)
+    return sorted(ordered, key=tier)[:MAX_MODELS]  # sorted() is stable: the rank order holds inside each tier
+
+
+async def list_models(
+    preset: Preset,
+    key: str,
+    *,
+    base_url: str = "",
+    timeout_s: float = 15.0,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> tuple[list[ModelInfo], dict[str, float]]:
+    """(text/chat models the key can use, their release times when given). Raises `LLMError` like a provider call does:
+    a wrong key, no credit or a rate limit fail here, before any model is tried."""
+    root = (base_url or preset.base_url).rstrip("/")
+    models: list[ModelInfo] = []
+    created: dict[str, float] = {}
+    async with httpx.AsyncClient(timeout=timeout_s, transport=transport) as client:
+        try:
+            match preset.kind:
+                case "anthropic":
+                    response = await client.get(
+                        f"{root}/v1/models",
+                        params={"limit": 1000},
+                        headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+                    )
+                    response.raise_for_status()
+                    for item in _items(response.json(), "data"):
+                        models.append(ModelInfo(id=str(item.get("id", "")), label=str(item.get("display_name", ""))))
+                        created[models[-1].id] = _timestamp(item.get("created_at"))
+                case "gemini":
+                    token = ""
+                    for _ in range(5):  # pages of 1000; one is plenty today
+                        params: dict[str, Any] = {"pageSize": 1000}
+                        if token:
+                            params["pageToken"] = token
+                        response = await client.get(
+                            f"{root}/v1beta/models", params=params, headers={"x-goog-api-key": key}
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+                        for item in _items(data, "models"):
+                            if "generateContent" not in (item.get("supportedGenerationMethods") or []):
+                                continue
+                            name = str(item.get("name", "")).removeprefix("models/")
+                            models.append(ModelInfo(id=name, label=str(item.get("displayName", ""))))
+                        token = str(data.get("nextPageToken") or "") if isinstance(data, dict) else ""
+                        if not token:
+                            break
+                case "openai_compatible":
+                    response = await client.get(f"{root}/models", headers={"Authorization": f"Bearer {key}"})
+                    response.raise_for_status()
+                    for item in _items(response.json(), "data"):
+                        if item.get("active") is False:  # Groq marks retired models
+                            continue
+                        arch = item.get("architecture")
+                        if isinstance(arch, dict):  # OpenRouter says what goes in and out
+                            out = arch.get("output_modalities") or ["text"]
+                            if "text" not in out or "image" in out or "audio" in out:
+                                continue
+                        model_id = str(item.get("id", ""))
+                        models.append(ModelInfo(id=model_id, label=str(item.get("name", "") or "")))
+                        if isinstance(item.get("created"), int | float):
+                            created[model_id] = float(item["created"])
+                case _:
+                    return [], {}
+        except (httpx.HTTPError, ValueError) as exc:
+            raise _http_error(preset.label, exc, key) from exc
+    return [m for m in models if is_chat_model(m.id)], created
+
+
+def _items(data: Any, field: str) -> list[dict[str, Any]]:
+    items = data.get(field) if isinstance(data, dict) else None
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _timestamp(value: Any) -> float:
+    if not isinstance(value, str):
+        return 0.0
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0

@@ -1,8 +1,10 @@
 """`/api/settings/ai-model`: the AI model card (M7a). A member's own key, tested before it is kept.
 
 - `GET` the card: presets, what is in use, the saved key as `••••abcd` only.
-- `POST /test` sends one tiny request (15 s). Passed: the key is stored encrypted for this workspace, cloud is turned on
-  for the deep-work agents and the model is used from the next question. Failed: nothing is stored, and the answer is
+- `POST /test` (founder F3: the key is enough) finds the provider from the key's shape, asks it which models the key can
+  use, picks the best one (`pick_models`) and sends one tiny request, all within 15 s. Passed: the key is stored
+  encrypted for this workspace, cloud is turned on for the deep-work agents and the model is used from the next
+  question. Failed: nothing is stored, and the answer is
   one plain-English line (wrong key, no credit, rate limited, can't reach the server, model not found).
 - `POST /use-local` goes back to Qwen and keeps the saved key unused; `DELETE /key` removes the key.
 
@@ -12,6 +14,7 @@ URL) it was saved and tested with.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,25 +27,29 @@ from app.config import Settings
 from app.llm.ai_model import (
     AIModelChoice,
     AIModelStore,
+    ModelInfo,
     SecretBox,
     build_provider,
     check_base_url,
     explain_failure,
+    list_models,
     mask,
+    pick_models,
     preset_for,
     probe_key,
 )
 from app.llm.base import LLMError
-from app.llm.presets import LOCAL_PRESET, PRESETS, default_model
+from app.llm.presets import KEY_SHAPES, LOCAL_PRESET, PRESETS, Preset, default_model, detect_preset
 
 router = APIRouter(prefix="/settings/ai-model", tags=["settings"])
 
 TEST_MAX_TOKENS = 16
+MAX_TRIES = 3  # a listed model can still refuse the key (e.g. closed to new users): the next best is tried
 
 
 class KeyTestRequest(BaseModel):
-    preset: str
-    model: str = Field("", max_length=200)
+    preset: str = Field("", max_length=50)  # empty: found from the key's shape (founder F3)
+    model: str = Field("", max_length=200)  # empty: the best model the key can use
     base_url: str = Field("", max_length=500)
     # Empty: test (again) with the key saved for this same preset and base URL.
     api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
@@ -73,6 +80,7 @@ def _view(request: Request) -> dict[str, Any]:
             "base_url": choice.base_url,
             "key_masked": choice.key_last4,
             "verified_at": choice.verified_at.isoformat() if choice.verified_at else None,
+            "models": [m.model_dump() for m in choice.models],
             "unreadable": unreadable,
         }
     local = PRESETS[LOCAL_PRESET]
@@ -89,6 +97,7 @@ def _view(request: Request) -> dict[str, Any]:
         "secret_ready": box.ready,
         "secret_problem": box.problem,
         "test_timeout_s": settings.ai_model_test_timeout_s,
+        "key_shapes": [{"prefix": prefix, "preset": preset_id} for prefix, preset_id in KEY_SHAPES],
         "presets": [
             {
                 "id": p.id,
@@ -110,56 +119,88 @@ async def get_ai_model(request: Request) -> dict[str, Any]:
     return _view(request)
 
 
+def _fail(request: Request, code: str, message: str | None, **extra: Any) -> dict[str, Any]:
+    return {"ok": False, "code": code, "message": message, "view": _view(request), **extra}
+
+
 @router.post("/test")
 async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any]:
     settings = _settings(request)
+    key = body.api_key.get_secret_value().strip()
+    if len(key) > 500 or any(ch.isspace() for ch in key):
+        return _fail(request, "wrong_key", "That does not look like an API key: copy it again.")
+    preset_id = body.preset.strip() or (detect_preset(key) if key else "")
+    if not preset_id:
+        return _fail(
+            request,
+            "unknown_provider" if key else "missing",
+            "FounderOS can't tell which provider this key is for. Pick the provider in the list, then test again."
+            if key
+            else "Paste your API key first.",
+        )
     try:
-        preset = preset_for(body.preset)
+        preset = preset_for(preset_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     if not preset.needs_key:
         raise HTTPException(422, 'Qwen on our server needs no key: use "Use Qwen".')
     box = SecretBox.from_settings(settings)
     if not box.ready:
-        return {"ok": False, "code": "no_secret", "message": box.problem, "view": _view(request)}
-    model = body.model.strip() or default_model(preset, settings)
-    if not model:
-        return {"ok": False, "code": "missing", "message": "Enter the model name.", "view": _view(request)}
+        return _fail(request, "no_secret", box.problem)
     base_url = ""
     if preset.custom_base_url:
         try:
             base_url = await check_base_url(body.base_url, allow_private=settings.ai_model_allow_private_urls)
         except ValueError as exc:
-            return {"ok": False, "code": "bad_url", "message": str(exc), "view": _view(request)}
-    store = _store(settings)
-    saved = store.load()
-    key = body.api_key.get_secret_value().strip()
-    if len(key) > 500 or any(ch.isspace() for ch in key):
-        return {
-            "ok": False,
-            "code": "wrong_key",
-            "message": "That does not look like an API key: copy it again.",
-            "view": _view(request),
-        }
+            return _fail(request, "bad_url", str(exc))
+    saved = _store(settings).load()
     if not key:
         # A saved key goes only to the preset and address it was tested with, never to a new server.
         same_place = saved is not None and saved.preset == preset.id and saved.base_url == base_url
         key = (box.decrypt(saved.key_token) or "") if same_place and saved is not None else ""
         if not key:
-            return {"ok": False, "code": "missing", "message": "Paste your API key first.", "view": _view(request)}
+            return _fail(request, "missing", "Paste your API key first.")
     timeout = settings.ai_model_test_timeout_s
-    # Anthropic needs a token limit; OpenAI-style servers get none (newer OpenAI models refuse `max_tokens`).
-    limit = TEST_MAX_TOKENS if preset.kind == "anthropic" else None
-    provider = build_provider(preset, model, key, base_url=base_url, timeout_s=timeout, max_tokens=limit)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout  # the whole test (list + try) stays within the card's 15 s
+
+    # 1. Which models can this key use? A wrong key, no credit or a rate limit already shows here.
     try:
-        await probe_key(provider, timeout)
+        listed, created = await asyncio.wait_for(
+            list_models(preset, key, base_url=base_url, timeout_s=timeout), timeout=timeout
+        )
     except (LLMError, TimeoutError) as exc:
-        code, message = explain_failure(exc, preset.label, model, timeout)
-        # The reason only, never the key or the provider's text (it can echo what was sent).
-        logger.info("AI model test failed: {} {} ({})", preset.label, code, getattr(exc, "status", None))
-        return {"ok": False, "code": code, "message": message, "view": _view(request)}
+        code, message = explain_failure(exc, preset.label, body.model.strip(), timeout)
+        if isinstance(exc, TimeoutError) or getattr(exc, "network", False) or code in _KEY_PROBLEMS:
+            logger.info("AI model test failed: {} {} (list, {})", preset.label, code, getattr(exc, "status", None))
+            return _fail(request, code, message, preset=preset.id)
+        listed, created = [], {}  # no model list here (some servers have none): fall back to the configured model
+    ranked = pick_models(listed, settings.ai_model_preferences.get(preset.id, []), created)
+    explicit = body.model.strip()
+    if explicit:
+        candidates = [explicit]
+    elif ranked:
+        candidates = [m.id for m in ranked[:MAX_TRIES]]
+    else:
+        fallback = default_model(preset, settings)
+        candidates = [fallback] if fallback else []
+    if not candidates:
+        return _fail(
+            request,
+            "missing",
+            "This server did not list its models: enter the model name under Advanced, then test again.",
+            preset=preset.id,
+        )
+
+    # 2. One tiny request to the chosen model; a listed model that refuses is skipped for the next best one.
+    model, failure = await _try_models(preset, key, base_url, candidates, deadline, timeout)
+    if failure is not None:
+        code, message, status = failure
+        logger.info("AI model test failed: {} {} ({})", preset.label, code, status)  # the reason only, never the key
+        return _fail(request, code, message, preset=preset.id)
+    models = ranked if any(m.id == model for m in ranked) else [ModelInfo(id=model), *ranked]
     now = datetime.now(UTC)
-    store.save(
+    _store(settings).save(
         AIModelChoice(
             active=True,
             preset=preset.id,
@@ -167,13 +208,48 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
             base_url=base_url,
             key_token=box.encrypt(key),
             key_last4=mask(key),
+            models=models,
             verified_at=now,
             saved_at=now,
         )
     )
     save_choices(request.app, {"cloud_allowed": True})  # verifying a key is the member's choice to use it
     logger.info("AI model set for the deep-work agents: {} {}", preset.label, model)
-    return {"ok": True, "code": "ok", "message": f"{preset.label} · {model} · key verified", "view": _view(request)}
+    return {
+        "ok": True,
+        "code": "ok",
+        "message": f"{preset.label} · {model} · key verified",
+        "preset": preset.id,
+        "view": _view(request),
+    }
+
+
+_KEY_PROBLEMS = ("wrong_key", "no_credit", "rate_limited")
+
+
+async def _try_models(
+    preset: Preset, key: str, base_url: str, candidates: list[str], deadline: float, timeout: float
+) -> tuple[str, tuple[str, str, int | None] | None]:
+    """(the model that answered, None) or (the last model tried, (code, message, HTTP status))."""
+    loop = asyncio.get_running_loop()
+    # Anthropic needs a token limit; OpenAI-style servers get none (newer OpenAI models refuse `max_tokens`).
+    limit = TEST_MAX_TOKENS if preset.kind == "anthropic" else None
+    failure: tuple[str, str, int | None] | None = None
+    model = candidates[0]
+    for index, model in enumerate(candidates):
+        left = deadline - loop.time()
+        if index and left < 1:
+            break
+        provider = build_provider(preset, model, key, base_url=base_url, timeout_s=timeout, max_tokens=limit)
+        try:
+            await probe_key(provider, max(left, 0.01) if index else timeout)
+            return model, None
+        except (LLMError, TimeoutError) as exc:
+            code, message = explain_failure(exc, preset.label, model, timeout)
+            failure = (code, message, getattr(exc, "status", None))
+            if code != "model_not_found":
+                break
+    return model, failure
 
 
 @router.post("/use-local")
