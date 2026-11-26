@@ -382,6 +382,7 @@ class ConversationManager:
     async def _narrate(self, session: Session, run_id: str) -> None:
         """Follows one run's real events until it finishes."""
         asked = False
+        said_waiting: set[str] = set()
         run = self.orchestrator.runs.get(run_id)
         # Founder RZ re-test S6: a re-run of one agent was announced like a new team ("Team: …", the inputs question,
         # "Financial Analyst is done; writing your answer now."). Its reply already said who redoes what.
@@ -402,6 +403,16 @@ class ConversationManager:
                 session.last_wave = []
                 text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
                 if redo and (event.type == "team.proposed" or session.last_wave):
+                    continue
+                waiting = event.type == "agent.status" and event.data.get("status") == "waiting_cloud"
+                if waiting and text.strip():
+                    # Founder F17: one line per agent, said once and updated in place (each model call of the agent
+                    # used to add "… is waiting for a cloud model." again).
+                    key = f"{run_id}:{event.agent_id}:waiting"
+                    if key in said_waiting:
+                        continue
+                    said_waiting.add(key)
+                    self._say(session, text, line_key=key, **self._line_kind(session, run_id, event))
                     continue
                 if text.strip():
                     self._say(session, text, **self._line_kind(session, run_id, event))

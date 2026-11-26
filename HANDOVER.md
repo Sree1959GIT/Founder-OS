@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M7b: Decision Room UI redesign** (Major), once the founder has re-tested the M7a fix round 3 (AM-R1–AM-R6 below: F4b, F7b, F8b, F12b, F13) and merged its PR. Fix round 2 (PR #14) is merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
+- **Next milestone:** **M7b: Decision Room UI redesign** (Major), once the founder has re-tested the M7a fix round 4 (AM-S1–AM-S8 below: F7c, F8c, F13b, F14–F17) and merged its PR. Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-26 (M7a fix round 3: F4b, F7b, F8b, F12b, F13)
+- **Last updated:** 2026-11-26 (M7a fix round 4: F7c, F8c, F13b, F14–F17)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -21,7 +21,7 @@
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
 | M5 | Voice pipeline | DONE, awaiting Major gate (live check RM1–RM6) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Round 8, 2026-11-16: W1–W5 (a repeated change, the badge after a change, one offer after every decision answer, "leave it", re-run from the last decision team). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | DONE (merged, PR #12; Major gate ACCEPTED 2026-11-19; tagged `v1.0-local`) | **M6a** (merged, PR #11; PK1–PK8 pass): `run.bat`/`setup.bat` from a fresh clone, `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5 and Y1–Y3. **M6b** (2026-11-18): F resizable and foldable panels (remembered per viewer), G movable agent window, Kokoro on the GPU (metric answer p50 2.38 s → 1.66 s on this PC), a re-run with a change already in the answer re-runs only that agent |
-| M7a | AI model settings | DONE (merged, PR #13; Medium gate 2026-11-26: AM1–AM7 pass, AM8 partly). Fix round 2 (F4–F8, F12) merged (PR #14). Fix round 3 (F4b, F7b, F8b, F12b, F13) on `claude/serene-mendel-8r39x1`, awaiting re-test AM-R1–AM-R6 | Settings → AI model card (8 presets, Test key with a 15 s limit, green chip, plain-English errors), Fernet keys per workspace, deep-work routing with Qwen fallback, `scripts/ensure_secret.py`, arm64 CI job, `docs/ARM64.md` |
+| M7a | AI model settings | DONE (merged, PR #13; Medium gate 2026-11-26: AM1–AM7 pass, AM8 partly). Fix round 2 (F4–F8, F12) merged (PR #14). Fix round 3 (F4b, F7b, F8b, F12b, F13) merged (PR #15). Fix round 4 (F7c, F8c, F13b, F14–F17) on `claude/bold-tesla-cibyyq`, awaiting re-test AM-S1–AM-S8 | Settings → AI model card (8 presets, Test key with a 15 s limit, green chip, plain-English errors), Fernet keys per workspace, deep-work routing with Qwen fallback, `scripts/ensure_secret.py`, arm64 CI job, `docs/ARM64.md` |
 | M7b | Decision Room UI redesign: Welcome screen and Glass Boardroom, desktop and phone | NOT STARTED | |
 | M7c | Invite login and per-member encrypted workspaces | NOT STARTED | |
 | M7d | Oracle Cloud Always Free Arm VM deploy behind Cloudflare HTTPS | NOT STARTED | |
@@ -80,9 +80,20 @@
 | M6 Windows packaging, polish & demo (M6b) | [Sree1959GIT/Founder-OS#12](https://github.com/Sree1959GIT/Founder-OS/pull/12) | **Major** | ACCEPTED (SM, 2026-11-19), Major; MG1, MG2, MG5 and re-test MR1–MR8 pass on Windows (fresh clone D:\FounderOS-fresh2, demo script §1–§7, memo from the frame, panels, agent window, bench p50 first words 749 ms, metric answer 1681 ms, barge-in 60 ms); carried to v1.1: resizable floating agent window, Matrix entry shows a score instead of "Not scored yet", a half-sentence ("Should we?") gets queued and run. History after the D1–D7 fix round of 2026-11-19). Founder run 2026-11-18/19 (fresh copy `D:\FounderOS-fresh2`): MG1, MG2, MG5, DEMO_SCRIPT §1, §7, §4 (frame, risks, three hires) and MG4 fold + voice PASS; D1–D7 found (see Founder feedback) |
 | M7a AI model settings | [Sree1959GIT/Founder-OS#13](https://github.com/Sree1959GIT/Founder-OS/pull/13) | Medium | ACCEPTED (SM, merged 2026-11-26), Medium: AM1–AM7 pass, AM8 partly (Advanced and the address check pass; Wi-Fi fallback, Use Qwen and Remove key to re-test), AM9 CI green. New findings F4–F8, F12 fixed in the fix round 2 PR below. History: founder run 2026-11-22: AM1–AM4 pass (AM1 only with `ensure_secret.py` run by hand); F1 run.bat, F2 Edge offers to save the key, F3 key-only setup (fixed 2026-11-26) |
 | M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | ACCEPTED (SM, merged after the re-test of 2026-11-26 in Edge): F4 pass, F5 pass (AQ. detected, unknown-key message, re-detect on Qwen), F6 pass, F7 pass for 429, F12 pass in Settings and the memo ("about ₹26: Groq 9 calls"), **F8 fail** (now F8b). The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`). New findings F4b, F7b, F8b, F12b, F13 fixed in fix round 3 below |
-| M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | [Sree1959GIT/Founder-OS#15](https://github.com/Sree1959GIT/Founder-OS/pull/15) | Light | AWAITING FOUNDER: re-test AM-R1–AM-R6 |
+| M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | [Sree1959GIT/Founder-OS#15](https://github.com/Sree1959GIT/Founder-OS/pull/15) | Light | MERGED; re-test 2026-11-26 (main, Edge, Groq key): AM-R2 pass; AM-R3 Groq pass, **Gemini fail** (now F7c); **AM-R4 fail** (now F8c); AM-R5 pass (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"); **AM-R6 fail** (now F13b). Voice stopping when Activity opens is F9 (M7b). New findings F14–F17 fixed in fix round 4 below |
+| M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | AWAITING FOUNDER: re-test AM-S1–AM-S8 |
 
 ## Current session
+- Started (UTC): 2026-11-26 09:25 (cloud session, **M7a fix round 4: F7c, F8c, F13b, F14–F17**, Light gate (bug-fix PR), time-box 60 minutes), branch `claude/bold-tesla-cibyyq` from `origin/main` (6d8c1b2, PR #15 merged).
+- Plan:
+  - [x] Record the fix round 3 re-test in the Gate log and F7c–F17 in Founder feedback; the Devil's Advocate note for M7h (recorded, not built)
+  - [x] F7c a timeout is "slow", the internet only when no provider answers
+  - [x] F8c startup and per-check log lines; run.bat start path checked and tested (a real uvicorn process with the variables set)
+  - [x] F13b one proposal in the answer, the frame card and the memo, also for a follow-up memo run with no frame of its own
+  - [x] F14 one Matrix entry per open decision; F15 status as recorded; F16 the real no-web reason; F17 one waiting line per agent
+  - [x] Tests (backend + vitest), checklist AM-S1–AM-S8, PR, CI
+
+Previous session (2026-11-26, M7a fix round 3):
 - Started (UTC): 2026-11-26 07:16 (cloud session, **M7a fix round 3: F4b, F7b, F8b, F12b, F13**, Light gate (bug-fix PR), time-box 60 minutes), branch `claude/serene-mendel-8r39x1` from `origin/main` (0bc9485, PR #14 merged).
 - Plan:
   - [x] Record the fix round 2 re-test in the Gate log and F4b–F13 in Founder feedback; M7f and M7b polish notes (recorded, not built)
@@ -927,7 +938,12 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (after the M7a fix round 3, 2026-11-26)
+## Next steps (after the M7a fix round 4, 2026-11-26)
+0. **Gate check:** the founder re-tests **AM-S1–AM-S8 (fix round 4)** below and merges this bug-fix PR (Light). If AM-S3 still shows no offer, the backend window now says where it stops: send the `Slow-agent offer …` line and the `Slow check: …` lines.
+0a. M7h also carries a stronger model for the critical agents (Devil's Advocate, Verifier) and a Verifier check that a risk's figure matches a frame option's own change (PRD §8, seen 2026-11-26: "cash burn increases by $2,001 if the full office is opened" passed on Groq `openai/gpt-oss-120b`).
+0b. The founder's existing duplicate Matrix entry (from before F14) has no decision link: delete one of the two by hand once; new memos then update the one left only if it was written after this fix (older entries carry no link).
+
+Earlier (after fix round 3):
 0. **Gate check:** the founder re-tests **AM-R1–AM-R6 (fix round 3)** below and merges this bug-fix PR (Light). Fix round 2 (PR #14) is merged and accepted except F8 (now F8b).
 0c. M7f also carries the setup-guide note (AI Pro / Jio subscriptions do not include API use; AI Studio free limits; a free Groq key is a good start); M7b polish adds auto-test on paste, "Test again" after a pass, and the exchange-rate credit in the Settings footer (PRD §8).
 
@@ -950,6 +966,17 @@ Earlier next steps (after the M6 gate fix round, 2026-11-19):
 4. After M6: Laya fine-tuning (C8) and Jev (C9); Dubai verification of figures quoted from a decision on record; smaller ideas (reload a conversation after refresh, a mapping form for failing Excel files, Jev in the cost ledger, a cash metric, `OllamaEmbedder` delegating to `OllamaProvider.embed`); G could later draw which agent read whose findings, if the lane records it.
 
 ## Windows verification checklist (for the founder)
+**M7a fix round 4 (F7c, F8c, F13b, F14–F17), about 15 minutes. Run this one first: AM-S1 to AM-S8.** Windows PowerShell 5.1, Ollama in Docker, Edge, a free Groq key (`gsk_…`); a Gemini key only for AM-S2. Write the results in the Gate log.
+
+- **AM-S1. Update.** Close FounderOS. `git fetch origin; git checkout claude/bold-tesla-cibyyq; git pull; .\run.bat` (no new packages). **Expect** in the backend window: `Slow-agent offer after 45 s (min 15 s; from .env or the default)`.
+- **AM-S2. Gemini that does not answer in time (F7c).** Settings → AI model: paste the Gemini key, **Test key**. **Expect** (if Google does not answer within 15 s): the yellow notice "Gemini didn't answer in 15 seconds. Google may be slow or limiting your key. Try again later." and never "Check your internet connection". Groq still passes on the same connection. (Only with the Wi-Fi off: "Can't reach the server: Gemini could not be reached. Check your internet connection…".)
+- **AM-S3. The slow offer, with the log (F8c).** Close FounderOS. In PowerShell: `$env:CLOUD_SLOW_AFTER_S="3"; $env:CLOUD_SLOW_MIN_S="0"; .\run.bat`. **Expect** in the run.bat window `Slow-agent offer from this window: CLOUD_SLOW_AFTER_S=3 CLOUD_SLOW_MIN_S=0`, and in the backend window `Slow-agent offer after 3 s (min 0 s; from the environment: CLOUD_SLOW_AFTER_S, CLOUD_SLOW_MIN_S)`. With Groq verified, ask the Dubai question and approve. **Expect** lines like `Slow check: People & Ops 1.9 s of 3 s -> not yet` and then `Slow check: People & Ops 4.1 s of 3 s -> offer sent`, with the offer on the card and in the Advisor panel (**Continue on Qwen on our server** / **Keep waiting**). If no offer appears, copy every `Slow…` line from the backend window into the Gate log (a `skipped (…)` line names the reason). Start FounderOS normally afterwards.
+- **AM-S4. One proposal on screen (F13b).** Ask the Dubai question, then "Write the decision memo." (or "Record the decision on the Dubai office."). When the memo proposes "Partner or distributor": **Expect** the decision frame card marks **Partner or distributor · Proposed** (only one), the new answer's box says "Proposed: Partner or distributor", and the answer opens with one sentence such as "With Partner or distributor the runway effect is smaller, so I now propose Partner or distributor instead of Travel-led pilot." Ask "What's our runway?" next: the card keeps Partner or distributor.
+- **AM-S5. One Matrix entry per decision (F14).** First delete one of the two old Dubai entries by hand (they were made before this fix). Write a second memo for the same Dubai decision (AM-S4 again, or "Record the decision on the Dubai office."). **Expect** Decisions → Prioritisation Matrix keeps one Dubai entry; its name follows the newest memo and its place on the matrix (your scores) stays.
+- **AM-S6. A proposal is never "decided" (F15).** Ask "What did we decide about Dubai?". **Expect** the Librarian and the Advisor call the earlier memo **proposed** (e.g. "proposed on 2026-11-26 (not decided yet)"), never "decided 2026-11-26".
+- **AM-S7. The real reason for no web research (F16).** With Groq verified, ask the Dubai question. **Expect** the Market Scout's findings end with "Your AI provider (Groq) has no web search, so this comes from your vault only." Turn cloud off (Settings → untick "Allow cloud agents"), ask again: then "…cloud is off, so no web research was done."
+- **AM-S8. One waiting line per agent (F17).** During a Groq run: **Expect** the Advisor panel shows "People & Ops is waiting for a cloud model." **once** (one line per agent), not 4–5 times.
+
 **M7a fix round 3 (F4b, F7b, F8b, F12b, F13), about 15 minutes. Run this one first: AM-R1 to AM-R6.** Windows PowerShell 5.1, Ollama in Docker, Edge. A free Groq key (`gsk_…`) is enough; a Gemini key only for AM-R3. Write the results in the Gate log.
 
 - **AM-R1. Update.** Close FounderOS. `git fetch origin; git checkout claude/serene-mendel-8r39x1; git pull; .\run.bat` (no new packages).
@@ -1543,6 +1570,28 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M7a] Fix round 3 re-test 2026-11-26 (main, Edge, Groq key; PR #15 merged): AM-R2, AM-R3 (Groq), AM-R5 PASS; AM-R3 (Gemini), AM-R4, AM-R6 FAIL; F7c, F8c, F13b, F14–F17 RESOLVED on `claude/bold-tesla-cibyyq` (fix round 4), awaiting re-test AM-S1–AM-S8
+**Passed:** AM-R2; AM-R3 with Groq; AM-R5 (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"). **Failed:** AM-R3 with Gemini, AM-R4, AM-R6. Voice stopping when Activity opens is F9 (M7b).
+**To fix (this round):**
+- **F7c.** Gemini Test key still says "Can't reach the server… Check your internet connection" after 15 s, while Groq passes on the same connection. When a provider simply doesn't answer in time, say "Gemini didn't answer in 15 seconds. Google may be slow or limiting your key. Try again later." Only mention the member's internet if no provider at all can be reached.
+- **F8c (second fail).** With `$env:CLOUD_SLOW_AFTER_S="3"` and `$env:CLOUD_SLOW_MIN_S="0"` set before `.\run.bat`, cloud agents on Groq ran 9–15 s and no "Slow…" line or offer appeared. Add a plain backend log line at startup ("Slow-agent offer after 3 s (min 0 s)") and on each check ("Slow check: People & Ops 4.1 s of 3 s → offer sent" / "… not yet"). Check how run.bat starts the backend (start/cmd /c, setlocal, .env override order). Add a test that starts the app the way run.bat does, with these variables set.
+- **F13b (second fail).** The new memo proposes "Partner or distributor", but the decision frame card and the Advisor's answer still mark "Travel-led pilot · Proposed", with no reason sentence. All three (the answer, the frame card and the memo) must show the same proposal. When it changes, the answer opens with one sentence saying why.
+- **F14.** Two Prioritisation Matrix entries for one open decision ("Dubai Market Entry via Partner or Distributor" and "Open Dubai via Partner or Distributor"). A new memo for the same open decision updates its existing entry and memo link instead of adding a duplicate.
+- **F15.** The Librarian said the earlier memo was "decided 2026-11-26", but that memo's status is proposed. Report the status exactly as recorded, and never call a proposal a decision.
+- **F16.** Market Scout said "cloud is off, so no web research was done" while it ran on Cloud · groq. Say the real reason: "Your AI provider (Groq) has no web search, so this comes from your vault only." Keep "cloud is off" only when cloud really is off.
+- **F17.** The Advisor panel repeats "People & Ops is waiting for a cloud model." 4–5 times. Show one line per agent and update it in place.
+
+**Recorded, not built (PRD §8, M7h):** Devil's Advocate on Groq `openai/gpt-oss-120b` wrote a muddled risk ("cash burn increases by $2,001 if the full office is opened") that the Verifier passed. M7h: a stronger model for the critical agents; Verifier check idea: a risk's figure must match one of the frame options' own monthly or one-off change.
+
+**Fixed (2026-11-26, fix round 4):**
+- **F7c** A timeout (our 15 s, or the HTTP client's own read/connect timeout) is its own code `slow`, a yellow notice: "Gemini didn't answer in 15 seconds. Google may be slow or limiting your key. Try again later." (vendor names: Google, Anthropic, OpenAI; others by their own name). A connection error asks the other providers' public addresses once (3 s, any HTTP answer counts, `internet_works`): if any answers, "Can't reach Gemini right now, though other AI services answer, so your internet is fine…"; only when none answers, "Check your internet connection". A busy answer (429/503) before the timeout stays "busy" (F7b).
+- **F8c** run.bat checked: `setlocal` only scopes variables set inside run.bat; PowerShell's `$env:` variables are inherited by run.bat's cmd and by `start … cmd /k … uvicorn`, and pydantic-settings puts an environment variable above `.env` (no `load_dotenv(override=True)` anywhere). A test now starts a real backend process exactly like run.bat (`python -m uvicorn --factory app.main:create_app` in `backend/`, the two variables set, everything else offline) and reads its startup line. New log lines: at startup `Slow-agent offer after 3 s (min 0 s; from the environment: CLOUD_SLOW_AFTER_S, CLOUD_SLOW_MIN_S)` (or "from .env or the default", or "off"); on each cloud call of a cloud agent `Slow check: People & Ops 4.1 s of 3 s -> offer sent` / `… -> not yet` (ASCII `->`, safe in any Windows console); and when a check cannot run, `Slow check: People & Ops skipped (<reason>)` (already on Qwen, planned on Qwen, no way to switch for this run, offer turned off, or "this call goes to ollama, not the cloud"). run.bat also echoes the two variables when set. The cause of the live miss is not reproduced with fakes; the next test's log will show it.
+- **F13b** Cause found for one path: a follow-up run with no frame of its own ("write the memo" taken as a new question) let the Memo Writer build its own frame, so the result carried no frame, the page kept the earlier "Travel-led pilot" mark and the answer had no reason sentence. Now such a run carries the open decision's frame (the latest earlier frame that has the memo's option), marked as the memo proposes, and the answer opens with the why sentence. Option names are matched ignoring case and spacing. On the page, the frame card follows the newest memo of **any** later run (not only the current one), so asking another question afterwards no longer puts the old mark back.
+- **F14** Each Matrix entry made from a memo carries `decision` (the frame's type and subject, e.g. `new_office:dubai office`) and `memo` (its path). A new memo for the same decision renames that entry and updates its memo link, keeping the founder's scores; another decision still gets its own entry. Entries made before this fix carry no link (delete the old duplicate by hand once).
+- **F15** A past memo's status is reported as recorded: in a Librarian finding or the Advisor's answer, "decided (on) 2026-11-26" about a record that is not decided becomes "proposed on 2026-11-26 (not decided yet)"; code's own "On record" note never adds a decision date to a proposal.
+- **F16** The Market Scout's note names the real reason: cloud really off → "…cloud is off, so no web research was done."; on a provider with no web search → "Your AI provider (Groq) has no web search, so this comes from your vault only."; switched to Qwen or held on Qwen by the cap → "This part ran on Qwen on our server, which has no web search…"; no cloud provider for the agent → "No cloud AI provider is set up for this agent…".
+- **F17** The lane says "<agent> is waiting for a cloud model." once per agent per run (it was said before every model call). The line carries a key (`line_key`), and the page updates a line with the same key in place instead of adding it.
+
 ### [M7a] Fix round 2 re-test 2026-11-26 in Edge (PR #14 merged): F4, F5, F6, F7 (429), F12 PASS, F8 FAIL; F4b, F7b, F8b, F12b, F13 RESOLVED on `claude/serene-mendel-8r39x1` (fix round 3), awaiting re-test AM-R1–AM-R6
 **Passed:** F4; F5 (AQ. detected, unknown-key message, re-detect on Qwen); F6; F7 for 429; F12 in Settings and the memo ("about ₹26: Groq 9 calls"). **Failed:** F8. The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`).
 **To fix (this round):**
@@ -2127,6 +2176,12 @@ Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
 2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
+## Decisions made (M7a fix round 4, 2026-11-26)
+- F7c: a timeout is `slow` (a yellow notice); the member's internet is named only after an internet check finds no AI provider answering.
+- F13b: a run with no frame whose memo proposes an option of an earlier frame carries that frame (the latest one with that option).
+- F14: one Matrix entry per open decision, keyed by the frame's type and subject; a new memo renames it and keeps the founder's scores.
+- F17: a waiting line is said once per agent per run and updated in place by its key.
+
 ## Decisions made (M7a fix round 3, 2026-11-26)
 - F8b: the slow limit (`CLOUD_SLOW_AFTER_S`) is for an agent's cloud work as a whole, from its first cloud call; "twice its usual time" stays a per-call check. One offer per agent, as before.
 - F7b: a used-up quota (`free_limit`) is not asked again inside the 15 s; a timeout or dropped connection after a busy answer is reported as that busy answer.
@@ -2183,6 +2238,8 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M7a fix round 4 (2026-11-26)
+- Gate log (fix round 3 re-test) and feedback F7c–F17 recorded; M7h note (stronger model for critical agents, Verifier check idea). F7c (`slow`, `is_timeout`, `internet_works`), F8c (`slow_offer_line` at startup, `Slow check:` lines, run.bat echo), F13b (`_open_frame_with`, `_option_named`, `runsAfter`), F14 (`decision`/`memo` on Matrix entries, `decision_key`), F15 (`honest_status`), F16 (`scout_no_web_note`), F17 (`line_key`). Tests: `backend/tests/test_m7a_fix_round4.py` (14), `backend/tests/test_m7a_fix_round4_start.py` (2, one starts a real uvicorn process like run.bat), `frontend/src/components/fixround4.test.tsx` (2).
 ### M7a fix round 3 (2026-11-26)
 - Gate log (fix round 2 re-test) and feedback F4b–F13 recorded; M7f/M7b notes. F4b (Remove key saves cloud off; `cloud_usable` ignores `.env` once the card was used), F7b (busy kept over a later timeout/network error; `free_limit`), F8b (agent-level slow clock; cause: per-call timing, env var fine), F12b (`currencyMissing`, `cost_shown`, `usd_text`/`usdText` half up), F13 (`_follow_proposal`, `proposal_change_line`, `proposedFrame`). Tests: `backend/tests/test_m7a_fix_round3.py` (17), `frontend/src/components/fixround3.test.tsx` (4), `frontend/src/components/activity/runcost.test.tsx` (1).
 ### M7a fix round 2 (2026-11-26)

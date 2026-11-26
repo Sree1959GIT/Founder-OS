@@ -55,6 +55,9 @@ rem --- What is there: Ollama at OLLAMA_BASE_URL, Qdrant, voice models (never st
 ".venv\Scripts\python.exe" scripts\preflight.py
 
 rem --- Start ------------------------------------------------------------------------------------------------------
+rem Founder F8c: PowerShell's $env: variables set before .\run.bat reach the backend window (start inherits them, and
+rem an environment variable beats .env). Shown here so a test run can see them; the backend logs the limit it uses.
+if defined CLOUD_SLOW_AFTER_S echo Slow-agent offer from this window: CLOUD_SLOW_AFTER_S=%CLOUD_SLOW_AFTER_S% CLOUD_SLOW_MIN_S=%CLOUD_SLOW_MIN_S%
 start "FounderOS backend" /d "%~dp0backend" cmd /k ""%~dp0.venv\Scripts\python.exe" -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8000"
 start "FounderOS frontend" /d "%~dp0frontend" cmd /k "npm run dev"
 

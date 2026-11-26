@@ -317,6 +317,38 @@ FREE_LIMIT_LINES = {
 }
 
 
+def is_timeout(exc: BaseException) -> bool:
+    """Founder F7c: the provider did not answer in time (our 15 s, or the HTTP client's own read/connect timeout)."""
+    if isinstance(exc, TimeoutError | asyncio.TimeoutError):
+        return True
+    return isinstance(exc, LLMError) and exc.network and "timeout" in str(exc).lower()
+
+
+INTERNET_CHECK_S = 3.0
+
+
+async def internet_works(
+    skip_preset: str, *, transport: httpx.AsyncBaseTransport | None = None, timeout_s: float = INTERNET_CHECK_S
+) -> bool:
+    """Founder F7c: does any other AI provider answer from here? Any HTTP reply counts (even 401/404): the
+    connection works. Only when none answers is the member's internet the likely cause."""
+    hosts = [p.base_url for p in PRESETS.values() if p.base_url and p.id != skip_preset and not p.custom_base_url]
+
+    async def one(client: httpx.AsyncClient, url: str) -> bool:
+        try:
+            await client.head(url)
+            return True
+        except httpx.HTTPError:
+            return False
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout_s, transport=transport) as client:
+            return any(await asyncio.gather(*(one(client, url) for url in hosts)))
+    except Exception as exc:
+        logger.info("Internet check could not run: {}", type(exc).__name__)
+    return False
+
+
 def busy_line(label: str, status: int | None, *, key_ok: bool) -> str:
     vendor = VENDORS.get(label, label)
     fine = " Your key is fine." if key_ok else ""
@@ -324,19 +356,34 @@ def busy_line(label: str, status: int | None, *, key_ok: bool) -> str:
 
 
 def explain_failure(
-    exc: BaseException, label: str, model: str, timeout_s: float, *, key_ok: bool = False
+    exc: BaseException,
+    label: str,
+    model: str,
+    timeout_s: float,
+    *,
+    key_ok: bool = False,
+    internet_ok: bool = False,
 ) -> tuple[str, str]:
     """(code, one plain-English line) for a failed key test. Never includes the provider's own text or the key.
 
-    `key_ok`: the provider already accepted the key (its model list answered), so a busy server can say so (F7)."""
-    if isinstance(exc, TimeoutError | asyncio.TimeoutError):
-        return "unreachable", (
-            f"Can't reach the server: {label} did not answer within {timeout_s:.0f} seconds. "
-            "Check your internet connection (and the address, for Custom), then test again."
+    `key_ok`: the provider already accepted the key (its model list answered), so a busy server can say so (F7).
+    `internet_ok`: another AI service answered just now, so a connection error is not the member's internet (F7c)."""
+    if is_timeout(exc):
+        # Founder F7c: a provider that simply does not answer in time is slow or limiting the key. The member's
+        # internet is not the cause when another provider answers on the same connection (Groq passed, Gemini not).
+        vendor = VENDORS.get(label, label)
+        return "slow", (
+            f"{label} didn't answer in {timeout_s:.0f} seconds. {vendor} may be slow or limiting your key. "
+            "Try again later."
         )
     if not isinstance(exc, LLMError):
         return "other", f"The test could not run ({type(exc).__name__}). Try again in a minute."
     if exc.network:
+        if internet_ok:  # F7c: other AI services answer, so the member's internet is fine
+            return "unreachable", (
+                f"Can't reach {label} right now, though other AI services answer, so your internet is fine. "
+                "Try again later (and check the address, for Custom)."
+            )
         return "unreachable", (
             f"Can't reach the server: {label} could not be reached. "
             "Check your internet connection (and the address, for Custom), then test again."

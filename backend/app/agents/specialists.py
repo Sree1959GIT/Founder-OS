@@ -42,6 +42,19 @@ REVIEW_AFTER_DAYS = 30
 MAX_TEAM = 8
 REGULATORY_NOTE = "This flags points to verify with a qualified adviser; it is not legal or tax advice."
 SCOUT_LOCAL_NOTE = "This comes from your vault only: cloud is off, so no web research was done."
+
+
+def scout_no_web_note(*, cloud_on: bool, provider: str = "", ran_local: bool = False) -> str:
+    """Founder F16: the real reason the Market Scout did no web research. "Cloud is off" only when it is."""
+    if not cloud_on:
+        return SCOUT_LOCAL_NOTE
+    if not provider:
+        return "No cloud AI provider is set up for this agent, so this comes from your vault only."
+    if ran_local:
+        return "This part ran on Qwen on our server, which has no web search, so this comes from your vault only."
+    return f"Your AI provider ({provider}) has no web search, so this comes from your vault only."
+
+
 SCOUT_TO_FIND = (
     "market size and growth; main competitors and their prices; demand (named prospects, pipeline, inbound interest); "
     "local costs (rent, salaries, licences)"
@@ -115,7 +128,7 @@ RULE_TEXT: dict[str, str] = {
 }
 
 
-def scout_without_web(text: str, retrieved: set[str]) -> str:
+def scout_without_web(text: str, retrieved: set[str], note: str = SCOUT_LOCAL_NOTE) -> str:
     """Cloud off: what the vault says, with its source, and what still needs finding. Nothing from the model's memory.
 
     Only sentences that cite a passage the search returned stay, so an example figure or a recalled market fact cannot
@@ -133,7 +146,7 @@ def scout_without_web(text: str, retrieved: set[str]) -> str:
         lead = " ".join(kept) + f" Still to find: {SCOUT_TO_FIND}."
     else:
         lead = f"Your vault has no market data for this decision. To find: {SCOUT_TO_FIND}."
-    return f"{lead} {SCOUT_LOCAL_NOTE}{removed}"
+    return f"{lead} {note}{removed}"
 
 
 def team_for_message(message: str) -> list[str]:
@@ -926,6 +939,14 @@ def _one_line(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def decision_key(frame: DecisionFrame | None) -> str:
+    """Founder F14: which open decision a memo is for (the frame's type and subject), so one decision keeps one
+    Prioritisation Matrix entry however its memos are titled. "" without a frame."""
+    if frame is None or not frame.subject.strip():
+        return ""
+    return f"{frame.type}:{' '.join(frame.subject.casefold().split())}"
+
+
 def write_memo(
     ctx: Any,
     draft: MemoDraft,
@@ -977,7 +998,12 @@ def write_memo(
     from app.api.priorities import add_initiative  # here: the API module imports the vault layer, not the agents
 
     try:
-        add_initiative(ctx.vault, f"{draft.title}: {draft.chosen}" if draft.chosen else draft.title)
+        add_initiative(
+            ctx.vault,
+            f"{draft.title}: {draft.chosen}" if draft.chosen else draft.title,
+            decision=decision_key(frame),
+            memo=written,
+        )
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         logger.warning("The decision could not be added to the Prioritisation Matrix: {}", exc)
     if ctx.finance is not None:

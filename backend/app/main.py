@@ -7,6 +7,7 @@ app, so importing this module never reads `.env` or the environment.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -63,6 +64,16 @@ async def warm_up_chat_model(provider: OllamaProvider) -> None:
         logger.warning("Could not preload {}: {} (agents use rules until Ollama answers)", provider.model, exc)
 
 
+def slow_offer_line(after_s: float, min_s: float) -> str:
+    """Founder F8c: one plain line at startup with the slow-agent limit the backend really uses, and where it came
+    from (a PowerShell `$env:` variable set before run.bat, or `.env` / the default)."""
+    if after_s <= 0:
+        return "Slow-agent offer off (CLOUD_SLOW_AFTER_S is 0)"
+    named = [name for name in ("CLOUD_SLOW_AFTER_S", "CLOUD_SLOW_MIN_S") if name in os.environ]
+    source = f"from the environment: {', '.join(named)}" if named else "from .env or the default"
+    return f"Slow-agent offer after {after_s:g} s (min {min_s:g} s; {source})"
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Passing `settings` pins them for every request (used by tests)."""
     pinned = settings is not None
@@ -114,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             orchestrator.router.cloud.name if orchestrator.router.cloud else "none (local only)",
             settings.team_approval,
         )
+        logger.info(slow_offer_line(orchestrator.slow_after_s, orchestrator.slow_min_s))
         warmup = (
             asyncio.create_task(warm_up_chat_model(orchestrator.router.local))
             if settings.ollama_warmup and isinstance(orchestrator.router.local, OllamaProvider)

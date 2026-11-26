@@ -42,6 +42,7 @@ from app.agents.runtime import (
     Plan,
     _team,
     advise,
+    honest_status,
     metrics_named,
     plan,
     proposal_change_line,
@@ -229,6 +230,12 @@ class RerunOutcome(BaseModel):
     restarted: bool = Field(description="True: restarted inside the running team; false: a new run was started")
     run_id: str
     agent_id: str | None = None
+
+
+def _option_named(chosen: str, names: set[str]) -> str:
+    """Founder F13b: the frame option a memo's `chosen` names, ignoring case and spacing ("" when none)."""
+    wanted = " ".join(chosen.casefold().split())
+    return next((n for n in names if " ".join(n.casefold().split()) == wanted), "") if wanted else ""
 
 
 class AgentOrchestrator:
@@ -607,7 +614,7 @@ class AgentOrchestrator:
         citations: list[Citation] = []
         for r in results:
             citations.extend(c for c in r.citations if c not in citations)
-        answer = _DOUBLE_STOP.sub(".", state.get("answer", ""))
+        answer = honest_status(_DOUBLE_STOP.sub(".", state.get("answer", "")), past_decisions)  # founder F15
         frame = the_plan.frame
         frame, changed_from = self._follow_proposal(run, frame, results)
         known = [
@@ -704,16 +711,30 @@ class AgentOrchestrator:
 
         The memo writer may choose another option than code's first pick, and a later run may propose another option
         than the open decision did. The frame card then marks what the answer and the memo propose, never two."""
+        memo_chosen = next((r.memo.chosen for r in results if r.memo is not None and r.memo.chosen), "")
+        if frame is None and memo_chosen:
+            # Founder F13b: a follow-up run with no frame of its own ("write the memo") whose memo proposes one of the
+            # open decision's options carries that decision's frame, marked as the memo proposes, so the card, the
+            # answer and the memo show one proposal (and the answer says why it changed).
+            frame = self._open_frame_with(run, memo_chosen)
         if frame is None or not frame.options:
             return frame, ""
         names = {o.name for o in frame.options}
-        chosen = next((r.memo.chosen for r in results if r.memo is not None and r.memo.chosen in names), "")
+        chosen = _option_named(memo_chosen, names)
         before = self._earlier_proposal(run, frame) or frame.default_option
         wanted = chosen or frame.default_option
         if wanted == frame.default_option and before == wanted:
             return frame, ""
         updated = frame.model_copy(update={"default_option": wanted})
         return updated, before if before != wanted and before in names else ""
+
+    def _open_frame_with(self, run: RunContext, chosen: str) -> DecisionFrame | None:
+        """The latest earlier run's frame that has `chosen` among its options (None when there is none)."""
+        for other in reversed(list(self.runs.values())):
+            frame = other.result.decision_frame if other is not run and other.result is not None else None
+            if frame is not None and _option_named(chosen, {o.name for o in frame.options}):
+                return frame
+        return None
 
     def _earlier_proposal(self, run: RunContext, frame: DecisionFrame) -> str:
         """The option the latest earlier run on the same decision proposed ("" when there is none)."""

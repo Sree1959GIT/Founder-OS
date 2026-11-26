@@ -142,6 +142,8 @@ def server(monkeypatch: pytest.MonkeyPatch) -> Server:
     transport = httpx.MockTransport(srv.handle)
     monkeypatch.setattr(ai_api, "build_provider", functools.partial(build_provider, transport=transport))
     monkeypatch.setattr(ai_api, "list_models", functools.partial(list_models, transport=transport))
+    # F7c: the "does another provider answer?" check goes to the same fake server, never the network.
+    monkeypatch.setattr(ai_api, "internet_works", functools.partial(ai_api.internet_works, transport=transport))
 
     async def public(host: str) -> list[str]:
         return {"llm.example.com": ["93.184.216.34"], "intranet.example.com": ["10.0.0.5"]}.get(host, ["8.8.8.8"])
@@ -233,7 +235,8 @@ def test_the_test_has_a_15_second_timeout(client: TestClient, server: Server, mo
 
     monkeypatch.setattr(ai_api, "probe_key", lambda provider, timeout: asyncio.wait_for(slow(), timeout=0.01))
     body = client.post("/api/settings/ai-model/test", json={"preset": "openai", "api_key": "sk-proj-abcdefghijkl1234"})
-    assert body.json()["code"] == "unreachable" and "15 seconds" in body.json()["message"]
+    assert body.json()["code"] == "slow" and "15 seconds" in body.json()["message"]  # F7c: not "your internet"
+    assert "internet" not in body.json()["message"]
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,7 @@ import { ScenarioSimulator } from "@/components/canvas/ScenarioSimulator";
 import { CitationChips, EmptyNote, LineageChip, Pill, Section, VerifiedBadge } from "@/components/common";
 import { fetchSummary, type AgentResult, type Artifact, type MetricResult } from "@/lib/api";
 import { decisionTitle, metricValue, monthLabel, runTitle } from "@/lib/format";
-import { proposedFrame } from "@/lib/proposal";
+import { proposedFrame, runsAfter } from "@/lib/proposal";
 import { useWorkspace, type RunView } from "@/lib/workspace";
 
 const KPIS = ["runway", "net_burn", "mrr", "gross_margin"];
@@ -144,7 +144,7 @@ function Findings({ run }: { run: RunView }) {
 }
 
 export function Canvas() {
-  const { currentRun, decisionRun } = useWorkspace();
+  const { currentRun, decisionRun, state } = useWorkspace();
   const run = decisionRun ?? currentRun;
   const isDecision = Boolean(decisionRun);
   const reviewDate = run?.result?.memo?.review_date;
@@ -164,7 +164,7 @@ export function Canvas() {
         ) : null}
       </div>
       <KpiRow refreshKey={run?.status ?? "none"} />
-      {run?.frame ? <DecisionFrameCard frame={proposedFrame(run.frame, currentRun)} /> : null}
+      {run?.frame ? <DecisionFrameCard frame={proposedFrame(run.frame, runsAfter(run, Object.values(state.runs)))} /> : null}
       <ScenarioSimulator frame={run?.frame ?? null} />
       {run ? <Findings run={run} /> : null}
     </main>
