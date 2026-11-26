@@ -44,6 +44,7 @@ from app.agents.runtime import (
     advise,
     metrics_named,
     plan,
+    proposal_change_line,
     stand_in_note,
     team_impact,
     team_projection,
@@ -57,7 +58,7 @@ from app.decision.base import DecisionService
 from app.engine.metrics import METRICS
 from app.llm.base import Usage
 from app.llm.router import LLMRouter
-from app.llm.spend import SpendReport, spend_of
+from app.llm.spend import SpendReport, money, spend_of, usd_text
 from app.vault.decisions import DecisionRecord
 
 
@@ -132,6 +133,8 @@ class ChatResult(BaseModel):
     cash_risk: CashRisk | None = Field(default=None, description="Monte Carlo cash-out warning, when it was given")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
     spend: SpendReport = Field(default_factory=SpendReport, description="Founder F12: the cost, counted in code")
+    cost_shown: str = Field("", description="Founder F12b: the run's cost in the member's currency ('about ₹26')")
+    proposal_changed_from: str = Field("", description="Founder F13: the option proposed before this answer, if other")
     verified: bool
     verification: Verification = Field(
         default_factory=lambda: Verification(state="not_verified"),
@@ -560,6 +563,10 @@ class AgentOrchestrator:
             await run.deltas.put(None)
             raise asyncio.CancelledError
         result = self._result(run, state, _ms(started))
+        currency, rate = self.currency_rate()
+        # Founder F12b: the Activity header shows the run's cost in the member's currency too (US$ in small print).
+        usd = result.est_cost_usd
+        result.cost_shown = "" if usd is None else ("free" if usd <= 0 else money(usd, currency, rate))
         run.result = result
         if result.memo is not None and result.spend.cloud_used:
             await asyncio.to_thread(self._note_cost_in_memo, result)
@@ -602,6 +609,7 @@ class AgentOrchestrator:
             citations.extend(c for c in r.citations if c not in citations)
         answer = _DOUBLE_STOP.sub(".", state.get("answer", ""))
         frame = the_plan.frame
+        frame, changed_from = self._follow_proposal(run, frame, results)
         known = [
             *(n for r in results for n in r.numbers),
             *(f.value for f in (frame.facts if frame else [])),
@@ -611,6 +619,10 @@ class AgentOrchestrator:
         cost = [r.est_cost_usd for r in results]
         context = run.message + "\n" + "\n".join(r.text for r in results if r.verified)
         advisor_issues = [f"advisor number without lineage: {n}" for n in verify_numbers(answer, known, context)]
+        if changed_from and frame is not None:
+            # Founder F13: one sentence, by code and without figures, says why the proposal changed.
+            why = proposal_change_line(frame, changed_from, frame.default_option)
+            answer = f"{why} {answer}".strip() if why and why not in answer else answer
         advisor = state.get("advisor", {})
         issues = (
             [f"{r.name}: {i}" for r in results for i in r.issues] + advisor_issues + advisor.get("claim_issues", [])
@@ -670,6 +682,7 @@ class AgentOrchestrator:
             cash_risk=run.cash_risk,
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
             spend=spend_of(results, advisor_local=advisor.get("provider") == self.router.local.name),
+            proposal_changed_from=changed_from,
             verified=not issues and all_done,
             # Nothing ran (held back, or a greeting): no check to report, so the badge is a neutral "not run".
             verification=not_run()
@@ -684,6 +697,36 @@ class AgentOrchestrator:
             status="done" if approved else "rejected",
         )
 
+    def _follow_proposal(
+        self, run: RunContext, frame: DecisionFrame | None, results: list[AgentResult]
+    ) -> tuple[DecisionFrame | None, str]:
+        """Founder F13: (the frame marking the option this run proposes, the option proposed before when it changed).
+
+        The memo writer may choose another option than code's first pick, and a later run may propose another option
+        than the open decision did. The frame card then marks what the answer and the memo propose, never two."""
+        if frame is None or not frame.options:
+            return frame, ""
+        names = {o.name for o in frame.options}
+        chosen = next((r.memo.chosen for r in results if r.memo is not None and r.memo.chosen in names), "")
+        before = self._earlier_proposal(run, frame) or frame.default_option
+        wanted = chosen or frame.default_option
+        if wanted == frame.default_option and before == wanted:
+            return frame, ""
+        updated = frame.model_copy(update={"default_option": wanted})
+        return updated, before if before != wanted and before in names else ""
+
+    def _earlier_proposal(self, run: RunContext, frame: DecisionFrame) -> str:
+        """The option the latest earlier run on the same decision proposed ("" when there is none)."""
+        earlier = [
+            r.result
+            for r in self.runs.values()
+            if r is not run
+            and r.result is not None
+            and r.result.decision_frame is not None
+            and r.result.decision_frame.subject == frame.subject
+        ]
+        return earlier[-1].decision_frame.default_option if earlier and earlier[-1].decision_frame else ""
+
     def spend_line(self, result: ChatResult) -> str:
         currency, rate = self.currency_rate()
         return result.spend.sentence(currency, rate)
@@ -694,7 +737,7 @@ class AgentOrchestrator:
         vault = getattr(self.ctx_factory("").vault, "vault", None)
         if memo is None or vault is None:
             return
-        usd = "unknown" if result.spend.usd is None else f"US${result.spend.usd:.4f}"
+        usd = "unknown" if result.spend.usd is None else usd_text(result.spend.usd)  # founder F12b: 2 decimals
         line = f"\n\n## What this decision cost\n\n{self.spend_line(result)} (Estimated: {usd}.)\n"
         try:
             note = vault.read_note(memo.path)

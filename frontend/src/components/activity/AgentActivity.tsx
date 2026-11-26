@@ -7,6 +7,7 @@ import { approveRun, cancelAgent, cancelRun, rerunAgent, type AgentInstance, typ
 import { agentCode, agentKind, runTitle, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
 import { cloudOn, slotsInUse, useCatalog, type AgentCatalog } from "@/hooks/useCatalog";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
+import { usdText } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 function WhereBadge({ isCloud, provider }: { isCloud: boolean; provider: string }) {
@@ -349,6 +350,9 @@ export function AgentActivity() {
   const slots = slotsInUse(run);
   const agents = teamOf(run);
   const cost = run?.result?.est_cost_usd ?? null;
+  // Founder F12b: the member's currency ("about ₹26"), as the backend counted it; US$ only in the tooltip.
+  const usd = cost === null ? "" : usdText(cost);
+  const shown = run?.result?.cost_shown || (cost === null ? "n/a" : `≈ ${usd}`);
   const done = agents.filter((a) => a.status === "done").length;
 
   return (
@@ -374,8 +378,8 @@ export function AgentActivity() {
             "Cloud off"
           )}
         </Pill>
-        <Pill title="An estimate from the provider's published prices">
-          Run cost <span className="num">{cost === null ? "n/a" : `≈ $${cost.toFixed(2)}`}</span>
+        <Pill title={usd ? `An estimate from the provider's published prices (${usd})` : "An estimate from the provider's published prices"}>
+          Run cost <span className="num" data-testid="run-cost">{shown}</span>
         </Pill>
       </div>
 

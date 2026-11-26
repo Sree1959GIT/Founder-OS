@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M7b: Decision Room UI redesign** (Major), once the founder has re-tested the M7a fix round 2 (AM5–AM8 below, F4–F8 and F12) and merged its PR. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
+- **Next milestone:** **M7b: Decision Room UI redesign** (Major), once the founder has re-tested the M7a fix round 3 (AM-R1–AM-R6 below: F4b, F7b, F8b, F12b, F13) and merged its PR. Fix round 2 (PR #14) is merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-26 (M7a fix round 2: F4–F8, F12)
+- **Last updated:** 2026-11-26 (M7a fix round 3: F4b, F7b, F8b, F12b, F13)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -21,7 +21,7 @@
 | M4 | Canvas UI (first demoable build) | DONE (merged, PR #9; Major gate ACCEPTED 2026-11-08) | |
 | M5 | Voice pipeline | DONE, awaiting Major gate (live check RM1–RM6) | All of PRD §8 for M5, measured on the founder's PC (see Current state). Fix rounds 2026-11-13: V7 and how the Advisor speaks; then R1–R8 (a filler never stops a team, one opening turn and silence, re-run of one agent, transcription). Round 3, 2026-11-14: S1–S5 (a stopped run is never spoken, each offer once, it waits after an offer, a change said mid-run, one telling per goal and memo). Round 4, 2026-11-15: T1–T5 ("Yes?" answers the offer, one change gets one offer and one card, no verification line when no team ran, code's trade-off). Round 5, 2026-11-15: U0–U5 (only a clear request starts a team, fillers do nothing, fuzzy re-run, greetings, one chip per metric) and the spoken reminder. Round 6, 2026-11-15: the scripted runner. Round 7, 2026-11-16: a change is always said aloud (it cuts off speech), the reminder after a finished run, the stage line, `FOUNDEROS_STAGE_DELAY_S`. Round 8, 2026-11-16: W1–W5 (a repeated change, the badge after a change, one offer after every decision answer, "leave it", re-run from the last decision team). Founder's numbers: first words p50 890 ms, metric answer p50 1738 ms |
 | M6 | Windows packaging, polish & demo | DONE (merged, PR #12; Major gate ACCEPTED 2026-11-19; tagged `v1.0-local`) | **M6a** (merged, PR #11; PK1–PK8 pass): `run.bat`/`setup.bat` from a fresh clone, `scripts/download_models.py`, README fresh install, `docs/DEMO_SCRIPT.md`, `reset_demo.bat`, M5 carry-overs X1–X5 and Y1–Y3. **M6b** (2026-11-18): F resizable and foldable panels (remembered per viewer), G movable agent window, Kokoro on the GPU (metric answer p50 2.38 s → 1.66 s on this PC), a re-run with a change already in the answer re-runs only that agent |
-| M7a | AI model settings | DONE (merged, PR #13; Medium gate 2026-11-26: AM1–AM7 pass, AM8 partly). Fix round 2 (F4–F8, F12) on `claude/busy-volta-rnlf9x`, awaiting re-test AM5–AM8 | Settings → AI model card (8 presets, Test key with a 15 s limit, green chip, plain-English errors), Fernet keys per workspace, deep-work routing with Qwen fallback, `scripts/ensure_secret.py`, arm64 CI job, `docs/ARM64.md` |
+| M7a | AI model settings | DONE (merged, PR #13; Medium gate 2026-11-26: AM1–AM7 pass, AM8 partly). Fix round 2 (F4–F8, F12) merged (PR #14). Fix round 3 (F4b, F7b, F8b, F12b, F13) on `claude/serene-mendel-8r39x1`, awaiting re-test AM-R1–AM-R6 | Settings → AI model card (8 presets, Test key with a 15 s limit, green chip, plain-English errors), Fernet keys per workspace, deep-work routing with Qwen fallback, `scripts/ensure_secret.py`, arm64 CI job, `docs/ARM64.md` |
 | M7b | Decision Room UI redesign: Welcome screen and Glass Boardroom, desktop and phone | NOT STARTED | |
 | M7c | Invite login and per-member encrypted workspaces | NOT STARTED | |
 | M7d | Oracle Cloud Always Free Arm VM deploy behind Cloudflare HTTPS | NOT STARTED | |
@@ -79,9 +79,21 @@
 | M6a Packaging, demo, M5 carry-overs (partial) | [Sree1959GIT/Founder-OS#11](https://github.com/Sree1959GIT/Founder-OS/pull/11) | Light | ACCEPTED (merged; PK1–PK8 pass after the Y1–Y3 fix of 2026-11-17) |
 | M6 Windows packaging, polish & demo (M6b) | [Sree1959GIT/Founder-OS#12](https://github.com/Sree1959GIT/Founder-OS/pull/12) | **Major** | ACCEPTED (SM, 2026-11-19), Major; MG1, MG2, MG5 and re-test MR1–MR8 pass on Windows (fresh clone D:\FounderOS-fresh2, demo script §1–§7, memo from the frame, panels, agent window, bench p50 first words 749 ms, metric answer 1681 ms, barge-in 60 ms); carried to v1.1: resizable floating agent window, Matrix entry shows a score instead of "Not scored yet", a half-sentence ("Should we?") gets queued and run. History after the D1–D7 fix round of 2026-11-19). Founder run 2026-11-18/19 (fresh copy `D:\FounderOS-fresh2`): MG1, MG2, MG5, DEMO_SCRIPT §1, §7, §4 (frame, risks, three hires) and MG4 fold + voice PASS; D1–D7 found (see Founder feedback) |
 | M7a AI model settings | [Sree1959GIT/Founder-OS#13](https://github.com/Sree1959GIT/Founder-OS/pull/13) | Medium | ACCEPTED (SM, merged 2026-11-26), Medium: AM1–AM7 pass, AM8 partly (Advanced and the address check pass; Wi-Fi fallback, Use Qwen and Remove key to re-test), AM9 CI green. New findings F4–F8, F12 fixed in the fix round 2 PR below. History: founder run 2026-11-22: AM1–AM4 pass (AM1 only with `ensure_secret.py` run by hand); F1 run.bat, F2 Edge offers to save the key, F3 key-only setup (fixed 2026-11-26) |
-| M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | AWAITING FOUNDER: re-test AM5–AM8 (fix round 2) and AM8b |
+| M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | ACCEPTED (SM, merged after the re-test of 2026-11-26 in Edge): F4 pass, F5 pass (AQ. detected, unknown-key message, re-detect on Qwen), F6 pass, F7 pass for 429, F12 pass in Settings and the memo ("about ₹26: Groq 9 calls"), **F8 fail** (now F8b). The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`). New findings F4b, F7b, F8b, F12b, F13 fixed in fix round 3 below |
+| M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | (PR link added at wrap-up) | Light | AWAITING FOUNDER: re-test AM-R1–AM-R6 |
 
 ## Current session
+- Started (UTC): 2026-11-26 07:16 (cloud session, **M7a fix round 3: F4b, F7b, F8b, F12b, F13**, Light gate (bug-fix PR), time-box 60 minutes), branch `claude/serene-mendel-8r39x1` from `origin/main` (0bc9485, PR #14 merged).
+- Plan:
+  - [x] Record the fix round 2 re-test in the Gate log and F4b–F13 in Founder feedback; M7f and M7b polish notes (recorded, not built)
+  - [x] F4b Remove key turns cloud off (saved); `.env` keys no longer count once the card was used
+  - [x] F7b the 15 s running out after a 429/503 stays "busy"; Gemini free quota used up → its own sentence, green chip kept
+  - [x] F8b find the cause (env var vs per-call timing), fix, test the start path and an agent that passes the limit mid-run
+  - [x] F12b member currency in the lane, voice and Activity header; US$ to 2 decimals in small print
+  - [x] F13 the frame card marks what the answer and memo propose; one sentence says why it changed
+  - [x] Tests (backend + vitest), checklist AM-R1–AM-R6, PR, CI
+
+Previous session (2026-11-26, M7a fix round 2):
 - Started (UTC): 2026-11-26 05:44 (cloud session, **M7a fix round 2: F4–F8, F12**, Light gate (bug-fix PR), time-box 90 minutes), branch `claude/busy-volta-rnlf9x` from `origin/main` (9eb9768, PR #13 merged).
 - Plan:
   - [x] Record the M7a gate result in the Gate log and F4–F12 in Founder feedback; PRD §8/§12 (F9 in M7b, M7h, M7f additions, M7b polish)
@@ -915,8 +927,12 @@ Known issues / notes:
 - `pytest` shows a Starlette deprecation warning about `httpx` in `TestClient`. It is harmless.
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
-## Next steps (after the M7a fix round 2, 2026-11-26)
-0. **Gate check:** the founder re-tests **AM5–AM8 (fix round 2)** below and merges this bug-fix PR (Light). Any new finding is fixed on this same branch and PR. M7b (Major) starts after the merge.
+## Next steps (after the M7a fix round 3, 2026-11-26)
+0. **Gate check:** the founder re-tests **AM-R1–AM-R6 (fix round 3)** below and merges this bug-fix PR (Light). Fix round 2 (PR #14) is merged and accepted except F8 (now F8b).
+0c. M7f also carries the setup-guide note (AI Pro / Jio subscriptions do not include API use; AI Studio free limits; a free Groq key is a good start); M7b polish adds auto-test on paste, "Test again" after a pass, and the exchange-rate credit in the Settings footer (PRD §8).
+
+Earlier (after fix round 2):
+0. The founder re-tested AM5–AM8 (fix round 2). Any new finding is fixed on this same branch and PR. M7b (Major) starts after the merge.
 0a. M7b also carries F9 (voice keeps its context across pages) and "Recommended (3–4) · Show all" in Change model (PRD §8).
 0b. M7f carries the first-run privacy question and silent currency detection; M7h (after M7d) the key ring and smart routing (PRD §8).
 
@@ -934,6 +950,15 @@ Earlier next steps (after the M6 gate fix round, 2026-11-19):
 4. After M6: Laya fine-tuning (C8) and Jev (C9); Dubai verification of figures quoted from a decision on record; smaller ideas (reload a conversation after refresh, a mapping form for failing Excel files, Jev in the cost ledger, a cash metric, `OllamaEmbedder` delegating to `OllamaProvider.embed`); G could later draw which agent read whose findings, if the lane records it.
 
 ## Windows verification checklist (for the founder)
+**M7a fix round 3 (F4b, F7b, F8b, F12b, F13), about 15 minutes. Run this one first: AM-R1 to AM-R6.** Windows PowerShell 5.1, Ollama in Docker, Edge. A free Groq key (`gsk_…`) is enough; a Gemini key only for AM-R3. Write the results in the Gate log.
+
+- **AM-R1. Update.** Close FounderOS. `git fetch origin; git checkout claude/serene-mendel-8r39x1; git pull; .\run.bat` (no new packages).
+- **AM-R2. Remove key turns cloud off (F4b).** Settings → AI model: paste your Groq key, **Test key** (green chip; "Allow cloud agents" ticks itself; top bar shows the cloud model). Press **Remove key**. **Expect:** "Allow cloud agents" unticks and greys out with "Test and save a key in the AI model card above first…"; no "You have unsaved changes" bar; within a few seconds the top bar no longer shows cloud. Reload the page (F5): still unticked. Test the key again to go on.
+- **AM-R3. Gemini busy or out of free quota (F7b).** Only if your Gemini key is still at its free limit: paste it, **Test key**. **Expect:** a yellow notice "Your Gemini key has reached its free limit for now. Try again later, or add billing in Google AI Studio." (or, for a busy minute, "Gemini is busy right now (Google error 429)…"), never "Can't reach the server… check your internet connection", in 4 of 4 tries. With a Gemini key that passed before, the green chip stays.
+- **AM-R4. The slow offer for an agent of quick calls (F8b).** Close FounderOS. In PowerShell: `$env:CLOUD_SLOW_AFTER_S="3"; $env:CLOUD_SLOW_MIN_S="0"; .\run.bat`. With the Groq key verified, ask the Dubai question and approve the team. **Expect:** when a cloud agent (People & Ops, Devil's Advocate) has worked for 3 s in all, its card shows "Slow: Groq has taken 3 s so far (expected under 3 s)", and the Advisor says and shows "… is taking longer than usual…" with **Continue on Qwen on our server** / **Keep waiting**. Nothing switches until you press one. Close FounderOS and start it normally afterwards (a new PowerShell window drops the variables).
+- **AM-R5. Your currency everywhere (F12b).** Settings → Currency: INR. Run a decision on Groq. **Expect:** the lane's end line "This decision cost about ₹…: Groq N calls…" (and the voice says ₹); Agent Activity header "Run cost about ₹…", with US$ only in its tooltip (2 decimals, e.g. "US$0.29"); the memo's "What this decision cost" in ₹ with "(Estimated: US$0.29.)", never 4 decimals. On a fresh workspace with no currency chosen, the first decision is already in your browser's currency.
+- **AM-R6. One proposal on screen (F13).** Ask the Dubai question; when the answer and the memo propose an option other than the one first marked (e.g. "Partner or distributor" instead of "Travel-led pilot"). **Expect:** the decision frame card marks **that** option "Proposed" (only one), and the answer opens with one sentence such as "With Partner or distributor the runway effect is smaller, so I now propose Partner or distributor instead of Travel-led pilot." Ask a follow-up that writes a new memo: the card follows the newest proposal.
+
 **M7a fix round 2 (F4–F8, F12), about 15 minutes. Run this one first: AM5–AM8 (new behaviour), then AM8b.** Windows PowerShell 5.1, Ollama in Docker, Edge. Have your real Gemini key ready (an `AQ.` one if you have it). Write the results in the Gate log.
 
 - **AM5-0. Update.** `git fetch origin; git checkout claude/busy-volta-rnlf9x; git pull; .\run.bat` (no new packages).
@@ -1518,7 +1543,25 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
-### [M7a] M7a Medium gate 2026-11-26 (PR #13 merged): AM1–AM7 PASS, AM8 partly, AM9 CI green; F4–F8 and F12 RESOLVED on `claude/busy-volta-rnlf9x` (fix round 2), awaiting re-test AM5–AM8
+### [M7a] Fix round 2 re-test 2026-11-26 in Edge (PR #14 merged): F4, F5, F6, F7 (429), F12 PASS, F8 FAIL; F4b, F7b, F8b, F12b, F13 RESOLVED on `claude/serene-mendel-8r39x1` (fix round 3), awaiting re-test AM-R1–AM-R6
+**Passed:** F4; F5 (AQ. detected, unknown-key message, re-detect on Qwen); F6; F7 for 429; F12 in Settings and the memo ("about ₹26: Groq 9 calls"). **Failed:** F8. The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`).
+**To fix (this round):**
+- **F4b.** After Remove key, "Allow cloud agents" stays ticked and the top bar keeps showing cloud. Removing the last working key must also turn cloud off (saved), so the box greys out with the "Test and save a key first" note.
+- **F7b.** Test key against Gemini: after a 429, the retries ran out the 15 s and showed "Can't reach the server… check your internet connection" (3 of 4 tries). When the time runs out after a 429 or 503, show the busy notice instead, never "check your internet". When Google's reply says a quota is used up (RESOURCE_EXHAUSTED / free tier), say: "Your Gemini key has reached its free limit for now. Try again later, or add billing in Google AI Studio." Keep the green chip if the key passed before.
+- **F8b.** With `$env:CLOUD_SLOW_AFTER_S="3"` and `$env:CLOUD_SLOW_MIN_S="0"` set in PowerShell before `.\run.bat`, People & Ops (Cloud · groq) ran 11 s and Devil's Advocate 3.4 s, but no "taking longer than usual" offer appeared. Find out whether the setting reaches the backend started by run.bat, or whether the slow check fails for agents already running. Fix it, and add a test that covers the same start path and an agent that passes the limit mid-run.
+- **F12b.** The spend line the Advisor says and shows at the end of a decision, and "Run cost ≈ $0.24" in the Activity header, are in US$ although Settings → Currency is INR (the memo was correct in ₹). Use the member's currency everywhere (US$ only in small print). Round US$ to 2 decimals ("about US$0.29", not "US$0.2850").
+- **F13.** Two different proposals on one screen: the decision frame card still marks "Travel-led pilot · Proposed", while the Advisor's later answer and the new memo propose "Partner or distributor". When the proposal changes, update the frame card, and have the Advisor say why in one sentence ("With a partner the runway effect is smaller, so I now propose Partner or distributor").
+
+**Recorded, not built (PRD §8):** **M7f setup guide:** "Google AI Pro / Jio subscriptions don't include API use; an AI Studio key has its own free limits; a free Groq key is a good start." **M7b polish:** auto-test on paste; the Test key button reads "Test again" after a pass; a Settings footer credit for the exchange-rate source ("Rates by Exchange Rate API").
+
+**Fixed (2026-11-26, fix round 3):**
+- **F4b** `DELETE /api/settings/ai-model/key` now also saves `cloud_allowed: false` (in `ui_settings.json`) and applies it, so the router, the top bar (health) and Settings all go back to local at once; the card's refresh copies the server's `cloud_allowed` to the page, so the box unticks and greys out with "Test and save a key in the AI model card above first…", and no unsaved bar shows. `cloud_usable` no longer counts `.env` keys once the card has a choice (the router already ignored them then), so a `.env` key cannot keep the box enabled after Remove key.
+- **F7b** Cause: after a 429 the retry's own wait ran out the 15 s and raised a timeout, which was explained as "Can't reach the server… check your internet". Now `retry_when_busy` remembers the busy answer: a timeout (or a dropped connection) after a 429/503 re-raises that busy answer, so the yellow "Gemini is busy right now (Google error 429). Your key is fine…" shows. A used-up quota (Google's body says `RESOURCE_EXHAUSTED`, `free_tier`, "exceeded your current quota" or "quota exceeded") is its own code `free_limit`: "Your Gemini key has reached its free limit for now. Try again later, or add billing in Google AI Studio." It is not asked again (that cannot help within 15 s), is shown as the yellow notice, and the green chip and the saved key stay. Google's plain "Resource has been exhausted (e.g. check quota)" stays "busy" (a busy minute, asked again).
+- **F8b** Cause found: **the setting did reach the backend** (`start` passes PowerShell's `$env:` variables to the backend window, and an environment variable beats `.env`). The slow check timed **each model call on its own**: Groq answers each call in about 2–3 s, so People & Ops (11 s over about four calls) and Devil's Advocate (3.4 s over two) never had one call over 3 s. Now the limit is for the agent as a whole: the clock starts at the agent's first cloud call, and each later call may only use what is left of `CLOUD_SLOW_AFTER_S` (still never under `CLOUD_SLOW_MIN_S`; the "twice its usual time" check stays per call). The card then reads "Slow: Groq has taken 3 s so far (expected under 3 s)", and the Advisor says and shows the same offer as before. Tests: the PowerShell variable beats a `.env` that says 45/15 through `Settings` → `build_orchestrator` (the run.bat path), each agent's runner gets the limit, and an agent of quick calls gets the offer on its third call, mid-run, with nothing switched until the member's OK.
+- **F12b** Cause: the backend sends `member_currency: null` until a currency is chosen, but the page only saved the browser's currency when it saw `""`, so the silent save never ran and decisions were priced in US$ until Settings was saved (the memo, written later, was in ₹). Now `currencyMissing()` treats null as missing. The Activity header shows the run's cost in the member's currency (`cost_shown` on the run result, e.g. "Run cost about ₹25"; "free" on Qwen), US$ only in its tooltip. US$ in small print (memo, tooltip) are rounded half up to 2 decimals: "US$0.29", not "US$0.2850" (and not JavaScript's "0.28").
+- **F13** Cause: the memo writer chooses the option (`memo.chosen`) and the answer follows it, but the frame kept code's first pick in `default_option`, so the card marked another option. Now the run's frame marks the option the memo proposes (and a later run of the same decision is compared with what the earlier one proposed). When it changed, the answer opens with one sentence by code, without figures: "With Partner or distributor the runway effect is smaller, so I now propose Partner or distributor instead of Travel-led pilot." (or "costs less over a year", the goal it moves away from, or "Weighing the options again, …"). A later answer with no frame of its own whose memo picks another of the open decision's options also moves the "Proposed" mark on the page.
+
+### [M7a] M7a Medium gate 2026-11-26 (PR #13 merged): AM1–AM7 PASS, AM8 partly, AM9 CI green; F4–F8 and F12 RESOLVED in fix round 2 (PR #14, merged; re-test: all pass but F8, see above)
 **Passed:** AM1–AM7; AM8 partly (Advanced and the address check pass; Wi-Fi fallback, Use Qwen and Remove key to re-test); AM9 CI green.
 **To fix (this round):**
 - **F4.** A FAILED Test key (wrong Claude key) ticked "Allow cloud agents" and raised the unsaved-changes bar. Only a passing, saved key may enable cloud; a failed test changes nothing.
@@ -2084,6 +2127,12 @@ Answered (2026-11-03, founder note at the start of the M1 session):
 1. ~~Demo currency~~: **keep USD** for the shipped `sample_data/` (INR stays available with `--currency INR`).
 2. ~~Demo runway~~: **keep runway at about 10 months** at the end of the data window.
 
+## Decisions made (M7a fix round 3, 2026-11-26)
+- F8b: the slow limit (`CLOUD_SLOW_AFTER_S`) is for an agent's cloud work as a whole, from its first cloud call; "twice its usual time" stays a per-call check. One offer per agent, as before.
+- F7b: a used-up quota (`free_limit`) is not asked again inside the 15 s; a timeout or dropped connection after a busy answer is reported as that busy answer.
+- F13: code's sentence on a changed proposal carries no figures (the option lines already give them), so the figure check never has to judge it.
+- F4b: once the AI model card has a choice, `.env` keys do not make cloud usable (matching the router).
+
 ## Decisions made (M7a fix round 2, 2026-11-26)
 - F4: "Allow cloud agents" can be turned on only with a usable key (a verified card key, or a `.env` key); the server refuses it otherwise (422). This replaces founder review 35's "allowed but no key" state for new choices (an existing `.env` `CLOUD_ALLOWED=true` with no key still shows "degraded").
 - F7: 429 and 502/503/504 are "busy" (asked again twice, 0.6 s then 1.8 s), not "rate limited" or "can't reach"; a 429 that says the quota or credit is gone stays "No credit".
@@ -2134,6 +2183,8 @@ Second planning round (2026-11-02):
 - The UI is being designed in Claude Design first (see `docs/design/README.md`).
 
 ## Progress log
+### M7a fix round 3 (2026-11-26)
+- Gate log (fix round 2 re-test) and feedback F4b–F13 recorded; M7f/M7b notes. F4b (Remove key saves cloud off; `cloud_usable` ignores `.env` once the card was used), F7b (busy kept over a later timeout/network error; `free_limit`), F8b (agent-level slow clock; cause: per-call timing, env var fine), F12b (`currencyMissing`, `cost_shown`, `usd_text`/`usdText` half up), F13 (`_follow_proposal`, `proposal_change_line`, `proposedFrame`). Tests: `backend/tests/test_m7a_fix_round3.py` (17), `frontend/src/components/fixround3.test.tsx` (4), `frontend/src/components/activity/runcost.test.tsx` (1).
 ### M7a fix round 2 (2026-11-26)
 - Gate log and feedback recorded; PRD §8/§12 (F9, M7h, M7f, M7b polish). F4 (card refresh only on success, cloud needs a key, 422), F5 (key_shapes.json, AQ., unknown key, prefix log, re-detect), F6 (`ai_model` in health/settings, badge, pills, Default), F7 (busy retries + notice), F8 (slow-cloud watch, lane offer, two endpoints, card), F12 (`spend.py`: FX cache, money, SpendReport; lane/voice/memo/Settings). Tests: `backend/tests/test_m7a_fix_round2.py` (27), `frontend/src/components/fixround2.test.tsx` (8); Playwright 5/5 locally.
 ### M7a gate fix round (2026-11-26)

@@ -410,7 +410,7 @@ def test_f12_the_memo_says_what_the_decision_cost(client: TestClient) -> None:
     orchestrator._note_cost_in_memo(result)  # once only
     body = vault.read_note("decisions/2026-11-26-dubai.md")["body"]
     assert body.count("## What this decision cost") == 1
-    assert "This decision cost about ₹1: Gemini 4 calls; Qwen parts free. (Estimated: US$0.0120.)" in body
+    assert "This decision cost about ₹1: Gemini 4 calls; Qwen parts free. (Estimated: US$0.01.)" in body  # F12b
     assert (
         body.startswith("# Dubai")
         and vault.read_note("decisions/2026-11-26-dubai.md")["frontmatter"]["title"] == "Dubai"

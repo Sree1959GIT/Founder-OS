@@ -231,7 +231,7 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
     }
 
 
-_KEY_PROBLEMS = ("wrong_key", "no_credit", "busy", "server_error")
+_KEY_PROBLEMS = ("wrong_key", "no_credit", "busy", "free_limit", "server_error")
 UNKNOWN_KEY = "We couldn't recognise this key. Please check it, or pick the provider that issued it."
 
 
@@ -284,6 +284,8 @@ async def use_local(request: Request) -> dict[str, Any]:
 @router.delete("/key")
 async def remove_key(request: Request) -> dict[str, Any]:
     _store(_settings(request)).clear_key()
-    reapply(request.app)
-    logger.info("AI model key removed; the deep-work agents use Qwen")
+    # Founder F4b: removing the key turns cloud off (saved), so "Allow cloud agents" greys out again. The router
+    # already ignores `.env` keys once the card was used, so no key is left that could make cloud work.
+    save_choices(request.app, {"cloud_allowed": False})
+    logger.info("AI model key removed; the deep-work agents use Qwen and cloud is off")
     return _view(request)

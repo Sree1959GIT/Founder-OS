@@ -237,14 +237,24 @@ async def retry_when_busy(
     """Founder F7: `attempt(seconds_left)` again when the provider is busy (503) or rate limited (429), after a short
     back-off (0.6 s, then 1.8 s, ...), never past `deadline` (the test's 15 s). The last failure is raised."""
     loop = asyncio.get_running_loop()
+    busy: LLMError | None = None
     for tries in range(retries + 1):
         left = deadline - loop.time()
         try:
             return await attempt(max(left, 1.0))
+        except TimeoutError as exc:
+            # Founder F7b: the time ran out on a retry after a 429/503. That is still "busy", never "check your
+            # internet": the provider did answer, it was just busy.
+            if busy is not None:
+                raise busy from exc
+            raise
         except LLMError as exc:
+            if exc.network and busy is not None:
+                raise busy from exc
             wait = round(backoff_s * (3**tries), 2)
-            if not is_busy(exc) or tries == retries or deadline - loop.time() < wait + 1.0:
+            if not is_busy(exc) or is_free_limit(exc) or tries == retries or deadline - loop.time() < wait + 1.0:
                 raise
+            busy = exc
             logger.info("AI model test: provider busy (HTTP {}), asking again in {:.1f} s", exc.status, wait)
             await _sleep(wait)
     raise AssertionError("unreachable")  # pragma: no cover
@@ -287,6 +297,26 @@ def is_busy(exc: BaseException) -> bool:
     return not any(word in exc.detail.lower() for word in CREDIT_WORDS)
 
 
+# Founder F7b: Google's 429 for a used-up quota (the free tier): asking again in a second does not help.
+# Google's body: {"error": {"code": 429, "message": "You exceeded your current quota ... free_tier ...", "status":
+# "RESOURCE_EXHAUSTED"}}. A plain "Resource has been exhausted (e.g. check quota)" is a busy minute: asked again.
+FREE_LIMIT_WORDS = ("resource_exhausted", "free_tier", "free tier", "exceeded your current quota", "quota exceeded")
+
+
+def is_free_limit(exc: BaseException) -> bool:
+    """A rate limit that is a used-up quota (Gemini's RESOURCE_EXHAUSTED / free tier), not a busy moment."""
+    return (
+        isinstance(exc, LLMError) and exc.status == 429 and any(word in exc.detail.lower() for word in FREE_LIMIT_WORDS)
+    )
+
+
+FREE_LIMIT_LINES = {
+    "Gemini": (
+        "Your Gemini key has reached its free limit for now. Try again later, or add billing in Google AI Studio."
+    ),
+}
+
+
 def busy_line(label: str, status: int | None, *, key_ok: bool) -> str:
     vendor = VENDORS.get(label, label)
     fine = " Your key is fine." if key_ok else ""
@@ -319,6 +349,10 @@ def explain_failure(
         )
     if status in (401, 403) or (status == 400 and any(word in detail for word in KEY_WORDS) and "model" not in detail):
         return "wrong_key", f"Wrong key: {label} did not accept it. Copy the whole key again from your {label} account."
+    if is_free_limit(exc):  # founder F7b: a used-up (free) quota is said as such, a yellow notice like busy
+        return "free_limit", FREE_LIMIT_LINES.get(
+            label, f"Your {label} key has reached its usage limit for now. Try again later, or check your plan."
+        )
     if is_busy(exc):  # founder F7: busy is not "check your internet", and not a red error
         return "busy", busy_line(label, status, key_ok=key_ok)
     if status in (400, 404, 422) and "model" in detail and any(word in detail for word in MODEL_MISSING):

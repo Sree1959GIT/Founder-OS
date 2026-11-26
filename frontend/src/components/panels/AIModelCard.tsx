@@ -65,7 +65,7 @@ function cssMaskWorks(): boolean {
 /** Founder F5: said when a pasted key's start matches no known provider (never silently stay on Qwen). */
 export const UNKNOWN_KEY = "We couldn't recognise this key. Please check it, or pick the provider that issued it.";
 /** Founder F7: busy or a server problem of the provider's own: a yellow notice, not a red error. */
-const NOTICE_CODES = new Set(["busy", "server_error"]);
+const NOTICE_CODES = new Set(["busy", "free_limit", "server_error"]); // F7b: a used-up free quota too
 
 export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => void; redetect?: number }) {
   const [view, setView] = useState<AIModelView | null>(null);
