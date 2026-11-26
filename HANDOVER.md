@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M7b: Decision Room UI redesign** (Major), to the founder's locked brief `docs/design/M7B_DESIGN_BRIEF.md`, including F8d, F19, F9 and F18 (Founder feedback, top) and the AM-S5/AM-S8 re-test. Fix round 4 (PR #16) is merged. Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
+- **Next milestone:** M7c (invite login), only after **M7b** (PR #17, Major) is ACCEPTED: the founder runs MB1–MB12 below. M7b built F8d, F19, F9 and F18 (Founder feedback, top: RESOLVED on `claude/serene-knuth-si17hr`). Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-26 (PR #16 re-test recorded; M7b brief saved)
+- **Last updated:** 2026-11-26 (M7b built, PR #17 open, awaiting the Major gate MB1–MB12)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -82,6 +82,7 @@
 | M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | ACCEPTED (SM, merged after the re-test of 2026-11-26 in Edge): F4 pass, F5 pass (AQ. detected, unknown-key message, re-detect on Qwen), F6 pass, F7 pass for 429, F12 pass in Settings and the memo ("about ₹26: Groq 9 calls"), **F8 fail** (now F8b). The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`). New findings F4b, F7b, F8b, F12b, F13 fixed in fix round 3 below |
 | M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | [Sree1959GIT/Founder-OS#15](https://github.com/Sree1959GIT/Founder-OS/pull/15) | Light | MERGED; re-test 2026-11-26 (main, Edge, Groq key): AM-R2 pass; AM-R3 Groq pass, **Gemini fail** (now F7c); **AM-R4 fail** (now F8c); AM-R5 pass (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"); **AM-R6 fail** (now F13b). Voice stopping when Activity opens is F9 (M7b). New findings F14–F17 fixed in fix round 4 below |
 | M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | MERGED; re-test 2026-11-26: AM-S1, AM-S4, AM-S6, AM-S7 pass; **AM-S3 partly**: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" but no offer appears on screen (now F8d, M7b); AM-S5 and AM-S8 to re-test in M7b |
+| M7b Decision Room UI redesign | [Sree1959GIT/Founder-OS#17](https://github.com/Sree1959GIT/Founder-OS/pull/17) | **Major** | AWAITING FOUNDER: Windows check MB1–MB12 (Edge and a phone), plus AM-S5 and AM-S8 |
 
 ## Current session
 - Started (UTC): 2026-11-26 10:36 (cloud session, **M7b: Decision Room UI redesign**, Major gate, time-box ~2 h), branch `claude/serene-knuth-si17hr` from `origin/main` (66000f5, PR #16 merged). Brief: `docs/design/M7B_DESIGN_BRIEF.md`.
@@ -1624,7 +1625,7 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
-### [M7a] Fix round 4 re-test 2026-11-26 (PR #16 merged): AM-S1, AM-S4, AM-S6, AM-S7 PASS; AM-S3 partly; AM-S5, AM-S8 to re-test in M7b. F8d, F19, F9, F18 OPEN, to fix in M7b
+### [M7a] Fix round 4 re-test 2026-11-26 (PR #16 merged): AM-S1, AM-S4, AM-S6, AM-S7 PASS; AM-S3 partly; AM-S5, AM-S8 to re-test in M7b. F8d, F19, F9, F18 RESOLVED in M7b (PR #17), awaiting MB1–MB12
 Design brief for M7b (locked by the founder): `docs/design/M7B_DESIGN_BRIEF.md`.
 **To fix (M7b, in the new screens):**
 - **F8d.** The slow-agent offer is sent by the backend but never shown: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" and nothing appears on screen. Show it in the Advisor panel and on the agent's card, with "Continue on Qwen on our server" / "Keep waiting".
