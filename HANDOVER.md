@@ -84,6 +84,21 @@
 | M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | MERGED; re-test 2026-11-26: AM-S1, AM-S4, AM-S6, AM-S7 pass; **AM-S3 partly**: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" but no offer appears on screen (now F8d, M7b); AM-S5 and AM-S8 to re-test in M7b |
 
 ## Current session
+- Started (UTC): 2026-11-26 10:36 (cloud session, **M7b: Decision Room UI redesign**, Major gate, time-box ~2 h), branch `claude/serene-knuth-si17hr` from `origin/main` (66000f5, PR #16 merged). Brief: `docs/design/M7B_DESIGN_BRIEF.md`.
+- Plan:
+  - [x] F19 backend: the router names why a cloud call fell back (`fallback_reason`); one `agent.fallback` event per agent, said by the Advisor; only answered cloud calls are counted
+  - [x] F18 backend: one memo per open decision (rewritten in place), earlier versions kept outside the vault, `/api/memos/versions`
+  - [ ] F8d: the page subscribes to `slow.offered`, `agent.slow`, `agent.fallback`, `spend`; the offer on the agent's card too
+  - [ ] Tokens and fonts (Instrument Serif, Inter, JetBrains Mono via @fontsource; cream/ink/tomato and navy glass; Lite mode)
+  - [ ] Welcome screen
+  - [ ] Boardroom (faces, table, options panel, caption bar)
+  - [ ] F9 voice outside the pages; F18 memo page; other pages restyled; model card polish
+  - [ ] Phone layout at 390 px; Playwright screenshots 1440 / 390
+  - [ ] Checks, self-review, HANDOVER, PR, CI
+- Progress log:
+  - 10:42 F19 and F18 backend done with tests (`backend/tests/test_m7b.py`); F8d cause found: `EVENT_TYPES` in `frontend/src/lib/workspace.tsx` never listened for `slow.offered`, so the offer was dropped in the browser.
+
+### Previous session (M7a fix round 4)
 - Started (UTC): 2026-11-26 09:25 (cloud session, **M7a fix round 4: F7c, F8c, F13b, F14–F17**, Light gate (bug-fix PR), time-box 60 minutes), branch `claude/bold-tesla-cibyyq` from `origin/main` (6d8c1b2, PR #15 merged).
 - Plan:
   - [x] Record the fix round 3 re-test in the Gate log and F7c–F17 in Founder feedback; the Devil's Advocate note for M7h (recorded, not built)
