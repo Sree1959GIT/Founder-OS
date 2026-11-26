@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 
 // Founder re-test RW6 (22) and 42: a turn is taken at once in every phase, and the same question is queued once.
 test("turns are accepted while the first question is planning and while it waits for approval", async ({ page }) => {
+  // This test needs the approval step. The specs share one backend, and the smoke spec sets approval to Never in
+  // Settings, so set the policy this test depends on instead of relying on the order the specs run in.
+  const policy = await page.request.put("/api/settings", { data: { team_approval: "always" } });
+  expect(policy.ok()).toBe(true);
   await page.goto("/");
   const ask = page.getByLabel("Ask the advisor");
 

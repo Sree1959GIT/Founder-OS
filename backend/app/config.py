@@ -125,6 +125,33 @@ class Settings(BaseSettings):
     openai_compatible_base_url: str = ""
     openai_compatible_model: str = ""
 
+    # AI model card (M7a): a member's own key, tested, then stored encrypted per workspace in <data>/<ws>/ai_model.json.
+    # The Fernet key that encrypts those keys. setup.bat / scripts/ensure_secret.py writes it to .env. Never share it.
+    founderos_secret_key: SecretStr | None = None
+    # Default model per preset, editable on the card. The Claude, Gemini and OpenAI presets use CLAUDE_MODEL,
+    # GEMINI_MODEL and OPENAI_MODEL above.
+    openrouter_model: str = "openrouter/auto"
+    groq_model: str = "llama-3.3-70b-versatile"
+    ollama_cloud_model: str = "gemma4:31b"
+    # Founder F3: Test key asks the provider which models the key can use and picks the first family here that the key
+    # has (fnmatch patterns on the model id, newest version first within a family, stable before preview). The *_MODEL
+    # values above are only used when a provider cannot list its models. JSON in .env.
+    ai_model_preferences: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "claude": ["claude-sonnet-*", "claude-haiku-*", "claude-opus-*"],
+            "gemini": ["gemini-*-flash", "gemini-*-flash-preview*", "gemini-*-pro", "gemini-*-flash-lite*"],
+            "openai": ["gpt-*-mini", "gpt-*"],
+            "openrouter": ["google/gemini-*-flash", "anthropic/claude-sonnet-*", "openai/gpt-*-mini"],
+            "groq": ["openai/gpt-oss-120b", "llama-*-versatile", "qwen/*", "meta-llama/*"],
+            "ollama_cloud": ["gpt-oss:120b*", "qwen3*", "gemma*", "deepseek*"],
+        }
+    )
+    # "Test key" sends one tiny request and gives up after this many seconds.
+    ai_model_test_timeout_s: float = Field(default=15.0, gt=0, le=60)
+    # Custom base URLs must be https on a public address (a hosted server must not call its own network). True allows
+    # http and private addresses, e.g. a model server on your own LAN. Leave false on a hosted server.
+    ai_model_allow_private_urls: bool = False
+
     # Display
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
 
@@ -182,6 +209,7 @@ class Settings(BaseSettings):
         "vertex_api_key",
         "openai_api_key",
         "openai_compatible_api_key",
+        "founderos_secret_key",
         mode="before",
     )
     @classmethod

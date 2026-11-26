@@ -7,6 +7,8 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 90_000,
   retries: process.env.CI ? 1 : 0,
+  // Every spec talks to the same backend, and some change its settings (approval policy): run them one at a time.
+  workers: 1,
   use: { baseURL: "http://127.0.0.1:3021", viewport: { width: 1440, height: 900 } },
   reporter: [["list"]],
   webServer: [

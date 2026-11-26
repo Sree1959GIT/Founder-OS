@@ -159,3 +159,9 @@
     padding: 0;
   }
 }
+
+/* Founder F2 (M7a gate): the API key box is a text field masked by CSS, never type="password", so Chrome, Edge and
+   Safari do not offer to save it as a password (and Edge shows no key icon or reveal eye). */
+.secret-field {
+  -webkit-text-security: disc;
+}

@@ -144,3 +144,130 @@ def test_a_running_qdrant_skips_compose_with_no_warning(name: str) -> None:
     block = text[probe : text.index("where docker", probe)]
     assert "[OK] Qdrant already running" in block and "goto :" in block and "[WARN]" not in block
     assert "\r\n" in text and "\n" not in text.replace("\r\n", "")  # CRLF, or cmd loses its goto labels
+
+
+# --- F1 (M7a gate): run.bat runs ensure_secret.py on every start ------------------------------------------------------
+def _run_batch(text: str, failing: set[str]) -> list[str]:
+    """A small cmd.exe control-flow model: `if [not] errorlevel|exist|defined ... (`, `) else (`, `)`, `goto :label`,
+    `exit /b`. A command "fails" (errorlevel 1) when it contains one of `failing`; every other command succeeds.
+    Returns the commands that ran, in order."""
+    lines = [line.strip() for line in text.split("\r\n")]
+    labels = {line[1:].lower(): i for i, line in enumerate(lines) if line.startswith(":") and not line.startswith("::")}
+    ran: list[str] = []
+    errorlevel = 0
+
+    def condition(words: list[str]) -> tuple[bool, list[str]]:
+        negate = words[0].lower() == "not"
+        if negate:
+            words = words[1:]
+        kind = words[0].lower()
+        if kind == "errorlevel":
+            value, rest = errorlevel >= int(words[1]), words[2:]
+        elif kind in ("exist", "defined"):
+            value, rest = kind == "exist", words[2:]  # files exist (set up already); NEED_SETUP is not defined
+        else:
+            raise AssertionError(f"unsupported if: {words}")
+        return (not value) if negate else value, rest
+
+    def skip_block(i: int) -> tuple[int, bool]:
+        """From the line after `(`, find the closing line. Returns (index of closer, closer is `) else (`)."""
+        depth = 0
+        while True:
+            line = lines[i]
+            if line.startswith(")"):
+                if depth == 0:
+                    return i, line.endswith("(")
+                if not line.endswith("("):
+                    depth -= 1
+            elif line.endswith("(") and not line.lower().startswith("rem"):
+                depth += 1
+            i += 1
+
+    def command(line: str) -> int | None:
+        """Runs one command; returns the next index for goto, -1 for exit, None to go on."""
+        nonlocal errorlevel
+        low = line.lower()
+        if low.startswith("goto "):
+            return labels[low.split()[1].lstrip(":")]
+        if low.startswith("exit"):
+            return -1
+        ran.append(line)
+        if not low.startswith(("echo", "set ", "rem", "setlocal", "endlocal", "cd ")):
+            errorlevel = 1 if any(f in line for f in failing) else 0
+        return None
+
+    i, stack = 0, []  # stack: True while inside a taken `if (` block
+    while 0 <= i < len(lines):
+        line, low = lines[i], lines[i].lower()
+        if not line or low.startswith(("rem", "@echo", ":")):
+            i += 1
+            continue
+        if line.startswith(")"):
+            taken = stack.pop()
+            if line.endswith("(") and taken:  # `) else (` after a taken branch: skip the else
+                end, _ = skip_block(i + 1)
+                i = end + 1
+                continue
+            if line.endswith("("):
+                stack.append(True)
+            i += 1
+            continue
+        if low.startswith("if "):
+            value, rest = condition(line.split()[1:])
+            if rest == ["("]:
+                if value:
+                    stack.append(True)
+                    i += 1
+                else:
+                    end, has_else = skip_block(i + 1)
+                    if has_else:
+                        stack.append(False)
+                    i = end + 1
+                continue
+            if value:
+                jump = command(" ".join(rest))
+                if jump is not None:
+                    if jump == -1:
+                        break
+                    i = jump
+                    continue
+            i += 1
+            continue
+        jump = command(line)
+        if jump == -1:
+            break
+        i = jump if jump is not None else i + 1
+    return ran
+
+
+@pytest.mark.parametrize(
+    "failing",
+    [
+        set(),  # Qdrant already answers on 6333: `goto :preflight` straight away (the founder's F1 path)
+        {"readyz"},  # Qdrant down, Docker running: compose starts it
+        {"readyz", "where docker"},  # no Docker
+        {"readyz", "docker info"},  # Docker Desktop not running
+        {"readyz", "docker compose"},  # compose failed
+    ],
+    ids=["qdrant-running", "qdrant-started", "no-docker", "docker-stopped", "compose-failed"],
+)
+def test_run_bat_runs_ensure_secret_once_on_every_path(failing: set[str]) -> None:
+    text = (SCRIPTS.parent / "run.bat").read_bytes().decode("ascii")
+    ran = _run_batch(text, failing)
+    secret = [i for i, line in enumerate(ran) if "ensure_secret.py" in line]
+    preflight = [i for i, line in enumerate(ran) if "preflight.py" in line]
+    assert len(secret) == 1, ran
+    assert preflight and secret[0] < preflight[0]
+    assert any("uvicorn" in line for line in ran)  # and the start goes on
+    assert ("docker compose up -d qdrant" in " ".join(ran)) == (failing == {"readyz"} or "docker compose" in failing)
+
+
+def test_batch_model_sees_the_old_unreachable_line() -> None:
+    """The model really follows `goto`: the M7a run.bat (line after `goto :preflight` in the block) never ran it."""
+    old = (
+        "@echo off\r\ncurl.exe http://localhost:6333/readyz\r\nif not errorlevel 1 (\r\n  echo [OK] Qdrant\r\n"
+        '  goto :preflight\r\n".venv\\Scripts\\python.exe" scripts\\ensure_secret.py\r\n)\r\nwhere docker\r\n'
+        ':preflight\r\n".venv\\Scripts\\python.exe" scripts\\preflight.py\r\nexit /b 0\r\n'
+    )
+    assert not any("ensure_secret" in line for line in _run_batch(old, set()))
+    assert not any("ensure_secret" in line for line in _run_batch(old, {"readyz"}))

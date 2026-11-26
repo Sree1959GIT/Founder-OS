@@ -18,7 +18,7 @@ from loguru import logger
 
 from app import __version__
 from app.agents.setup import build_conversation, build_orchestrator
-from app.api import chat, conversation, data, health, metrics, priorities, scenario, vault
+from app.api import ai_model, chat, conversation, data, health, metrics, priorities, scenario, vault
 from app.api import settings as settings_api
 from app.api import voice as voice_api
 from app.api.settings import apply_saved
@@ -145,6 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(chat.router, prefix="/api")
     app.include_router(conversation.router, prefix="/api")
     app.include_router(settings_api.router, prefix="/api")
+    app.include_router(ai_model.router, prefix="/api")
     app.include_router(priorities.router, prefix="/api")
     app.include_router(voice_api.router)
     _add_error_handlers(app)

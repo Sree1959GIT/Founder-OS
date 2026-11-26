@@ -21,7 +21,18 @@ Role = Literal["system", "user", "assistant", "tool"]
 
 
 class LLMError(Exception):
-    """The provider answered, but not usefully (bad request, malformed output, unsupported feature)."""
+    """The provider answered, but not usefully (bad request, malformed output, unsupported feature).
+
+    `status` is the HTTP status when there was one, `detail` the start of the provider's error text with any key
+    removed (used to explain a failed key test, never shown as is), and `network` is true when the server could not be
+    reached at all.
+    """
+
+    def __init__(self, message: str = "", *, status: int | None = None, detail: str = "", network: bool = False):
+        super().__init__(message)
+        self.status = status
+        self.detail = detail
+        self.network = network
 
 
 class LLMUnavailable(LLMError):
