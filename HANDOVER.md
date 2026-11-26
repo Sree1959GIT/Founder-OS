@@ -79,6 +79,16 @@
 | M7a AI model settings | [Sree1959GIT/Founder-OS#13](https://github.com/Sree1959GIT/Founder-OS/pull/13) | Medium | AWAITING FOUNDER (checklist AM1–AM9) |
 
 ## Current session
+- Started (UTC): 2026-11-26 03:53 (cloud session, **M7a gate fix round F1–F3**, on the existing branch `claude/zealous-bell-ymy3uq`, PR #13; no new PR).
+- Plan:
+  - [ ] Record F1–F3 in Founder feedback
+  - [ ] F1 `run.bat`: `ensure_secret.py` on every start, test both paths
+  - [ ] F2 key box never offered to password managers (Chrome, Edge, Safari), still masked; test
+  - [ ] F3 backend: key-shape detection, models endpoint per provider, chat-only filter, auto default; tests with fakes
+  - [ ] F3 frontend: paste key → Test key, Change model dropdown, Advanced server address, green chip; vitest
+  - [ ] PRD §4, README, checklist AM1–AM9; checks; push; CI
+
+Previous session (2026-11-22, M7a):
 - Started (UTC): 2026-11-22 16:05 (cloud session, **M7a AI model settings**, Medium gate, time-box 2 hours), branch `claude/zealous-bell-ymy3uq` from `origin/main` (fb4e776, M6 merged).
 - Plan:
   - [x] Record M7a–M7g in PRD §8 and §12 and in the milestones table; fix the stale "Next milestone" line
@@ -1477,6 +1487,13 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M7a] M7a Medium gate run 2026-11-22: AM1–AM4 PASS (AM1 only with a manual workaround); F1–F3 to fix (fix session 2026-11-26)
+**Passed:** AM1 (only after running `scripts\ensure_secret.py` by hand), AM2, AM3, AM4.
+**To fix:**
+- **F1.** `run.bat` never runs `scripts\ensure_secret.py` when Qdrant is already running. The line sits after `goto :preflight` inside the if-block, so it is unreachable. Run it once on every start, before or at `:preflight`, so "[OK] FOUNDEROS_SECRET_KEY ..." always prints. Add a test that checks the script is reachable in both paths.
+- **F2.** Edge shows the save-password key icon and offers to save the API key. The key box must not trigger browser password managers (no form submit, autocomplete off, and whatever is needed for Chrome, Edge and Safari), while staying masked.
+- **F3.** Key-only setup. A member should only paste a key and press Test key: (a) detect the provider from the key's shape (AIza… Gemini, sk-ant-… Claude, sk-or-… OpenRouter, gsk_… Groq, sk-/sk-proj-… OpenAI), the provider list stays as a manual override; (b) Test key asks the provider's models endpoint which models this key can use, keeps only text/chat models, and picks a sensible default automatically (the newest recommended fast model the key actually has; no hard-coded model that may be retired, e.g. gemini-2.5-flash is no longer open to new users, use the gemini-3.8-flash class); (c) an optional "Change model" dropdown filled with the detected models instead of a free-text Model box; (d) Server address hidden under "Advanced", shown only for Custom (and Ollama Cloud if needed); (e) green chip "<Provider> · <model> · key verified". Update the PRD §4 defaults text, README and the M7a Windows checklist (re-test AM1–AM9 with the new flow). Tests use fakes; no real keys in CI.
+
 ### [M6b] M6 Major gate run 2026-11-18/19 (fresh copy `D:\FounderOS-fresh2`): D1–D7 RESOLVED on this PC (fix session 2026-11-19), awaiting re-test MR1–MR8
 **Passed:** MG1, MG2, MG5; DEMO_SCRIPT §1, §7; §4 frame, risks on "yes", three hires ($43,771, −2.58) pass; MG4 fold + voice while folded.
 **To fix, in the founder's order:**
