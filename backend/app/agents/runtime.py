@@ -1471,10 +1471,15 @@ def honest_status(text: str, records: list[DecisionRecord]) -> str:
             continue
         status = record.status if record.status.lower() != "unknown" else "proposed"
         pattern = re.compile(
-            rf"\b(?:(?:was|were|been|is)\s+)?(?:already\s+)?decided(?:\s+(?:on|in))?\s+(?:the\s+)?{re.escape(day)}",
+            rf"\b(?:(?P<aux>was|were|been|is)\s+)?(?:already\s+)?decided(?:\s+(?:on|in))?\s+(?:the\s+)?{re.escape(day)}",
             re.I,
         )
-        text = pattern.sub(f"{status} on {day} (not decided yet)", text)
+
+        def said(match: re.Match[str], status: str = status, day: str = day) -> str:
+            aux = f"{match['aux']} " if match["aux"] else ""
+            return f"{aux}{status} on {day} (not decided yet)"
+
+        text = pattern.sub(said, text)
     return text
 
 

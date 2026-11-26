@@ -208,9 +208,9 @@ def test_f15_a_proposed_memo_is_reported_as_proposed() -> None:
         "The earlier memo was decided 2026-11-26 and proposes a partner [decisions/2026-11-26-dubai-market-entry.md]."
     )
     fixed = honest_status(text, [_proposed()])
-    assert "decided 2026-11-26" not in fixed and "proposed on 2026-11-26 (not decided yet)" in fixed
+    assert "decided 2026-11-26" not in fixed and "was proposed on 2026-11-26 (not decided yet)" in fixed
     assert honest_status("It was already decided on 2026-11-26.", [_proposed()]) == (
-        "It proposed on 2026-11-26 (not decided yet)."
+        "It was proposed on 2026-11-26 (not decided yet)."
     )
     decided = DecisionRecord(path="decisions/hire.md", title="Hire", status="decided", decided="2026-11-26")
     assert honest_status("Decided 2026-11-26.", [decided, _proposed()]) == "Decided 2026-11-26."
