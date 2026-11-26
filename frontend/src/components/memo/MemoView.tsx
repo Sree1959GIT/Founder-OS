@@ -251,7 +251,7 @@ export function MemoView({ path: wanted }: { path?: string }) {
                 ))}
               </div>
             ) : null}
-            <div className="memo-prose font-serif text-[15px] leading-relaxed">
+            <div className="memo-prose font-sans text-[15px] leading-relaxed">
               <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
             </div>
           </article>

@@ -203,7 +203,7 @@ export function SettingsPanel() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4 px-6 py-5">
-      <h1 className="text-[22px] font-bold tracking-tight">Settings</h1>
+      <h1 className="display text-[34px] leading-tight">Settings</h1>
       {error ? <ErrorNote>{error}</ErrorNote> : null}
       {dirty ? (
         <div

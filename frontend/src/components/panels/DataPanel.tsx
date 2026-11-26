@@ -212,7 +212,7 @@ export function DataPanel() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4 px-6 py-5">
-      <h1 className="text-[22px] font-bold tracking-tight">Data</h1>
+      <h1 className="display text-[34px] leading-tight">Data</h1>
       <Section
         title="Loaded tables"
         aside={

@@ -356,7 +356,7 @@ export function AgentActivity() {
           <ArrowLeft aria-hidden="true" className="h-4 w-4" />
           Back to workspace
         </a>
-        <h1 className="min-w-0 truncate text-[18px] font-semibold">
+        <h1 className="display min-w-0 truncate text-[28px] leading-tight">
           Agent Activity{run ? <span className="font-normal text-muted-foreground"> · {runTitle(run.message)}</span> : null}
         </h1>
         <span className="flex-1" />
