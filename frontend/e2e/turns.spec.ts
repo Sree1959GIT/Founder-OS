@@ -6,7 +6,7 @@ test("turns are accepted while the first question is planning and while it waits
   // Settings, so set the policy this test depends on instead of relying on the order the specs run in.
   const policy = await page.request.put("/api/settings", { data: { team_approval: "always" } });
   expect(policy.ok()).toBe(true);
-  await page.goto("/");
+  await page.goto("/#/boardroom");
   const ask = page.getByLabel("Ask the advisor");
 
   await ask.fill("Should we open a Dubai office?");

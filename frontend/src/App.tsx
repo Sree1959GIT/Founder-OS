@@ -74,7 +74,8 @@ function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAg
 /** Welcome when nothing is open yet (no question asked in this window, no decision); the Boardroom after. */
 function Home({ health, agentsOpen, toggleAgents }: { health: HealthState; agentsOpen: boolean; toggleAgents: () => void }) {
   const { state, decisionRun } = useWorkspace();
-  if (state.turns.length === 0 && !decisionRun) return <Welcome health={health} />;
+  const route = useRoute();
+  if (route.path !== "boardroom" && state.turns.length === 0 && !decisionRun) return <Welcome health={health} />;
   return <Workspace agentsOpen={agentsOpen} toggleAgents={toggleAgents} />;
 }
 
@@ -135,7 +136,8 @@ function Shell({
   toggleAgents: () => void;
 }) {
   const { state, decisionRun } = useWorkspace();
-  const welcome = view === "workspace" && state.turns.length === 0 && !decisionRun;
+  const route = useRoute();
+  const welcome = view === "workspace" && route.path !== "boardroom" && state.turns.length === 0 && !decisionRun;
   return (
     <div className={welcome ? "theme-cream flex min-h-full flex-col bg-background text-foreground" : "flex min-h-full flex-col"}>
       <TopBar health={health} view={view} />

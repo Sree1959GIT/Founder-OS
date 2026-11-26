@@ -569,6 +569,7 @@ def provider_label(name: str) -> str:
 _FALLBACK_WHY = {
     "rate_limit": "{provider} hit its per-minute limit",
     "busy": "{provider} was busy",
+    "slow": "{provider} was slow and you chose Qwen",
     "unreachable": "{provider} could not be reached",
     "error": "{provider} did not answer properly",
 }
@@ -1187,6 +1188,7 @@ class AgentRunner:
             self._emit("agent.status", inst.id, status="thinking")
             completion = await self.router.complete("local", messages, tools=tools, agent_type=spec.name)
             completion.fallback_from = completion.fallback_from or cloud.name
+            completion.fallback_reason = completion.fallback_reason or "slow"  # F19: the member chose Qwen
             return completion
         finally:
             switch.cancel()

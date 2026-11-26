@@ -12,7 +12,8 @@ const VIEWS = new Set<View>(["activity", "memo", "data", "vault", "settings"]);
 export function parseHash(hash: string): Route {
   const [location, query] = hash.replace(/^#\/?/, "").split("?");
   const view: View = VIEWS.has(location as View) ? (location as View) : "workspace";
-  const path = new URLSearchParams(query ?? "").get("path") ?? undefined;
+  // M7b: "#/boardroom" opens the Boardroom even before a question (Welcome shows on "#/" until then).
+  const path = location === "boardroom" ? "boardroom" : (new URLSearchParams(query ?? "").get("path") ?? undefined);
   return { view, path };
 }
 

@@ -183,6 +183,7 @@ describe("helpers", () => {
   it("reads a hash route and an SSE frame", () => {
     expect(parseHash("#/vault?path=notes%2Fa.md")).toEqual({ view: "vault", path: "notes/a.md" });
     expect(parseHash("#/nonsense").view).toBe("workspace");
+    expect(parseHash("#/boardroom")).toEqual({ view: "workspace", path: "boardroom" }); // M7b
     expect(parseFrame('event: delta\ndata: {"text":"hi"}')).toEqual({ event: "delta", data: { text: "hi" } });
     expect(parseFrame("event: delta\ndata: {broken")).toBeNull();
   });

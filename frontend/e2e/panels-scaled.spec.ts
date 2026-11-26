@@ -16,7 +16,7 @@ test("at 125 % the panel edges drag, reset on double-click, and widths and the a
 }) => {
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(e.message));
-  await page.goto("/");
+  await page.goto("/#/boardroom");
   await page.evaluate(() => {
     window.localStorage.removeItem("founderos.layout.v1");
     window.localStorage.removeItem("founderos.agentwindow.v1");
@@ -24,9 +24,9 @@ test("at 125 % the panel edges drag, reset on double-click, and widths and the a
   await page.reload();
 
   const advisor = page.getByRole("complementary", { name: "Executive Advisor", exact: true });
-  const rail = page.getByRole("complementary", { name: "Agents" });
+  const rail = page.getByRole("complementary", { name: "Options so far", exact: true });
   const left = page.getByRole("separator", { name: "Advisor panel width" });
-  const right = page.getByRole("separator", { name: "Agents panel width" });
+  const right = page.getByRole("separator", { name: "Options panel width" });
   await expect(left).toBeVisible();
   await expect(right).toBeVisible();
 

@@ -171,9 +171,14 @@ export function Welcome({ health }: { health: HealthState }) {
         </section>
 
         <section aria-labelledby="numbers-title" className="flex flex-col gap-4">
-          <h2 id="numbers-title" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Your numbers today
-          </h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="numbers-title" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Your numbers today
+            </h2>
+            <a href="#/boardroom" className="inline-flex min-h-[44px] items-center text-sm">
+              Try what-ifs in the Boardroom →
+            </a>
+          </div>
           <KpiRow refreshKey="welcome" />
         </section>
       </div>

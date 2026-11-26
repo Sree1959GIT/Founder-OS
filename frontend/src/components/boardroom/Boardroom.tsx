@@ -219,8 +219,8 @@ export function OptionsPanel({ width, phone = false }: { width?: number; phone?:
       style={width !== undefined ? ({ "--options-w": `${width}px` } as CSSProperties) : undefined}
       className={
         phone
-          ? "flex flex-col gap-3 rounded-2xl bg-card p-4 md:hidden"
-          : "hidden w-[var(--options-w,340px)] shrink-0 flex-col gap-3 bg-card px-4 py-4 md:sticky md:top-0 md:flex md:h-[calc(100vh-61px)] md:overflow-y-auto"
+          ? "flex flex-col gap-3 rounded-2xl bg-card p-4 lg:hidden"
+          : "hidden w-[var(--options-w,340px)] shrink-0 flex-col gap-3 bg-card px-4 py-4 lg:sticky lg:top-0 lg:flex lg:h-[calc(100vh-61px)] lg:overflow-y-auto"
       }
       data-testid={phone ? "options-phone" : "options-panel"}
     >

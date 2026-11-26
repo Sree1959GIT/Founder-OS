@@ -14,7 +14,7 @@ test("the canvas shows lineage, a decision goes through approval, and no removed
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(e.message));
 
-  await page.goto("/");
+  await page.goto("/#/boardroom");
   const runway = page.getByTestId("kpi-runway");
   await expect(runway).toContainText(" mo");
   await runway.getByRole("button").first().click();

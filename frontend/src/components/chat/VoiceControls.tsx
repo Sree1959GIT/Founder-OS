@@ -21,7 +21,7 @@ export function MicButton({ big = false, label }: { big?: boolean; label?: strin
         onClick={() => void v.connect()}
       >
         <MicOff aria-hidden="true" />
-        {label ? <span>{label}</span> : null}
+        {label ? <span>{label === "Hold to talk" ? "Start voice" : label}</span> : null}
       </Button>
     );
   }

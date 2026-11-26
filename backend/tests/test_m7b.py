@@ -32,6 +32,10 @@ def test_f19_the_reason_is_named_from_the_error() -> None:
     assert fallback_reason(LLMUnavailable("x", network=True)) == "unreachable"
     assert fallback_reason(LLMError("bad json")) == "error"
     assert (
+        fallback_sentence("groq", "slow", "People & Ops")
+        == "Groq was slow and you chose Qwen, so People & Ops finished on Qwen on our server."
+    )
+    assert (
         fallback_sentence("groq", "rate_limit", "People & Ops")
         == "Groq hit its per-minute limit, so People & Ops finished on Qwen on our server."
     )
