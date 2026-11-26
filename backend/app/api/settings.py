@@ -150,9 +150,14 @@ def ai_model_in_use(settings: Settings) -> dict[str, Any] | None:
 
 
 def cloud_usable(settings: Settings) -> bool:
-    """A key that can be used: a verified AI model card key, or a `.env` provider key."""
+    """A key that can be used: a verified AI model card key, or a `.env` provider key while the card was never used.
+
+    Founder F4b: once the card has a choice (Qwen, or a removed key) the router no longer uses `.env` keys, so they
+    cannot make cloud work either."""
     if ai_model_in_use(settings) is not None:
         return True
+    if AIModelStore(settings.workspace_data_dir()).load() is not None:
+        return False
     return any(settings.provider_configured(p) for p in DeepProvider if p is not DeepProvider.OLLAMA)
 
 

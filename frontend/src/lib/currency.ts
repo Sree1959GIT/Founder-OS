@@ -27,3 +27,15 @@ export function moneyText(usd: number, symbol: string, rate: number): string {
   if (amount < 1) return `about ${symbol}${amount.toFixed(2)}`;
   return `about ${symbol}${Math.round(amount).toLocaleString("en")}`;
 }
+
+/** Founder F12b: no currency chosen yet. The backend sends `null` (not ""), so the silent save never ran before. */
+export function currencyMissing(value: string | null | undefined): boolean {
+  return !value;
+}
+
+/** Founder F12b: US dollars in small print, to 2 decimals, rounded half up ("US$0.29" for 0.2850, where toFixed says 0.28). */
+export function usdText(usd: number): string {
+  if (usd > 0 && usd < 0.005) return "less than US$0.01";
+  const cents = Math.round(Number((usd * 100).toPrecision(12)));
+  return "US$" + (cents / 100).toFixed(2);
+}

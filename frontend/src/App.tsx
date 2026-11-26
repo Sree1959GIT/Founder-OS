@@ -14,7 +14,7 @@ import { VaultPanel } from "@/components/panels/VaultPanel";
 import { useHealth } from "@/hooks/useHealth";
 import { useRoute } from "@/hooks/useRoute";
 import { fetchSettings, putSettings } from "@/lib/api";
-import { browserCurrency } from "@/lib/currency";
+import { browserCurrency, currencyMissing } from "@/lib/currency";
 import { LEFT, maxWidth, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
 import { WorkspaceProvider } from "@/lib/workspace";
 
@@ -84,11 +84,12 @@ export default function App() {
   const toggleAgents = useCallback(() => setAgentsOpen((open) => !open), []);
   const closeAgents = useCallback(() => setAgentsOpen(false), []);
   // Founder F12: until the member picks a currency in Settings, the browser's region decides (silently, once).
+  // Founder F12b: `member_currency` is null until chosen (the check for "" never matched, so prices stayed in US$).
   const ready = health.kind === "ready";
   useEffect(() => {
     if (!ready) return;
     fetchSettings()
-      .then((s) => (s.member_currency === "" ? putSettings({ member_currency: browserCurrency() }) : null))
+      .then((s) => (currencyMissing(s.member_currency) ? putSettings({ member_currency: browserCurrency() }) : null))
       .catch(() => undefined);
   }, [ready]);
   return (

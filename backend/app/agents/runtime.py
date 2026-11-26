@@ -589,6 +589,9 @@ class AgentRunner:
         self.slow_min_s = 15.0
         self.on_local = False
         self.slow_offered = False
+        # Founder F8b: when this agent's first cloud call started. The limit is for the agent as a whole: Groq answers
+        # each call in 2-3 s, so an 11 s agent of four calls never passed a 3 s limit on any single call.
+        self.cloud_started: float | None = None
 
     def _emit(self, type_: Any, agent_id: str, **data: Any) -> None:
         self.bus.emit(type_, self.run_id, agent_id, **data)
@@ -1072,6 +1075,11 @@ class AgentRunner:
         limit = self.slow_after_s if usual is None else min(self.slow_after_s, 2 * usual)
         return max(limit, self.slow_min_s), usual
 
+    def agent_slow_limit(self) -> float:
+        """Founder F8b: the seconds this agent may spend on cloud calls in all (CLOUD_SLOW_AFTER_S, never under
+        CLOUD_SLOW_MIN_S), counted from its first cloud call."""
+        return max(self.slow_after_s, self.slow_min_s)
+
     async def _complete(
         self, spec: AgentType, inst: AgentInstance, messages: list[Message], tools: list[ToolSpec] | None
     ) -> Completion:
@@ -1088,17 +1096,27 @@ class AgentRunner:
         task = asyncio.ensure_future(call)
         switch = asyncio.ensure_future(self.go_local.wait())
         started = time.perf_counter()
+        if self.cloud_started is None:
+            self.cloud_started = started
         reason = ""
         try:
             limit, usual = self.slow_limit(spec.name)
+            # This call may not pass its own limit, and the agent may not pass CLOUD_SLOW_AFTER_S in all its calls.
+            so_far = started - self.cloud_started
+            left = max(self.agent_slow_limit() - so_far, 0.0)
+            timeout = min(limit, left)
             done, _ = await asyncio.wait(
-                {task, switch}, timeout=None if self.slow_offered else limit, return_when=asyncio.FIRST_COMPLETED
+                {task, switch}, timeout=None if self.slow_offered else timeout, return_when=asyncio.FIRST_COMPLETED
             )
             if not done:
                 self.slow_offered = True
-                waited = time.perf_counter() - started
-                expected = f"it usually takes about {usual:.0f} s" if usual else f"expected under {limit:.0f} s"
-                reason = f"{where} has not answered in {waited:.0f} s ({expected})"
+                waited = time.perf_counter() - self.cloud_started
+                if left < limit and so_far > 0:  # several quick calls: not "has not answered", but "has taken"
+                    agent_limit = self.agent_slow_limit()
+                    reason = f"{where} has taken {waited:.0f} s so far (expected under {agent_limit:.0f} s)"
+                else:
+                    expected = f"it usually takes about {usual:.0f} s" if usual else f"expected under {limit:.0f} s"
+                    reason = f"{where} has not answered in {waited:.0f} s ({expected})"
                 self._emit("agent.step", inst.id, step=f"Slow: {reason}")
                 self._emit(
                     "agent.slow",
@@ -1639,6 +1657,28 @@ def _as_you_asked(model: Any) -> str:
         else:
             words.append(f"{item.name.lower()} of {model.money(item.base)}")
     return f", with {' and '.join(words)}, as you asked"
+
+
+def proposal_change_line(frame: DecisionFrame, before: str, now: str) -> str:
+    """Founder F13: one sentence, by code and without figures, on why the proposal moved from `before` to `now`
+    ("With Partner or distributor the runway effect is smaller, so I now propose Partner or distributor ...")."""
+    old = next((o for o in frame.options if o.name == before), None)
+    new = next((o for o in frame.options if o.name == now), None)
+    if old is None or new is None or old.name == new.name:
+        return ""
+    instead = f"so I now propose {new.name} instead of {old.name}."
+    both = old.modelled and new.modelled
+    if both and new.runway_change_months is not None and old.runway_change_months is not None:
+        if abs(new.runway_change_months) + 0.005 < abs(old.runway_change_months):
+            return f"With {new.name} the runway effect is smaller, {instead}"
+    elif both and new.runway_change_months is None and old.runway_change_months is not None:
+        return f"With {new.name} the runway does not run out in the model, {instead}"
+    if both and new.one_off + 12 * new.monthly < old.one_off + 12 * old.monthly:
+        return f"{new.name} costs less over a year, {instead}"
+    away = next((g.goal for g in frame.goals if g.status == "moves_away"), "")
+    if away and old.is_full and not new.is_full:
+        return f'{old.name} moves you away from your goal "{away}", {instead}'
+    return f"Weighing the options again, I now propose {new.name} instead of {old.name}."
 
 
 def _why_proposed(frame: DecisionFrame, proposed: OptionCost) -> str:

@@ -207,6 +207,10 @@ export interface ChatResult {
   assumptions_to_confirm: number;
   memo: MemoRef | null;
   est_cost_usd: number | null;
+  /** F12b: the cost in the member's currency ("about ₹26"; "free" on Qwen). Absent from older runs. */
+  cost_shown?: string;
+  /** F13: the option proposed before this answer, when the proposal changed. */
+  proposal_changed_from?: string;
   verified: boolean;
   /** The badge's state, with reasons that never name a removed figure. Absent from older runs. */
   verification?: VerificationView;
@@ -599,6 +603,7 @@ export type AIModelCode =
   | "wrong_key"
   | "no_credit"
   | "busy"
+  | "free_limit"
   | "server_error"
   | "unreachable"
   | "model_not_found"

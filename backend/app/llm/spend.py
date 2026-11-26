@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +151,14 @@ def money(usd: float, currency: str, rate: float) -> str:
     if amount < 10 and abs(amount - round(amount)) >= 0.05:
         return f"about {sign}{amount:.1f}"
     return f"about {sign}{amount:,.0f}"
+
+
+def usd_text(usd: float) -> str:
+    """Founder F12b: US dollars in small print, to 2 decimals ("US$0.29", never "US$0.2850")."""
+    if 0 < usd < 0.005:
+        return "less than US$0.01"
+    cents = Decimal(str(usd)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)  # 0.2850 -> 0.29, not 0.28
+    return f"US${cents}"
 
 
 def to_usd(amount: float, rate: float) -> float:
