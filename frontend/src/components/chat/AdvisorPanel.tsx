@@ -17,7 +17,7 @@ function Chip({ children, onClick, primary }: { children: string; onClick: () =>
       onClick={onClick}
       className={
         primary
-          ? "h-9 rounded-full bg-signal px-3 text-xs font-semibold text-[#1A1206] hover:bg-signal/90"
+          ? "h-9 rounded-full bg-signal px-3 text-xs font-semibold text-on-signal hover:bg-signal/90"
           : "h-9 rounded-full border border-border-strong bg-card px-3 text-xs text-foreground hover:bg-accent"
       }
     >
@@ -37,7 +37,7 @@ function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "adv
   }
   if (turn.role === "slow") {
     return (
-      <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="slow-cloud" role="status">
+      <div className="flex flex-col gap-2 rounded-xl border border-attention-border bg-attention p-3" data-testid="slow-cloud" role="status">
         <p className="text-[13px] text-foreground">{turn.text}</p>
         {turn.status === "offered" ? (
           <div className="flex flex-wrap gap-2">
@@ -56,7 +56,7 @@ function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "adv
   }
   if (turn.role === "amendment") {
     return (
-      <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="amendment">
+      <div className="flex flex-col gap-2 rounded-xl border border-attention-border bg-attention p-3" data-testid="amendment">
         <p className="text-[13px] text-foreground">{turn.offer ?? "That changes the decision. Restart with your change?"}</p>
         <p className="text-xs text-muted-foreground">{turn.text}</p>
         {turn.status === "offered" ? (
@@ -117,7 +117,7 @@ function AgentsButton({ onAgents, agentsOpen, compact }: { onAgents: () => void;
       <Workflow aria-hidden="true" className="h-3.5 w-3.5" />
       {compact ? null : "Agents"}
       {working > 0 ? (
-        <span className="num rounded-full bg-signal px-1.5 text-[10px] font-semibold leading-4 text-[#1A1206]" aria-label={`${working} working`}>
+        <span className="num rounded-full bg-signal px-1.5 text-[10px] font-semibold leading-4 text-on-signal" aria-label={`${working} working`}>
           {working}
         </span>
       ) : null}
@@ -237,7 +237,7 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
             return (
               <p
                 key={turn.id}
-                className="ml-6 self-end rounded-[12px_12px_4px_12px] bg-[#1F2A3A] px-3 py-2 text-[13.5px] leading-relaxed text-foreground"
+                className="ml-6 self-end rounded-[12px_12px_4px_12px] bg-bubble px-3 py-2 text-[13.5px] leading-relaxed text-foreground"
               >
                 {turn.text}
               </p>

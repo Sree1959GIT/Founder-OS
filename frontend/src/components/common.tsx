@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 type Tone = "amber" | "ok" | "info" | "neutral" | "danger";
 
 const TONES: Record<Tone, string> = {
-  amber: "border-[#4A3A1C] bg-[#2B2213] text-signal-soft",
+  amber: "border-attention-border bg-[#2B2213] text-signal-soft",
   ok: "border-[#1F5A45] bg-[#10261E] text-ok",
   info: "border-[#2E4A6E] bg-[#141E2C] text-info",
   neutral: "border-border-strong bg-card text-muted-foreground",
@@ -140,7 +140,7 @@ export function VerificationBadge({ verification }: { verification: Verification
               </span>
               <button
                 type="button"
-                className="mt-2.5 inline-flex h-8 items-center rounded-lg bg-signal px-3 text-xs font-semibold text-[#1A1206]"
+                className="mt-2.5 inline-flex h-8 items-center rounded-lg bg-signal px-3 text-xs font-semibold text-on-signal"
                 onClick={() => {
                   setOpen(false);
                   prefillAsk("My figures: ");
@@ -183,7 +183,7 @@ export const ASSUMPTION_LABEL = "assumption, confirm";
 
 export function AssumptionTag({ label = ASSUMPTION_LABEL }: { label?: string }) {
   return (
-    <span className="inline-flex items-center whitespace-nowrap rounded border border-dashed border-[#4A3A1C] px-1.5 py-0.5 text-[11px] font-medium text-signal-soft">
+    <span className="inline-flex items-center whitespace-nowrap rounded border border-dashed border-attention-border px-1.5 py-0.5 text-[11px] font-medium text-signal-soft">
       {label}
     </span>
   );

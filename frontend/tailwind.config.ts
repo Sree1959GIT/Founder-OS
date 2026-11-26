@@ -1,7 +1,7 @@
 import animate from "tailwindcss-animate";
 import type { Config } from "tailwindcss";
 
-// Design tokens ("Graphite & Signal") from docs/design/README.md, exposed as CSS variables in src/index.css.
+// M7b design tokens (docs/design/M7B_DESIGN_BRIEF.md), exposed as CSS variables in src/index.css.
 const token = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
 
 export default {
@@ -19,7 +19,7 @@ export default {
         panel: token("panel"),
         card: { DEFAULT: token("card"), foreground: token("text") },
         muted: { DEFAULT: token("card"), foreground: token("text-muted") },
-        primary: { DEFAULT: token("signal"), foreground: token("bg") },
+        primary: { DEFAULT: token("signal"), foreground: token("on-signal") },
         secondary: { DEFAULT: token("card"), foreground: token("text") },
         accent: { DEFAULT: token("card-hover"), foreground: token("text") },
         destructive: { DEFAULT: token("danger"), foreground: token("text") },
@@ -28,11 +28,16 @@ export default {
         ok: token("ok"),
         danger: token("danger"),
         paper: token("paper"),
+        ink: token("ink"),
+        "on-signal": token("on-signal"),
+        attention: { DEFAULT: token("attention"), border: token("attention-border") },
+        bubble: token("bubble-user"),
       },
       fontFamily: {
         sans: ['"Inter Variable"', "Inter", "system-ui", "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
-        serif: ['"Source Serif 4 Variable"', '"Source Serif 4"', "Georgia", "serif"],
+        serif: ['"Instrument Serif"', "Georgia", "serif"],
+        display: ['"Instrument Serif"', "Georgia", "serif"],
       },
       borderRadius: {
         sm: "6px",

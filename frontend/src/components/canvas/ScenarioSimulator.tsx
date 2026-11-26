@@ -310,7 +310,7 @@ export function ScenarioSimulator({ frame }: { frame: DecisionFrame | null }) {
                     step={lever.step}
                     value={value}
                     onChange={(e) => setLevers({ ...levers, [lever.key]: Number(e.target.value) })}
-                    className="h-6 w-full accent-[#F2A93B]"
+                    className="h-6 w-full accent-signal"
                   />
                 </div>
               );

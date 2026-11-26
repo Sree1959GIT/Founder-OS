@@ -248,7 +248,7 @@ export function DataPanel() {
             role="alertdialog"
             aria-label="This upload changes data you already have"
             data-testid="upload-warning"
-            className="mb-4 flex flex-col gap-3 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3.5 text-[13px]"
+            className="mb-4 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention p-3.5 text-[13px]"
           >
             <p className="font-semibold">{pending.file.name} would change data you already have. Nothing is written yet.</p>
             <ul className="flex flex-col gap-1">
@@ -317,7 +317,7 @@ export function DataPanel() {
           </div>
         ) : null}
         {failed ? (
-          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3.5">
+          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention p-3.5">
             <p className="text-[13px]">
               <span className="font-semibold">{failed.file.name}</span> did not load: {failed.reason}. Say what its columns are, and it loads with that mapping from now on.
             </p>

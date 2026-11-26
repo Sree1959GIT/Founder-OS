@@ -41,7 +41,7 @@ export function AgentRail({ width }: { width?: number } = {}) {
       {run?.awaitingApproval ? (
         <a
           href="#/activity"
-          className="rounded-lg border border-[#4A3A1C] bg-[#1A1610] p-2.5 text-[13px] text-signal-soft hover:no-underline"
+          className="rounded-lg border border-attention-border bg-attention p-2.5 text-[13px] text-signal-soft hover:no-underline"
         >
           The team needs your approval
         </a>

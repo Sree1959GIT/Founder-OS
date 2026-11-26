@@ -232,7 +232,7 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
       ) : null}
       {view.cloud_paused ? (
         <p
-          className="mb-3 rounded-lg border border-[#4A3A1C] bg-[#1A1610] px-3 py-2 text-xs"
+          className="mb-3 rounded-lg border border-attention-border bg-attention px-3 py-2 text-xs"
           role="status"
         >
           Paused: &quot;Allow cloud agents&quot; is off, so Qwen answers. Turn
@@ -433,7 +433,7 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
         ) : null}
         {notice ? (
           <p
-            className="rounded-lg border border-[#4A3A1C] bg-[#1A1610] px-3 py-2 text-xs text-signal"
+            className="rounded-lg border border-attention-border bg-attention px-3 py-2 text-xs text-signal"
             role="status"
             data-testid="ai-model-notice"
           >

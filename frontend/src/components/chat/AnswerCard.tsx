@@ -21,7 +21,7 @@ export function DecisionLead({ frame }: { frame: DecisionFrame }) {
   const fullOption = frame.options.find((o) => o.is_full);
   if (!proposed && !full) return null;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-[#4A3A1C] bg-[#1A1610] p-2.5 text-[13px]" data-testid="decision-lead">
+    <div className="flex flex-col gap-2 rounded-lg border border-attention-border bg-attention p-2.5 text-[13px]" data-testid="decision-lead">
       {proposed ? (
         <div>
           <p className="text-xs text-muted-foreground">Proposed</p>
@@ -34,7 +34,7 @@ export function DecisionLead({ frame }: { frame: DecisionFrame }) {
         </div>
       ) : null}
       {full && !proposed?.is_full ? (
-        <div className="border-t border-[#4A3A1C] pt-2">
+        <div className="border-t border-attention-border pt-2">
           <p className="text-xs text-muted-foreground">Full model{fullOption ? `: ${fullOption.name}` : ""}</p>
           <p className="num text-xs text-foreground">
             {money(full.one_off, frame.currency, 0)} one-off + {money(full.monthly, frame.currency, 0)} a month · runway{" "}
@@ -98,7 +98,7 @@ export function AnswerCard({ run }: { run: RunView }) {
       {run.awaitingApproval ? (
         <a
           href="#/activity"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-signal px-3 text-[13px] font-semibold text-[#1A1206] hover:no-underline"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-signal px-3 text-[13px] font-semibold text-on-signal hover:no-underline"
         >
           Review the team
         </a>

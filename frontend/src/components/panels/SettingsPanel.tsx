@@ -206,7 +206,7 @@ export function SettingsPanel() {
       {error ? <ErrorNote>{error}</ErrorNote> : null}
       {dirty ? (
         <div
-          className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3 text-[13px]"
+          className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-xl border border-attention-border bg-attention p-3 text-[13px]"
           data-testid="unsaved"
           role="status"
         >
@@ -274,7 +274,7 @@ export function SettingsPanel() {
                 disabled={!canAllow}
                 data-testid="cloud-allowed"
                 onChange={(e) => change({ cloud_allowed: e.target.checked })}
-                className="h-5 w-5 accent-[#F2A93B] disabled:opacity-50"
+                className="h-5 w-5 accent-signal disabled:opacity-50"
               />
             </label>
             {canAllow ? null : (

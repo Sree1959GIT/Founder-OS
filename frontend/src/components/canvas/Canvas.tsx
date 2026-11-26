@@ -83,7 +83,7 @@ function RiskList({ artifact }: { artifact: Artifact }) {
               <span
                 className={
                   high
-                    ? "rounded bg-signal px-1.5 py-0.5 text-[11px] font-semibold text-[#1A1206]"
+                    ? "rounded bg-signal px-1.5 py-0.5 text-[11px] font-semibold text-on-signal"
                     : "rounded bg-[#3A4150] px-1.5 py-0.5 text-[11px] font-semibold text-foreground"
                 }
               >

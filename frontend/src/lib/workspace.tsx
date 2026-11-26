@@ -42,6 +42,10 @@ export interface AgentView extends AgentInstance {
   provided: string;
   artifactIds: string[];
   checks: number;
+  /** Founder F8d: the slow-agent offer on the agent's own card ("" when none). */
+  slowReason?: string;
+  /** Founder F19: "Groq hit its per-minute limit, so People & Ops finished on Qwen on our server." ("" when not). */
+  fallback?: string;
 }
 
 export interface RunView {
@@ -142,7 +146,7 @@ const MAX_HELD = 2000;
 const RECOVER_WAIT_MS = 3000;
 const RECOVER_ATTEMPTS = 400; // 20 minutes: longer than any run
 
-const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered", "slow.offered", "spend"]);
+export const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered", "slow.offered", "spend"]);
 
 function emptyRun(id: string, message: string, at: string): RunView {
   return {
@@ -183,6 +187,8 @@ function agentFrom(instance: AgentInstance, at: string): AgentView {
     provided: instance.provider,
     artifactIds: [],
     checks: 0,
+    slowReason: "",
+    fallback: "",
   };
 }
 
@@ -269,6 +275,12 @@ function withRunEvent(run: RunView, event: AgentEvent): RunView {
           },
         };
       }
+      break;
+    case "agent.slow":
+      if (agent) next.agents = { ...next.agents, [agentId]: { ...agent, slowReason: (data.reason as string) || "slow" } };
+      break;
+    case "agent.fallback":
+      if (agent) next.agents = { ...next.agents, [agentId]: { ...agent, fallback: (data.text as string) || "", slowReason: "" } };
       break;
     case "run.progress":
       next.progress = (data.text as string) ?? next.progress;
@@ -501,7 +513,11 @@ interface WorkspaceApi {
 
 const Context = createContext<WorkspaceApi | null>(null);
 
-const EVENT_TYPES = [
+/**
+ * Every event type the page listens for on /api/events. An SSE frame with a named event reaches only a listener for
+ * that name, so a type missing here is dropped in the browser (founder F8d: the slow offer was sent, never shown).
+ */
+export const EVENT_TYPES = [
   "run.started",
   "team.proposed",
   "team.approved",
@@ -513,14 +529,12 @@ const EVENT_TYPES = [
   "agent.artifact",
   "agent.done",
   "agent.rerun",
+  "agent.slow",
+  "agent.fallback",
   "run.finished",
   "run.progress",
-  "narration",
-  "recap",
-  "amendment.offered",
-  "queue.added",
-  "queue.offered",
   "turn.classified",
+  ...LANE_EVENTS,
 ];
 
 async function recover(runId: string, send: Dispatch<Action>, giveUpAfterMisses = RECOVER_ATTEMPTS) {

@@ -57,7 +57,7 @@ function Proposal({ run, catalog }: { run: RunView; catalog: AgentCatalog | null
   };
 
   return (
-    <section className="rounded-2xl border border-[#4A3A1C] bg-[#1A1610] p-4" aria-label="Team approval" data-testid="team-approval">
+    <section className="rounded-2xl border border-attention-border bg-attention p-4" aria-label="Team approval" data-testid="team-approval">
       <div className="mb-3 flex items-start gap-2">
         <TriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-signal" />
         <div>
@@ -143,7 +143,7 @@ function Proposal({ run, catalog }: { run: RunView; catalog: AgentCatalog | null
           type="button"
           disabled={busy}
           onClick={() => void answer(true)}
-          className="h-11 rounded-lg bg-signal px-5 text-sm font-semibold text-[#1A1206] hover:bg-signal/90 disabled:opacity-50"
+          className="h-11 rounded-lg bg-signal px-5 text-sm font-semibold text-on-signal hover:bg-signal/90 disabled:opacity-50"
         >
           Approve and run
         </button>
