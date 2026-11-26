@@ -146,7 +146,7 @@ def test_a_running_qdrant_skips_compose_with_no_warning(name: str) -> None:
     assert "\r\n" in text and "\n" not in text.replace("\r\n", "")  # CRLF, or cmd loses its goto labels
 
 
-# --- F1 (M7a gate): run.bat runs ensure_secret.py on every start --------------------------------------------------------
+# --- F1 (M7a gate): run.bat runs ensure_secret.py on every start ------------------------------------------------------
 def _run_batch(text: str, failing: set[str]) -> list[str]:
     """A small cmd.exe control-flow model: `if [not] errorlevel|exist|defined ... (`, `) else (`, `)`, `goto :label`,
     `exit /b`. A command "fails" (errorlevel 1) when it contains one of `failing`; every other command succeeds.
@@ -265,7 +265,7 @@ def test_run_bat_runs_ensure_secret_once_on_every_path(failing: set[str]) -> Non
 def test_batch_model_sees_the_old_unreachable_line() -> None:
     """The model really follows `goto`: the M7a run.bat (line after `goto :preflight` in the block) never ran it."""
     old = (
-        '@echo off\r\ncurl.exe http://localhost:6333/readyz\r\nif not errorlevel 1 (\r\n  echo [OK] Qdrant\r\n'
+        "@echo off\r\ncurl.exe http://localhost:6333/readyz\r\nif not errorlevel 1 (\r\n  echo [OK] Qdrant\r\n"
         '  goto :preflight\r\n".venv\\Scripts\\python.exe" scripts\\ensure_secret.py\r\n)\r\nwhere docker\r\n'
         ':preflight\r\n".venv\\Scripts\\python.exe" scripts\\preflight.py\r\nexit /b 0\r\n'
     )

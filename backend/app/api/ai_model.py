@@ -242,7 +242,7 @@ async def _try_models(
             break
         provider = build_provider(preset, model, key, base_url=base_url, timeout_s=timeout, max_tokens=limit)
         try:
-            await probe_key(provider, max(left, 0.01) if index else timeout)
+            await probe_key(provider, max(left, 1.0))  # the list and every try share the 15 s
             return model, None
         except (LLMError, TimeoutError) as exc:
             code, message = explain_failure(exc, preset.label, model, timeout)
