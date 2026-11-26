@@ -89,6 +89,18 @@
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   backdrop-filter: blur(18px) saturate(140%);
 }
+/* The frosted header: glass, but solid enough that its text reads over anything scrolled beneath it. */
+.glass-header {
+  background: hsl(var(--panel) / 0.86);
+  border-bottom: 1px solid hsl(var(--glass) / 0.12);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+html[data-lite="1"] .glass-header {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: hsl(var(--panel));
+}
 .glow {
   position: absolute;
   border-radius: 9999px;

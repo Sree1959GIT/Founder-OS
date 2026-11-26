@@ -17,7 +17,7 @@ const KPI_TITLES: Record<string, string> = {
   gross_margin: "Gross margin",
 };
 
-function KpiRow({ refreshKey }: { refreshKey: string }) {
+export function KpiRow({ refreshKey }: { refreshKey: string }) {
   const [metrics, setMetrics] = useState<MetricResult[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
@@ -139,6 +139,21 @@ function Findings({ run }: { run: RunView }) {
       {agents.map((agent) => (
         <FindingCard key={agent.agent_id} agent={agent} />
       ))}
+    </div>
+  );
+}
+
+/** The decision's cards (numbers, frame, scenario chart, findings). In the Boardroom (`bare`) the table above them
+ * shows the question, so they carry no title of their own. */
+export function CanvasCards() {
+  const { currentRun, decisionRun, state } = useWorkspace();
+  const run = decisionRun ?? currentRun;
+  return (
+    <div className="flex flex-col gap-4" data-testid="canvas-cards">
+      <KpiRow refreshKey={run?.status ?? "none"} />
+      {run?.frame ? <DecisionFrameCard frame={proposedFrame(run.frame, runsAfter(run, Object.values(state.runs)))} /> : null}
+      <ScenarioSimulator frame={run?.frame ?? null} />
+      {run ? <Findings run={run} /> : null}
     </div>
   );
 }

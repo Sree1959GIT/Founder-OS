@@ -145,8 +145,11 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
   const current = state.currentRunId ? state.runs[state.currentRunId] : undefined;
   const progress = current && (current.status === "running" || current.status === "done") ? (current.progress ?? "") : "";
 
+  // Scrolls the conversation only, never the page (M7b phone: the page jumped to the answer, away from the table).
+  const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: "end" });
+    const el = list.current;
+    if (el && el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
   }, [state.turns.length, lastAnswerLength, progress]);
 
   const submit = (e: FormEvent) => {
@@ -217,7 +220,7 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-2" aria-live="polite" aria-relevant="additions">
+      <div ref={list} className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-2" aria-live="polite" aria-relevant="additions">
         {state.turns.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center gap-3">
             <p className="leading-relaxed text-muted-foreground">
