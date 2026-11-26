@@ -550,12 +550,20 @@ export interface AIModelView {
     key_masked: string;
     verified_at: string | null;
     unreadable: boolean;
+    /** F3: the text/chat models this key could use at its test, best first (fills "Change model"). */
+    models: AIModelOption[];
   } | null;
   cloud_paused: boolean;
   secret_ready: boolean;
   secret_problem: string | null;
   test_timeout_s: number;
+  /** F3: key prefixes → preset id, most specific first ("sk-ant-" before "sk-"). */
+  key_shapes: { prefix: string; preset: string }[];
   presets: AIModelPreset[];
+}
+export interface AIModelOption {
+  id: string;
+  label: string;
 }
 export type AIModelCode =
   | "ok"
@@ -567,11 +575,14 @@ export type AIModelCode =
   | "bad_url"
   | "missing"
   | "no_secret"
+  | "unknown_provider"
   | "other";
 export interface AIModelTestResult {
   ok: boolean;
   code: AIModelCode;
   message: string;
+  /** The preset the key was tested with (found from the key's shape when none was picked). */
+  preset?: string;
   view: AIModelView;
 }
 export const fetchAIModel = () => request<AIModelView>("/api/settings/ai-model");

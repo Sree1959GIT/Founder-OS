@@ -25,6 +25,16 @@ const presets = [
     key_hint: "console.anthropic.com",
   },
   {
+    id: "gemini",
+    label: "Gemini",
+    title: "Gemini (Google AI Studio key)",
+    needs_key: true,
+    custom_base_url: false,
+    base_url: "https://generativelanguage.googleapis.com",
+    default_model: "gemini-3.8-flash",
+    key_hint: "aistudio.google.com",
+  },
+  {
     id: "custom",
     label: "Custom",
     title: "Custom (any OpenAI-compatible server)",
@@ -48,6 +58,14 @@ const local: AIModelView = {
   secret_ready: true,
   secret_problem: null,
   test_timeout_s: 15,
+  key_shapes: [
+    { prefix: "sk-ant-", preset: "claude" },
+    { prefix: "sk-or-", preset: "openrouter" },
+    { prefix: "gsk_", preset: "groq" },
+    { prefix: "AIza", preset: "gemini" },
+    { prefix: "sk-proj-", preset: "openai" },
+    { prefix: "sk-", preset: "openai" },
+  ],
   presets,
 };
 const verified: AIModelView = {
@@ -67,6 +85,10 @@ const verified: AIModelView = {
     key_masked: "••••9f3c",
     verified_at: "2026-11-22T16:00:00Z",
     unreadable: false,
+    models: [
+      { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" },
+      { id: "claude-haiku-5-5", label: "Claude Haiku 5.5" },
+    ],
   },
 };
 
@@ -86,7 +108,7 @@ vi.mock("@/lib/api", () => ({
 
 const { AIModelCard } = await import("@/components/panels/AIModelCard");
 
-describe("AI model card (M7a)", () => {
+describe("AI model card (M7a, key-only setup F2/F3)", () => {
   beforeEach(() => {
     initial = local;
     testAIModel.mockReset();
@@ -115,28 +137,24 @@ describe("AI model card (M7a)", () => {
       ok: false,
       code: "wrong_key",
       message: "Wrong key: Claude did not accept it.",
+      preset: "claude",
       view: local,
     });
     const onChanged = vi.fn();
     render(<AIModelCard onChanged={onChanged} />);
-    fireEvent.change(await screen.findByLabelText("Model provider"), {
-      target: { value: "claude" },
-    });
-    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe(
-      "claude-sonnet-5-5",
-    );
-    expect(screen.getByLabelText("Server address")).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/API key/), {
+    fireEvent.change(await screen.findByLabelText(/API key/), {
       target: { value: "sk-ant-xyz" },
     });
+    expect(screen.queryByLabelText("Model")).not.toBeInTheDocument(); // F3: no free-text model box
+    expect(screen.queryByLabelText("Server address")).not.toBeInTheDocument(); // F3: Advanced is Custom only
     fireEvent.click(screen.getByRole("button", { name: "Test key" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Wrong key: Claude did not accept it.",
     );
     expect(testAIModel).toHaveBeenCalledWith({
       preset: "claude",
-      model: "claude-sonnet-5-5",
-      base_url: "https://api.anthropic.com",
+      model: "",
+      base_url: "",
       api_key: "sk-ant-xyz",
     });
     expect(screen.getByTestId("ai-model-card")).toHaveAttribute(
@@ -145,34 +163,95 @@ describe("AI model card (M7a)", () => {
     );
   });
 
-  it("turns green with the chip when the test passes, and clears the key box", async () => {
+  it("F3: the provider is found from the key's shape; the list still overrides it", async () => {
+    render(<AIModelCard />);
+    const key = await screen.findByLabelText(/API key/);
+    const provider = screen.getByLabelText(
+      "Model provider",
+    ) as HTMLSelectElement;
+    fireEvent.change(key, { target: { value: "AIzaSyFAKE000" } });
+    expect(provider.value).toBe("gemini");
+    expect(screen.getByTestId("ai-key-hint")).toHaveTextContent(
+      "Looks like a Gemini key",
+    );
+    fireEvent.change(key, { target: { value: "sk-ant-api03-FAKE" } });
+    expect(provider.value).toBe("claude");
+    fireEvent.change(provider, { target: { value: "custom" } }); // manual override
+    fireEvent.change(key, { target: { value: "AIzaSyOTHER" } });
+    expect(provider.value).toBe("custom");
+    expect(screen.getByLabelText("Server address")).not.toBeDisabled();
+  });
+
+  it("F3: an unknown key shape on Qwen asks the backend, which says to pick the provider", async () => {
+    testAIModel.mockResolvedValue({
+      ok: false,
+      code: "unknown_provider",
+      message: "FounderOS can't tell which provider this key is for.",
+      view: local,
+    });
+    render(<AIModelCard />);
+    fireEvent.change(await screen.findByLabelText(/API key/), {
+      target: { value: "0123.ollama" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test key" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "can't tell which provider",
+    );
+    expect(testAIModel).toHaveBeenCalledWith({
+      preset: "",
+      model: "",
+      base_url: "",
+      api_key: "0123.ollama",
+    });
+  });
+
+  it("F2: the key box is masked but is not a password field, outside any form", async () => {
+    const { container } = render(<AIModelCard />);
+    const key = (await screen.findByLabelText(/API key/)) as HTMLInputElement;
+    expect(key.type).toBe("text");
+    expect(key).toHaveClass("secret-field");
+    expect(key).toHaveAttribute("autocomplete", "off");
+    expect(key).toHaveAttribute("data-lpignore", "true");
+    expect(key).toHaveAttribute("data-1p-ignore", "true");
+    expect(key.name).not.toMatch(/pass/i);
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    fireEvent.change(key, { target: { value: "sk-ant-api03-FAKE" } });
+    expect(key.type).toBe("text"); // still not a password field once it holds a key
+    for (const button of screen.getAllByRole("button"))
+      expect(button).toHaveAttribute("type", "button");
+  });
+
+  it("F3: Change model offers the key's models and re-tests with the saved key", async () => {
+    initial = verified;
     testAIModel.mockResolvedValue({
       ok: true,
       code: "ok",
-      message: "Claude · claude-sonnet-5-5 · key verified",
-      view: verified,
+      message: "Claude · claude-haiku-5-5 · key verified",
+      preset: "claude",
+      view: {
+        ...verified,
+        in_use: { ...verified.in_use, model: "claude-haiku-5-5" },
+      },
     });
-    const onChanged = vi.fn();
-    render(<AIModelCard onChanged={onChanged} />);
-    fireEvent.change(await screen.findByLabelText("Model provider"), {
-      target: { value: "claude" },
-    });
-    fireEvent.change(screen.getByLabelText(/API key/), {
-      target: { value: "sk-ant-xyz" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Test key" }));
+    render(<AIModelCard />);
+    const change = (await screen.findByLabelText(
+      "Change model (optional)",
+    )) as HTMLSelectElement;
+    expect(Array.from(change.options).map((o) => o.value)).toEqual([
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+    ]);
+    fireEvent.change(change, { target: { value: "claude-haiku-5-5" } });
     expect(await screen.findByTestId("ai-model-verified")).toHaveTextContent(
-      "Claude · claude-sonnet-5-5 · key verified",
+      "Claude · claude-haiku-5-5 · key verified",
     );
-    expect(screen.getByTestId("ai-model-card")).toHaveAttribute(
-      "data-state",
-      "verified",
-    );
-    expect((screen.getByLabelText(/API key/) as HTMLInputElement).value).toBe(
-      "",
-    );
-    expect(screen.getByTestId("ai-model-saved")).toHaveTextContent("••••9f3c");
-    expect(onChanged).toHaveBeenCalled();
+    expect(testAIModel).toHaveBeenCalledWith({
+      preset: "claude",
+      model: "claude-haiku-5-5",
+      base_url: "",
+      api_key: "",
+    });
   });
 
   it("Remove key goes back to Qwen", async () => {
@@ -184,11 +263,32 @@ describe("AI model card (M7a)", () => {
     expect(screen.queryByText(/••••/)).not.toBeInTheDocument();
   });
 
-  it("Custom lets the member type the server address", async () => {
+  it("Custom shows Advanced with the server address and an optional model name", async () => {
+    testAIModel.mockResolvedValue({
+      ok: false,
+      code: "bad_url",
+      message: "Enter the server's full address",
+      view: local,
+    });
     render(<AIModelCard />);
     fireEvent.change(await screen.findByLabelText("Model provider"), {
       target: { value: "custom" },
     });
-    expect(screen.getByLabelText("Server address")).not.toBeDisabled();
+    expect(screen.getByText("Advanced")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Server address"), {
+      target: { value: "https://llm.example.com/v1" },
+    });
+    fireEvent.change(screen.getByLabelText(/API key/), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test key" }));
+    await waitFor(() =>
+      expect(testAIModel).toHaveBeenCalledWith({
+        preset: "custom",
+        model: "",
+        base_url: "https://llm.example.com/v1",
+        api_key: "abc123",
+      }),
+    );
   });
 });
