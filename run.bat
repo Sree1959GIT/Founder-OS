@@ -33,8 +33,6 @@ curl.exe -s -f -m 3 http://localhost:6333/readyz >nul 2>nul
 if not errorlevel 1 (
   echo [OK] Qdrant already running on port 6333.
   goto :preflight
-rem --- M7a: the server secret for saved API keys (made once in .env when missing, never printed) ----------------------
-".venv\Scripts\python.exe" scripts\ensure_secret.py
 )
 where docker >nul 2>nul
 if errorlevel 1 (
@@ -50,6 +48,9 @@ docker compose up -d qdrant >nul 2>nul
 if errorlevel 1 echo [WARN] The Qdrant container did not start ^(docker compose up -d qdrant^). Search runs in memory.
 
 :preflight
+rem --- M7a: the server secret for saved API keys (made once in .env when missing, never printed) ----------------------
+rem Founder F1: at :preflight, so every path (Qdrant running, started, or no Docker) runs it once on every start.
+".venv\Scripts\python.exe" scripts\ensure_secret.py
 rem --- What is there: Ollama at OLLAMA_BASE_URL, Qdrant, voice models (never stops the start) -----------------------
 ".venv\Scripts\python.exe" scripts\preflight.py
 
