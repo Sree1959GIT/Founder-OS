@@ -5,9 +5,9 @@
 
 ## Quick status
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
-- **Next milestone:** **M7b: Decision Room UI redesign** (Major), once the founder has re-tested the M7a fix round 4 (AM-S1–AM-S8 below: F7c, F8c, F13b, F14–F17) and merged its PR. Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
+- **Next milestone:** **M7b: Decision Room UI redesign** (Major), to the founder's locked brief `docs/design/M7B_DESIGN_BRIEF.md`, including F8d, F19, F9 and F18 (Founder feedback, top) and the AM-S5/AM-S8 re-test. Fix round 4 (PR #16) is merged. Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-26 (M7a fix round 4: F7c, F8c, F13b, F14–F17)
+- **Last updated:** 2026-11-26 (PR #16 re-test recorded; M7b brief saved)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -81,7 +81,7 @@
 | M7a AI model settings | [Sree1959GIT/Founder-OS#13](https://github.com/Sree1959GIT/Founder-OS/pull/13) | Medium | ACCEPTED (SM, merged 2026-11-26), Medium: AM1–AM7 pass, AM8 partly (Advanced and the address check pass; Wi-Fi fallback, Use Qwen and Remove key to re-test), AM9 CI green. New findings F4–F8, F12 fixed in the fix round 2 PR below. History: founder run 2026-11-22: AM1–AM4 pass (AM1 only with `ensure_secret.py` run by hand); F1 run.bat, F2 Edge offers to save the key, F3 key-only setup (fixed 2026-11-26) |
 | M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | ACCEPTED (SM, merged after the re-test of 2026-11-26 in Edge): F4 pass, F5 pass (AQ. detected, unknown-key message, re-detect on Qwen), F6 pass, F7 pass for 429, F12 pass in Settings and the memo ("about ₹26: Groq 9 calls"), **F8 fail** (now F8b). The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`). New findings F4b, F7b, F8b, F12b, F13 fixed in fix round 3 below |
 | M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | [Sree1959GIT/Founder-OS#15](https://github.com/Sree1959GIT/Founder-OS/pull/15) | Light | MERGED; re-test 2026-11-26 (main, Edge, Groq key): AM-R2 pass; AM-R3 Groq pass, **Gemini fail** (now F7c); **AM-R4 fail** (now F8c); AM-R5 pass (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"); **AM-R6 fail** (now F13b). Voice stopping when Activity opens is F9 (M7b). New findings F14–F17 fixed in fix round 4 below |
-| M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | AWAITING FOUNDER: re-test AM-S1–AM-S8 |
+| M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | MERGED; re-test 2026-11-26: AM-S1, AM-S4, AM-S6, AM-S7 pass; **AM-S3 partly**: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" but no offer appears on screen (now F8d, M7b); AM-S5 and AM-S8 to re-test in M7b |
 
 ## Current session
 - Started (UTC): 2026-11-26 09:25 (cloud session, **M7a fix round 4: F7c, F8c, F13b, F14–F17**, Light gate (bug-fix PR), time-box 60 minutes), branch `claude/bold-tesla-cibyyq` from `origin/main` (6d8c1b2, PR #15 merged).
@@ -1570,6 +1570,14 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M7a] Fix round 4 re-test 2026-11-26 (PR #16 merged): AM-S1, AM-S4, AM-S6, AM-S7 PASS; AM-S3 partly; AM-S5, AM-S8 to re-test in M7b. F8d, F19, F9, F18 OPEN, to fix in M7b
+Design brief for M7b (locked by the founder): `docs/design/M7B_DESIGN_BRIEF.md`.
+**To fix (M7b, in the new screens):**
+- **F8d.** The slow-agent offer is sent by the backend but never shown: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" and nothing appears on screen. Show it in the Advisor panel and on the agent's card, with "Continue on Qwen on our server" / "Keep waiting".
+- **F19.** A 429 fallback is silent: Groq's free 8,000 tokens a minute ran out mid-run, agents finished on Qwen while the cards still said "Cloud · groq · Verified". Show it: "Groq hit its per-minute limit, so People & Ops finished on Qwen on our server". Count only real cloud calls in the spend report.
+- **F9.** Voice (the Advisor, the mic, speech and its context) lives outside the pages. Changing pages never starts, stops or resets it.
+- **F18.** Memo page: a "Latest" badge with date and time; earlier versions listed under ONE memo per open decision (no more "-2.md" files); Close / Back to the decision; "Regenerate memo" and "Ask the team about this" on the memo itself.
+
 ### [M7a] Fix round 3 re-test 2026-11-26 (main, Edge, Groq key; PR #15 merged): AM-R2, AM-R3 (Groq), AM-R5 PASS; AM-R3 (Gemini), AM-R4, AM-R6 FAIL; F7c, F8c, F13b, F14–F17 RESOLVED on `claude/bold-tesla-cibyyq` (fix round 4), awaiting re-test AM-S1–AM-S8
 **Passed:** AM-R2; AM-R3 with Groq; AM-R5 (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"). **Failed:** AM-R3 with Gemini, AM-R4, AM-R6. Voice stopping when Activity opens is F9 (M7b).
 **To fix (this round):**

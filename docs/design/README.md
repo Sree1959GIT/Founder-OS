@@ -1,6 +1,8 @@
 # FounderOS UI design (Claude Design)
 
 - **Live canvas (private to the founder):** https://claude.ai/artifact/W51rFuAt5xn7LGr3b8JWv4
+
+> **M7b replaces this look.** The founder's locked brief (22 Nov 2026) is `M7B_DESIGN_BRIEF.md`; it wins over the "Graphite & Signal" tokens below.
 - **Source snapshots:** `mockups/*.dc.html`. These are reference only. Re-sync them if the founder edits the canvas,
   because the live canvas wins over the snapshots.
 
