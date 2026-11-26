@@ -8,6 +8,7 @@ import { PriorityMatrix } from "@/components/memo/PriorityMatrix";
 import { Button } from "@/components/ui/button";
 import { fetchMemoVersion, fetchMemoVersions, fetchNote, fetchNotes, saveNote, type MemoVersion, type VaultNote, type VaultNoteInfo } from "@/lib/api";
 import { memoWhen, metricValue, prefillAsk, stripFrontmatter, syncTitle, withoutWikilinks } from "@/lib/format";
+import { canGoBackInApp } from "@/hooks/useRoute";
 import { useWorkspace } from "@/lib/workspace";
 
 /** Markdown exactly as it is stored, frontmatter included, so it opens the same in Obsidian. */
@@ -26,8 +27,9 @@ function askTeam(title: string): void {
   window.setTimeout(() => prefillAsk(`About the memo "${title}": `), 80);
 }
 
+/** Back where the member came from inside FounderOS; never out of the app (a bookmark opened in a used tab). */
 function closeMemo(): void {
-  if (window.history.length > 1) window.history.back();
+  if (canGoBackInApp()) window.history.back();
   else window.location.hash = "#/";
 }
 

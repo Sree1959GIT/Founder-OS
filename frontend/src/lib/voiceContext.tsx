@@ -44,7 +44,10 @@ const Context = createContext<VoiceApi | null>(null);
 
 /** A friendly line for a blocked microphone (the brief: HTTPS and permission are needed, on phones above all). */
 export function micProblem(message: string, secure: boolean = window.isSecureContext): string {
-  if (!secure) return "The microphone needs a secure (https) address. Open FounderOS on this PC, or use typing for now.";
+  const aboutMic = /mic|getusermedia|mediadevices|notallowed|permission|audio input|undefined is not an object/i.test(message);
+  if (!secure && aboutMic) {
+    return "The microphone needs a secure (https) address. Open FounderOS on this PC, or use typing for now.";
+  }
   if (/denied|notallowed|permission/i.test(message)) {
     return "The microphone is blocked. Allow it in the browser's site settings (the lock icon), then try again.";
   }

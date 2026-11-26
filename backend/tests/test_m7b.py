@@ -130,3 +130,37 @@ def test_f18_a_new_memo_for_the_same_decision_replaces_it_and_keeps_the_old_one(
     assert got.status_code == 200 and got.json()["frontmatter"]["proposed_option"] == draft.chosen
     assert client.get("/api/memos/versions", params={"path": "notes/x.md"}).status_code == 400
     assert client.get("/api/memos/versions/../../x", params={"path": second.path}).status_code in (400, 404)
+
+
+def test_f18_a_rewritten_memo_replaces_its_open_predictions(tmp_path: Any) -> None:
+    from types import SimpleNamespace
+
+    from app.agents.specialists import MemoDraft, write_memo
+    from app.engine.calibration import CalibrationStore
+    from tests.test_m7a_fix_round3 import _frame
+    from tests.test_specialists import GOOD_MEMO
+
+    ctx = _memo_ctx(tmp_path)
+    ctx.finance = SimpleNamespace(calibration=CalibrationStore(tmp_path / "cal"))
+    draft = MemoDraft.model_validate(GOOD_MEMO)
+    first, _ = write_memo(ctx, draft, [], verified=True, agent_id="m1", frame=_frame())
+    once = [p for p in ctx.finance.calibration.list() if p.decision == first.path]
+    assert once
+    ctx.finance.calibration.resolve(once[0].id, True)  # a scored prediction stays
+    write_memo(ctx, draft, [], verified=True, agent_id="m2", frame=_frame())
+    after = [p for p in ctx.finance.calibration.list() if p.decision == first.path]
+    assert len(after) == len(once) + 1  # the resolved one, plus the new memo's open ones
+    assert sum(p.outcome is not None for p in after) == 1
+
+
+async def test_f19_the_memo_writer_says_its_switch_too() -> None:
+    from app.agents.specialists import MemoDraft  # noqa: F401  (the memo schema the draft uses)
+
+    bus = EventBus()
+    router = LLMRouter(FakeProvider(["{}"]), LimitedCloud(), cloud_allowed=True)
+    runner = AgentRunner(router, bus, "run_memo", lambda _aid: None)  # type: ignore[arg-type,return-value]
+    inst = AgentInstance(type="memo_writer", name="Memo Writer", brief="b", is_cloud=True, provider="groq")
+    result = AgentResult(agent_id=inst.id, type="memo_writer", name=inst.name, brief="b")
+    await runner._draft_memo(REGISTRY["memo_writer"], [Message.user("q")], "q", result, inst=inst)
+    said = [e for e in bus.history("run_memo") if e.type == "agent.fallback"]
+    assert len(said) == 1 and said[0].data["text"].endswith("so Memo Writer finished on Qwen on our server.")

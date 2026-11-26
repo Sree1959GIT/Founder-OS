@@ -1019,6 +1019,7 @@ def write_memo(
     frontmatter["written_at"] = now.isoformat(timespec="minutes")
     base = f"decisions/{today.isoformat()}-{memo_slug(draft.title)}"
     written = _replace_decision_memo(ctx, key, frontmatter, body, now)
+    replaced = bool(written)
     for attempt in range(1, 100):
         if written:
             break
@@ -1042,6 +1043,8 @@ def write_memo(
         )
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         logger.warning("The decision could not be added to the Prioritisation Matrix: {}", exc)
+    if ctx.finance is not None and replaced:
+        ctx.finance.calibration.drop_pending(written)  # F18: the rewritten memo's predictions replace its open ones
     if ctx.finance is not None:
         # A starter is arithmetic on the cost model, not a forecast anyone made, so it is not scored.
         for prediction in [p for p in draft.predictions if not p.starter]:

@@ -27,6 +27,6 @@ test("turns are accepted while the first question is planning and while it waits
   // The same question again, in other case and spacing: still one card.
   await ask.fill("what is our  RUNWAY?");
   await ask.press("Enter");
-  await expect(page.getByText("That question is already queued.")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("complementary", { name: "Executive Advisor", exact: true }).getByText("That question is already queued.")).toBeVisible({ timeout: 10_000 });
   await expect(queued).toHaveCount(2);
 });

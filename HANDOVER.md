@@ -88,15 +88,19 @@
 - Plan:
   - [x] F19 backend: the router names why a cloud call fell back (`fallback_reason`); one `agent.fallback` event per agent, said by the Advisor; only answered cloud calls are counted
   - [x] F18 backend: one memo per open decision (rewritten in place), earlier versions kept outside the vault, `/api/memos/versions`
-  - [ ] F8d: the page subscribes to `slow.offered`, `agent.slow`, `agent.fallback`, `spend`; the offer on the agent's card too
-  - [ ] Tokens and fonts (Instrument Serif, Inter, JetBrains Mono via @fontsource; cream/ink/tomato and navy glass; Lite mode)
-  - [ ] Welcome screen
-  - [ ] Boardroom (faces, table, options panel, caption bar)
-  - [ ] F9 voice outside the pages; F18 memo page; other pages restyled; model card polish
-  - [ ] Phone layout at 390 px; Playwright screenshots 1440 / 390
-  - [ ] Checks, self-review, HANDOVER, PR, CI
+  - [x] F8d: the page subscribes to `slow.offered`, `agent.slow`, `agent.fallback`, `spend`; the offer on the agent's card too
+  - [x] Tokens and fonts (Instrument Serif, Inter, JetBrains Mono via @fontsource; cream/ink/tomato and navy glass; Lite mode)
+  - [x] Welcome screen
+  - [x] Boardroom (faces, table, options panel, caption bar)
+  - [x] F9 voice outside the pages; F18 memo page; other pages restyled; model card polish
+  - [x] Phone layout at 390 px; Playwright screenshots 1440 / 390
+  - [x] Checks, self-review, HANDOVER, PR, CI
 - Progress log:
   - 10:42 F19 and F18 backend done with tests (`backend/tests/test_m7b.py`); F8d cause found: `EVENT_TYPES` in `frontend/src/lib/workspace.tsx` never listened for `slow.offered`, so the offer was dropped in the browser.
+  - 10:47 Part 1 pushed: tokens, fonts, Lite mode, F8d listener fix.
+  - 10:54 Parts 2-3 pushed: Welcome, Boardroom, phone stage and bar, F9 voice provider.
+  - 11:00 F8d/F19 on the agent's card, F18 memo page, model card polish, Settings Lite toggle and rates credit.
+  - 11:10 Self-review (/code-review, medium): 4 of 5 findings fixed (Memo Writer fallback said, Close stays in the app, a rewritten memo replaces its open predictions, the https message only for mic errors); Accept's wording left to the Windows check (MB2). e2e specs updated; screenshots in `docs/design/screens/m7b/`.
 
 ### Previous session (M7a fix round 4)
 - Started (UTC): 2026-11-26 09:25 (cloud session, **M7a fix round 4: F7c, F8c, F13b, F14–F17**, Light gate (bug-fix PR), time-box 60 minutes), branch `claude/bold-tesla-cibyyq` from `origin/main` (6d8c1b2, PR #15 merged).
@@ -1003,7 +1007,7 @@ Earlier next steps (after the M6 gate fix round, 2026-11-19):
 ## Windows verification checklist (for the founder)
 **M7b Decision Room redesign (Major gate), about 40 minutes. Run this one first: MB1 to MB12.** Windows PowerShell 5.1, Ollama in Docker, Edge; a free Groq key; a phone on the same Wi-Fi for MB11–MB12. `git fetch; git checkout claude/serene-knuth-si17hr; git pull; .\setup.bat` (new npm packages: Instrument Serif), then `.\run.bat`. Write the results in the Gate log.
 - **MB1. Welcome.** Open http://127.0.0.1:5173 in a new InPrivate window. **Expect** the cream page: "Ask a hard question. Six AI advisors argue it out. You decide.", the sub-line, "What are you deciding?" with a mic and Call the team, 3 example chips, Quick/Thorough, How it works (1 2 3), Meet your team (7 faces, Devil's Advocate with horns), the key chip top right, and Your numbers today with lineage chips. No request to fonts.googleapis.com in DevTools → Network.
-- **MB2. Boardroom.** Type "Should we open a Dubai office?" and press Call the team. **Expect** the navy Boardroom: the oval glass table with "Dubai office", the Advisor at the top and the proposed team around it with "needs your OK" (approval Always) or working; Options so far on the right with the leading option in orange, figures in mono, Accept / Ask more / Reject and, after the run, "N sources · N checks". The LIVE bar at the bottom shows the Advisor's last line.
+- **MB2. Boardroom.** Type "Should we open a Dubai office?" and press Call the team. **Expect** the navy Boardroom: the oval glass table with "Dubai office", the Advisor at the top and the proposed team around it with "needs your OK" (approval Always) or working; Options so far on the right with the leading option in orange, figures in mono, Accept / Ask more / Reject and, after the run, "N sources · N checks". The LIVE bar at the bottom shows the Advisor's last line. After the run press **Accept** on the leading option: **expect** the Advisor writes the memo for that option (not a new team for a new question; if a new team is proposed, write that in the Gate log). Reject strikes the option through (Undo brings it back); Ask more starts "Tell me more about …" in the Advisor box.
 - **MB3. The speaking face.** Approve the team. **Expect** the working agent's face glows orange and blinks; under each face done ✓ / thinking… / next. The decision frame, cost model, goal check, scenario chart and findings are below the table as before.
 - **MB4 (F8d). The slow offer, at last on screen.** Close FounderOS; in PowerShell `$env:CLOUD_SLOW_AFTER_S="3"; $env:CLOUD_SLOW_MIN_S="0"; .\run.bat`. With Groq verified, ask the Dubai question and approve. **Expect** when the backend logs `Slow check: People & Ops … -> offer sent`: in the Advisor panel and on People & Ops's card (Activity, and the agent window) "Taking longer than usual…" with **Continue on Qwen on our server** / **Keep waiting**; its face says "slow". Press Continue on Qwen: both offers close, the agent finishes on Qwen. Start normally afterwards.
 - **MB5 (F19). A 429 is said.** With the free Groq key, ask two decisions back to back (or a Thorough one) until Groq's 8,000 tokens a minute run out. **Expect** "Groq hit its per-minute limit, so <agent> finished on Qwen on our server." in the Advisor panel, the card badge "Switched to Qwen" (not "Cloud · groq"), "switched to Qwen" under the face, and the spend line counting only Groq's answered calls.

@@ -832,7 +832,9 @@ class AgentRunner:
         """The model drafts as JSON, the Verifier checks the prose (one repair turn), and code writes the file."""
         evidence = self._evidence(inst, user_message, [result, *upstream])
         dropped = [v for r in upstream for v in r.removed_figures]
-        draft = await self._draft_memo(spec, messages, user_message, result, evidence=evidence, dropped=dropped)
+        draft = await self._draft_memo(
+            spec, messages, user_message, result, evidence=evidence, dropped=dropped, inst=inst
+        )
         report = self._check_memo(draft, user_message, result)
         if not report.ok and result.provider != "rules":
             result.attempts = 2
@@ -845,7 +847,7 @@ class AgentRunner:
                 )
             )
             draft = await self._draft_memo(
-                spec, messages, user_message, result, fallback=draft, evidence=evidence, dropped=dropped
+                spec, messages, user_message, result, fallback=draft, evidence=evidence, dropped=dropped, inst=inst
             )
             report = self._check_memo(draft, user_message, result)
         result.verified, result.issues = report.ok, report.issues
@@ -890,12 +892,13 @@ class AgentRunner:
         fallback: MemoDraft | None = None,
         evidence: Evidence | None = None,
         dropped: list[float] | None = None,
+        inst: AgentInstance | None = None,
     ) -> MemoDraft:
         try:
             completion = await self.router.complete(
                 spec.privacy, messages, json_schema=memo_schema(self.frame), agent_type=spec.name
             )
-            self._account(result, completion)
+            self._account(result, completion, inst)  # F19: a Memo Writer that fell back to Qwen is said too
             draft = MemoDraft.model_validate(completion.json())
             if evidence is not None:
                 draft = with_real_outcomes(draft, evidence, dropped or [])

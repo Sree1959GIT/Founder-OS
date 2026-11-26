@@ -81,7 +81,8 @@ describe("the Boardroom's seats and caption", () => {
 
 describe("the microphone message", () => {
   it("is friendly about https and permission", () => {
-    expect(micProblem("x", false)).toMatch(/secure \(https\)/);
+    expect(micProblem("Cannot read properties of undefined (reading 'getUserMedia')", false)).toMatch(/secure \(https\)/);
+    expect(micProblem("Voice connection closed", false)).toBe("Voice connection closed"); // not every error is the mic
     expect(micProblem("NotAllowedError: Permission denied", true)).toMatch(/blocked/);
   });
 });

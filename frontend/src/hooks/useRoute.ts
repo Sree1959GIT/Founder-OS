@@ -22,6 +22,11 @@ export function parseHash(hash: string): Route {
  * later (`leaveTo`) once the founder has chosen Save or Discard. Only one page holds it at a time.
  */
 type Guard = (targetHash: string) => boolean;
+
+/** M7b: hash changes made inside this tab since the app loaded, so "Close" goes back only within FounderOS. */
+let stepsInApp = 0;
+if (typeof window !== "undefined") window.addEventListener("hashchange", () => (stepsInApp += 1));
+export const canGoBackInApp = (): boolean => stepsInApp > 0;
 let guard: Guard | null = null;
 
 export function setNavigationGuard(next: Guard | null): void {
