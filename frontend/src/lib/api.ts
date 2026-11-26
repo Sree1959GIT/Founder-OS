@@ -345,6 +345,30 @@ export interface SettingsView {
   agents: { type: string; title: string; privacy: "local" | "cloud_allowed" | "cloud"; job: string }[];
   spend: { month?: string; spent_usd?: number; cap_usd?: number; remaining_usd?: number; over_cap?: boolean };
   privacy_note: string;
+  /** F6: the verified AI model card choice in use for the deep-work agents, or null (Qwen / .env). */
+  ai_model?: AIModelInUse | null;
+  /** F4: a key that can be used exists (a verified AI model key, or a .env key). Cloud can only be ticked on then. */
+  cloud_usable?: boolean;
+  /** F12: the member's currency ("" until chosen: the browser's region is used) and today's rate. */
+  member_currency?: string;
+  fx?: FxInfo;
+}
+export interface AIModelInUse {
+  preset: string;
+  label: string;
+  model: string;
+  /** "Gemini · gemini-3.8-flash (from AI model)" */
+  text: string;
+}
+export interface FxInfo {
+  asked: string;
+  /** The currency shown: the member's, or USD when there is no rate for it. */
+  currency: string;
+  symbol: string;
+  /** USD → currency */
+  rate: number;
+  as_of: string | null;
+  source: string;
 }
 
 export interface Criterion {
@@ -440,6 +464,11 @@ export const fetchRun = (runId: string) =>
 export const approveRun = (runId: string, approved: boolean, edit?: TeamEdit) =>
   send<unknown>(`/api/runs/${runId}/approve`, "POST", { approved, edit: edit ?? null });
 export const cancelRun = (runId: string) => send<unknown>(`/api/runs/${runId}/cancel`, "POST");
+/** Founder F8: "Continue on Qwen on our server" / "Keep waiting" for a slow cloud agent. */
+export const continueOnLocal = (runId: string, agentId: string) =>
+  send<unknown>(`/api/runs/${runId}/agents/${agentId}/continue-local`, "POST");
+export const keepWaiting = (runId: string, agentId: string) =>
+  send<unknown>(`/api/runs/${runId}/agents/${agentId}/keep-waiting`, "POST");
 export const cancelAgent = (runId: string, agentId: string) =>
   send<unknown>(`/api/runs/${runId}/agents/${agentId}/cancel`, "POST");
 export const rerunAgent = (runId: string, agentId: string, brief?: string) =>
@@ -569,7 +598,8 @@ export type AIModelCode =
   | "ok"
   | "wrong_key"
   | "no_credit"
-  | "rate_limited"
+  | "busy"
+  | "server_error"
   | "unreachable"
   | "model_not_found"
   | "bad_url"

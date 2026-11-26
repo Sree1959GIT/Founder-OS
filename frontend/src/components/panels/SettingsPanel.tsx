@@ -6,6 +6,7 @@ import { AIModelCard } from "@/components/panels/AIModelCard";
 import { Button } from "@/components/ui/button";
 import { leaveTo, setNavigationGuard } from "@/hooks/useRoute";
 import { fetchSettings, putSettings, type SettingsView } from "@/lib/api";
+import { CURRENCIES, moneyText } from "@/lib/currency";
 
 const selectClass = "h-10 rounded-lg border border-border-strong bg-background px-2 text-sm disabled:opacity-60";
 
@@ -61,6 +62,7 @@ const EDITABLE = [
   "team_approval",
   "max_local_agents",
   "max_cloud_agents",
+  "member_currency",
 ] as const;
 type Editable = Pick<SettingsView, (typeof EDITABLE)[number]>;
 
@@ -72,12 +74,30 @@ function changedSettings(saved: SettingsView, draft: SettingsView): Partial<Edit
   return out as Partial<Editable>;
 }
 
+/** Facts the AI model card changes on the server: never an edit of this page (founder F4). */
+function cardFields(fresh: SettingsView): Partial<SettingsView> {
+  return { spend: fresh.spend, ai_model: fresh.ai_model, cloud_usable: fresh.cloud_usable, fx: fresh.fx };
+}
+
+function providerWord(p: { name: string; configured: boolean }, fromCard: boolean): string {
+  if (p.name === "ollama") return "local";
+  if (p.configured) return "key set";
+  return fromCard ? "no .env key" : "no key"; // founder F6: the card's key is shown in its own pill
+}
+
+/** Founder F6: "Default" says which model that is when the AI model card chose one. */
+function defaultWord(locked: boolean, aiModel: string | undefined): string {
+  if (locked) return "This PC";
+  return aiModel ? `Default: ${aiModel}` : "Default";
+}
+
 export function SettingsPanel() {
   const [saved, setSaved] = useState<SettingsView | null>(null);
   const [view, setView] = useState<SettingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState(false);
   const [leaving, setLeaving] = useState<string | null>(null);
+  const [redetect, setRedetect] = useState(0);
 
   useEffect(() => {
     fetchSettings()
@@ -144,9 +164,10 @@ export function SettingsPanel() {
         setView((v) => {
           if (!v) return fresh;
           const edited = before !== null && v.cloud_allowed !== before.cloud_allowed;
-          return { ...v, cloud_allowed: edited ? v.cloud_allowed : fresh.cloud_allowed, spend: fresh.spend };
+          return { ...v, ...cardFields(fresh), cloud_allowed: edited ? v.cloud_allowed : fresh.cloud_allowed };
         });
-        setSaved((s) => (s ? { ...s, cloud_allowed: fresh.cloud_allowed, spend: fresh.spend } : fresh));
+        // Founder F4/F6: what the card changed on the server follows on both sides, so it never shows as an edit.
+        setSaved((s) => (s ? { ...s, ...cardFields(fresh), cloud_allowed: fresh.cloud_allowed } : fresh));
       })
       .catch(() => undefined);
   }, []);
@@ -154,6 +175,7 @@ export function SettingsPanel() {
   const discard = () => {
     setView(saved);
     setSavedNote(false);
+    setRedetect((n) => n + 1); // founder F5: the AI model card reads the key's shape again
   };
 
   if (!view) {
@@ -162,6 +184,17 @@ export function SettingsPanel() {
 
   const configured = view.providers.filter((p) => p.configured);
   const spent = view.spend.spent_usd;
+  // Founder F12: the member's currency (USD when today's rate is missing). The cap is stored in USD.
+  const fx = view.fx ?? { asked: "USD", currency: "USD", symbol: "$", rate: 1, as_of: null, source: "" };
+  const capShown = Math.round(view.cloud_monthly_cap_usd * fx.rate * 100) / 100;
+  const aiModel = view.ai_model ?? null;
+  // Founder F4: only a passing, saved key may turn cloud on (turning it off is always allowed).
+  const canAllow = view.cloud_allowed || view.cloud_usable !== false;
+  let spentText = "n/a";
+  if (spent !== undefined) {
+    spentText =
+      fx.currency === "USD" ? `$${spent.toFixed(2)}` : `${moneyText(spent, fx.symbol, fx.rate)} ($${spent.toFixed(2)})`;
+  }
   const setRoute = (type: string, value: string) => {
     const others = Object.entries(view.agent_models).filter(([key]) => key !== type);
     change({ agent_models: Object.fromEntries(value ? [...others, [type, value]] : others) });
@@ -228,7 +261,7 @@ export function SettingsPanel() {
         <p className="text-[13px] leading-relaxed text-foreground">{view.privacy_note}</p>
       </section>
 
-      <AIModelCard onChanged={refreshCloud} />
+      <AIModelCard onChanged={refreshCloud} redetect={redetect} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section title="Cloud">
@@ -238,10 +271,22 @@ export function SettingsPanel() {
               <input
                 type="checkbox"
                 checked={view.cloud_allowed}
+                disabled={!canAllow}
+                data-testid="cloud-allowed"
                 onChange={(e) => change({ cloud_allowed: e.target.checked })}
-                className="h-5 w-5 accent-[#F2A93B]"
+                className="h-5 w-5 accent-[#F2A93B] disabled:opacity-50"
               />
             </label>
+            {canAllow ? null : (
+              <p className="text-xs text-muted-foreground" data-testid="cloud-needs-key">
+                Test and save a key in the AI model card above first: only a key that passed its test can turn cloud on.
+              </p>
+            )}
+            {aiModel ? (
+              <p className="text-[13px]" data-testid="cloud-in-use">
+                Deep-work agents use <span className="font-medium">{aiModel.text}</span>.
+              </p>
+            ) : null}
             <div className="flex items-center justify-between gap-3">
               <label htmlFor="deep-provider" className="text-[13px]">
                 Deep-work provider (.env keys; the AI model card above wins once you choose there)
@@ -261,25 +306,49 @@ export function SettingsPanel() {
               </select>
             </div>
             <ul className="flex flex-wrap gap-1.5" aria-label="Providers">
+              {aiModel ? (
+                <li>
+                  <Pill tone="ok">{aiModel.text}</Pill>
+                </li>
+              ) : null}
               {view.providers.map((p) => (
                 <li key={p.name}>
                   <Pill tone={p.configured ? "ok" : "neutral"}>
-                    {p.name}: {p.name === "ollama" ? "local" : p.configured ? "key set" : "no key"}
+                    {p.name}: {providerWord(p, aiModel !== null)}
                   </Pill>
                 </li>
               ))}
             </ul>
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="member-currency" className="text-[13px]">
+                Currency
+              </label>
+              <select
+                id="member-currency"
+                className={selectClass}
+                value={view.member_currency || fx.asked}
+                onChange={(e) => change({ member_currency: e.target.value })}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
             <NumberField
               id="cost-cap"
-              label="Monthly cost cap (USD)"
-              value={view.cloud_monthly_cap_usd}
+              label={`Monthly cost cap (${fx.currency})`}
+              value={capShown}
               min={0}
-              max={100_000}
+              max={100_000 * fx.rate}
               step={1}
-              onCommit={(v) => change({ cloud_monthly_cap_usd: v })}
+              onCommit={(v) => change({ cloud_monthly_cap_usd: Math.round((v / fx.rate) * 1e6) / 1e6 })}
             />
-            <p className="text-xs text-muted-foreground">
-              Spent this month: <span className="num">{spent === undefined ? "n/a" : `$${spent.toFixed(2)}`}</span>. Over the cap, cloud agents fall back to local.
+            <p className="text-xs text-muted-foreground" data-testid="month-spend">
+              Spent this month: <span className="num">{spentText}</span>. Over the cap, cloud agents fall back to local.
+              {fx.asked === fx.currency ? "" : ` No ${fx.asked} rate today, so amounts are in US dollars.`}
+              {fx.as_of ? ` Rate of ${fx.as_of}.` : ""}
             </p>
           </div>
         </Section>
@@ -349,7 +418,7 @@ export function SettingsPanel() {
                   value={locked ? "" : current}
                   onChange={(e) => setRoute(agent.type, e.target.value)}
                 >
-                  <option value="">{locked ? "This PC" : "Default"}</option>
+                  <option value="">{defaultWord(locked, aiModel?.text)}</option>
                   {custom ? <option value={current}>{current}</option> : null}
                   {configured.map((p) => (
                     <option key={p.name} value={p.name}>

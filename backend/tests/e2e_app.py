@@ -45,6 +45,7 @@ def create_e2e_app() -> FastAPI:
         voice_stt="fake",  # no Whisper or Kokoro load competing with the browser test
         voice_tts="fake",
         voice_vad="energy",
+        fx_rates_url="",  # founder F12: no network in the smoke test (costs in US dollars)
     )
     app = create_app(settings)
     inner = app.router.lifespan_context

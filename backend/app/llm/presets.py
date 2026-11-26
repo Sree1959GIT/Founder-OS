@@ -7,8 +7,11 @@ Base URLs are the providers' documented API roots; model defaults come from conf
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Literal
 
+from loguru import logger
 from pydantic import BaseModel
 
 from app.config import Settings
@@ -103,22 +106,47 @@ PRESETS: dict[str, Preset] = {
 }
 
 
-# Founder F3: the provider from the key's shape, so a member only pastes a key. Most specific prefix first
-# ("sk-ant-" and "sk-or-" before OpenAI's plain "sk-"). The provider list on the card stays as a manual override.
-KEY_SHAPES: tuple[tuple[str, str], ...] = (
-    ("sk-ant-", "claude"),
-    ("sk-or-", "openrouter"),
-    ("gsk_", "groq"),
-    ("AIza", "gemini"),
-    ("sk-proj-", "openai"),
-    ("sk-", "openai"),
-)
+# Founder F3/F5: the provider from the key's shape, so a member only pastes a key. The table is data
+# (`key_shapes.json`), read on every test so the server can learn a new key format without a code change. Most
+# specific prefix first ("sk-ant-" and "sk-or-" before OpenAI's plain "sk-"). The card's provider list stays as a
+# manual override.
+SHIPPED_KEY_SHAPES = Path(__file__).with_name("key_shapes.json")
 
 
-def detect_preset(key: str) -> str | None:
-    """The preset id a key's prefix belongs to, or None (Ollama Cloud and Custom keys have no fixed shape)."""
+class KeyShape(BaseModel):
+    prefix: str
+    preset: str
+    legacy: bool = False
+    note: str = ""
+
+
+def key_shapes_file(settings: Settings | None = None) -> Path:
+    if settings is not None and settings.ai_model_key_shapes_file is not None:
+        return settings.ai_model_key_shapes_file
+    if settings is not None:
+        local = settings.workspace_data_dir().parent / "key_shapes.json"
+        if local.is_file():
+            return local
+    return SHIPPED_KEY_SHAPES
+
+
+def load_key_shapes(settings: Settings | None = None) -> list[KeyShape]:
+    """The server's copy when there is one, else the shipped one. A damaged file falls back to the shipped table."""
+    for path in dict.fromkeys([key_shapes_file(settings), SHIPPED_KEY_SHAPES]):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            shapes = [KeyShape.model_validate(item) for item in data.get("shapes", [])]
+            return [s for s in shapes if s.prefix and s.preset in PRESETS]
+        except (OSError, ValueError, AttributeError) as exc:
+            logger.warning("Ignoring the key shapes in {}: {}", path.name, type(exc).__name__)
+    return []
+
+
+def detect_preset(key: str, shapes: list[KeyShape] | None = None) -> str | None:
+    """The preset id a key's prefix belongs to, or None (unknown start: the member picks the provider)."""
     key = key.strip()
-    return next((preset for prefix, preset in KEY_SHAPES if key.startswith(prefix)), None)
+    table = shapes if shapes is not None else load_key_shapes()
+    return next((shape.preset for shape in table if key.startswith(shape.prefix)), None)
 
 
 def default_model(preset: Preset, settings: Settings) -> str:

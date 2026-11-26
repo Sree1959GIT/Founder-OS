@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "updated": "2026-11-26",
+  "about": "Which provider issued an API key, from how the key starts. Most specific prefix first. The server reads this file on every key test: put a copy at <DATA_DIR>/key_shapes.json (or AI_MODEL_KEY_SHAPES_FILE) to change it without a code change. 'legacy' marks a format the provider no longer issues.",
+  "shapes": [
+    {"prefix": "sk-ant-", "preset": "claude"},
+    {"prefix": "sk-or-", "preset": "openrouter"},
+    {"prefix": "gsk_", "preset": "groq"},
+    {"prefix": "AQ.", "preset": "gemini", "note": "Google AI Studio keys from 2026"},
+    {"prefix": "AIza", "preset": "gemini", "legacy": true, "note": "older Google keys, retired from September 2026"},
+    {"prefix": "sk-proj-", "preset": "openai"},
+    {"prefix": "sk-", "preset": "openai"}
+  ]
+}

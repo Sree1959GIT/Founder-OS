@@ -134,6 +134,11 @@ class Server:
 @pytest.fixture
 def server(monkeypatch: pytest.MonkeyPatch) -> Server:
     srv = Server()
+
+    async def instant(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.llm.ai_model._sleep", instant)  # founder F7: the busy back-off, without the wait
     transport = httpx.MockTransport(srv.handle)
     monkeypatch.setattr(ai_api, "build_provider", functools.partial(build_provider, transport=transport))
     monkeypatch.setattr(ai_api, "list_models", functools.partial(list_models, transport=transport))
@@ -263,7 +268,7 @@ def test_the_test_has_a_15_second_timeout(client: TestClient, server: Server, mo
             "No credit",
         ),
         ("openrouter", 402, {"error": {"message": "Insufficient credits"}}, "no_credit", "No credit"),
-        ("groq", 429, {"error": {"message": "Rate limit reached for model"}}, "rate_limited", "Rate limited"),
+        ("groq", 429, {"error": {"message": "Rate limit reached for model"}}, "busy", "Groq is busy right now (Groq"),
         (
             "openai",
             404,
@@ -272,7 +277,7 @@ def test_the_test_has_a_15_second_timeout(client: TestClient, server: Server, mo
             "Model not found",
         ),
         ("ollama_cloud", 404, {"error": "model 'nope' not found"}, "model_not_found", "Model not found"),
-        ("gemini", 503, {"error": {"message": "overloaded"}}, "unreachable", "Can't reach the server"),
+        ("gemini", 503, {"error": {"message": "overloaded"}}, "busy", "Gemini is busy right now (Google error 503)."),
     ],
 )
 def test_failures_are_explained_in_plain_english_and_nothing_is_saved(
@@ -555,7 +560,8 @@ def test_gemini_lists_with_the_key_in_a_header_not_the_address(client: TestClien
 
 def test_a_key_with_no_known_shape_asks_for_the_provider_and_sends_nothing(client: TestClient, server: Server) -> None:
     body = client.post("/api/settings/ai-model/test", json={"api_key": "0123abcd.ollama-ish-key"}).json()
-    assert body["ok"] is False and body["code"] == "unknown_provider" and "Pick the provider" in body["message"]
+    assert body["ok"] is False and body["code"] == "unknown_provider"
+    assert "pick the provider that issued it" in body["message"]
     assert server.seen == []
     picked = client.post(
         "/api/settings/ai-model/test", json={"preset": "ollama_cloud", "api_key": "0123abcd.ollama-ish-key"}

@@ -396,6 +396,9 @@ class ConversationManager:
                     # A metric lookup rests on no assumption to question (founder review 9): only a decision is asked.
                     if self._is_decision(run_id) and not redo:
                         self._say(session, await self._assumption_question(session, run_id), kind="question")
+                if event.type == "agent.slow":
+                    self._slow_offer(session, run_id, event)
+                    continue
                 session.last_wave = []
                 text = self._grouped_line(session, run_id, event) or self._line_for(run_id, event)
                 if redo and (event.type == "team.proposed" or session.last_wave):
@@ -404,6 +407,38 @@ class ConversationManager:
                     self._say(session, text, **self._line_kind(session, run_id, event))
         except Exception:  # the lane must never disturb the run it is describing
             logger.exception("Narration of {} stopped", run_id)
+
+    def _slow_offer(self, session: Session, run_id: str, event: AgentEvent) -> None:
+        """Founder F8: a cloud agent well past its usual time is said and shown, with the choice. Nothing switches
+        until the member says so ("Continue on Qwen on our server" / "Keep waiting" on the card)."""
+        name = self._agent_name(run_id, event.agent_id)
+        reason = str(event.data.get("reason") or "the cloud model is slow")
+        text = (
+            f"{name} is taking longer than usual: {reason}. "
+            "I can continue it on Qwen on our server, or we keep waiting. Your choice."
+        )
+        self._say(session, text, "slow.offered", kind="slow", run=run_id, agent=event.agent_id, reason=reason)
+
+    def _spend(self, session: Session, run_id: str) -> None:
+        """Founder F12: at the end of each decision, what it cost, in the member's currency (counted in code)."""
+        run = self.orchestrator.runs.get(run_id)
+        result = run.result if run is not None else None
+        if result is None or not result.agents or not (result.spend.cloud_used or self._is_decision(run_id)):
+            return
+        currency, rate = self.orchestrator.currency_rate()
+        if session.quiet:
+            return
+        # Its own event, not narration: the answer's "ready" line stays the last thing the lane said.
+        self._emit(
+            session,
+            "spend",
+            text=result.spend.sentence(currency, rate),
+            kind="spend",
+            usd=result.spend.usd,
+            currency=currency,
+            calls=result.spend.cloud_calls,
+            spoken=result.spend.cloud_used,  # all on Qwen: shown, not said (nothing to pay, and voice stays brief)
+        )
 
     def _grouped_line(self, session: Session, run_id: str, event: AgentEvent) -> str:
         """Agents that work together are reported together, when the last of them ends. No figures."""
@@ -499,6 +534,8 @@ class ConversationManager:
         offer = self._more_offer(session, run_id) if status in (None, "done") and recap else ""
         if recap:
             self._say(session, f"{recap} {offer}".strip(), "recap", status=str(status or "done"), offer=offer)
+        if status in (None, "done"):
+            self._spend(session, run_id)
         # Founder re-test S4: a change the founder asked for while the team worked, and never answered, is not lost
         # when the answer arrives without it. Its offer stays open on this finished run: "yes" still restarts, and
         # its card still works. Founder re-test T3: one change, one offer, one card, so the lane adds no second

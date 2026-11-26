@@ -89,4 +89,6 @@ def build_orchestrator(
         max_steps=settings.agent_max_steps,
         cash_risk_warn_at=settings.cash_risk_warn_at,
         stage_delay_s=settings.founderos_stage_delay_s,
+        slow_after_s=settings.cloud_slow_after_s,
+        slow_min_s=settings.cloud_slow_min_s,
     )

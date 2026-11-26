@@ -57,6 +57,7 @@ from app.decision.base import DecisionService
 from app.engine.metrics import METRICS
 from app.llm.base import Usage
 from app.llm.router import LLMRouter
+from app.llm.spend import SpendReport, spend_of
 from app.vault.decisions import DecisionRecord
 
 
@@ -130,6 +131,7 @@ class ChatResult(BaseModel):
     memo: MemoRef | None = Field(default=None, description="The decision memo this run wrote")
     cash_risk: CashRisk | None = Field(default=None, description="Monte Carlo cash-out warning, when it was given")
     est_cost_usd: float | None = Field(default=0.0, description="None: a cloud model with no known price was used")
+    spend: SpendReport = Field(default_factory=SpendReport, description="Founder F12: the cost, counted in code")
     verified: bool
     verification: Verification = Field(
         default_factory=lambda: Verification(state="not_verified"),
@@ -207,6 +209,8 @@ class RunContext:
     # Founder re-test S1: the founder stopped this run. Whatever the graph still returns, it never becomes an answer.
     cancel_requested: bool = False
     progress: str = ""  # founder RL2: the stage line the panel shows ("Step 1 of 3: Librarian working…")
+    # Founder F8: agent id -> set when the member says "Continue on Qwen" for a slow cloud agent.
+    go_local: dict[str, asyncio.Event] = field(default_factory=dict)
 
 
 class TeamEdit(BaseModel):
@@ -241,6 +245,8 @@ class AgentOrchestrator:
         max_steps: int = 4,
         cash_risk_warn_at: float = 2.0,
         stage_delay_s: float = 0.0,
+        slow_after_s: float = 0.0,
+        slow_min_s: float = 15.0,
     ) -> None:
         self.router = router
         self.decisions = decisions
@@ -255,6 +261,9 @@ class AgentOrchestrator:
         self.cash_risk_warn_at = cash_risk_warn_at  # above 1: never warn
         # Founder RL2 (2026-11-16), dev only: a pause before each stage, so a live test can hit a chosen stage.
         self.stage_delay_s = stage_delay_s
+        self.slow_after_s, self.slow_min_s = slow_after_s, slow_min_s  # founder F8 (0: never offer Qwen)
+        # Founder F12: (the member's currency, USD -> it), set by the app at startup from Settings and today's rate.
+        self.currency_rate: Callable[[], tuple[str, float]] = lambda: ("USD", 1.0)
         self.runs: dict[str, RunContext] = {}
         self.graph = self._build()
 
@@ -385,6 +394,10 @@ class AgentOrchestrator:
     async def _in_a_slot(self, inst: AgentInstance, state: GraphState) -> AgentResult:
         slots = self.cloud_slots if inst.is_cloud else self.local_slots
         runner = AgentRunner(self.router, self.bus, state["run_id"], self.ctx_factory, self.max_steps)
+        run = self.runs.get(state["run_id"])
+        if run is not None:
+            runner.go_local = run.go_local.setdefault(inst.id, asyncio.Event())
+            runner.slow_after_s, runner.slow_min_s = self.slow_after_s, self.slow_min_s
         async with slots:
             return await runner.run(inst, state["message"], state.get("results", []), state["plan"].frame)
 
@@ -548,6 +561,8 @@ class AgentOrchestrator:
             raise asyncio.CancelledError
         result = self._result(run, state, _ms(started))
         run.result = result
+        if result.memo is not None and result.spend.cloud_used:
+            await asyncio.to_thread(self._note_cost_in_memo, result)
         if run.progress and result.status == "done":
             self._progress(run.run_id, "done", PROGRESS_DONE)
         self.bus.emit(
@@ -654,6 +669,7 @@ class AgentOrchestrator:
             memo=next((r.memo for r in results if r.memo is not None), None),
             cash_risk=run.cash_risk,
             est_cost_usd=None if None in cost else round(sum(c for c in cost if c is not None), 6),
+            spend=spend_of(results, advisor_local=advisor.get("provider") == self.router.local.name),
             verified=not issues and all_done,
             # Nothing ran (held back, or a greeting): no check to report, so the badge is a neutral "not run".
             verification=not_run()
@@ -667,6 +683,26 @@ class AgentOrchestrator:
             elapsed_ms=elapsed_ms,
             status="done" if approved else "rejected",
         )
+
+    def spend_line(self, result: ChatResult) -> str:
+        currency, rate = self.currency_rate()
+        return result.spend.sentence(currency, rate)
+
+    def _note_cost_in_memo(self, result: ChatResult) -> None:
+        """Founder F12: the decision memo says what the decision cost, in the member's currency (and in USD)."""
+        memo = result.memo
+        vault = getattr(self.ctx_factory("").vault, "vault", None)
+        if memo is None or vault is None:
+            return
+        usd = "unknown" if result.spend.usd is None else f"US${result.spend.usd:.4f}"
+        line = f"\n\n## What this decision cost\n\n{self.spend_line(result)} (Estimated: {usd}.)\n"
+        try:
+            note = vault.read_note(memo.path)
+            body = str(note.get("body") or "")
+            if "## What this decision cost" not in body:
+                vault.write_note(memo.path, body=body.rstrip() + line)
+        except (OSError, ValueError) as exc:
+            logger.warning("The memo's cost line could not be added: {}", exc)
 
     def approve(self, run_id: str, approved: bool = True, edit: TeamEdit | None = None) -> bool:
         run = self.runs.get(run_id)
@@ -692,6 +728,24 @@ class AgentOrchestrator:
             return False
         run.stop_agents.add(agent_id)
         task.cancel()
+        return True
+
+    def continue_on_local(self, run_id: str, agent_id: str) -> bool:
+        """Founder F8: the member's OK to move a slow cloud agent onto Qwen. False when it is not running."""
+        run = self.runs.get(run_id)
+        task = run.agent_tasks.get(agent_id) if run else None
+        if run is None or task is None or task.done():
+            return False
+        run.go_local.setdefault(agent_id, asyncio.Event()).set()
+        return True
+
+    def keep_waiting(self, run_id: str, agent_id: str) -> bool:
+        """Founder F8: the member chose to wait for the cloud model. It is said on the card; nothing else changes."""
+        run = self.runs.get(run_id)
+        task = run.agent_tasks.get(agent_id) if run else None
+        if run is None or task is None or task.done():
+            return False
+        self.bus.emit("agent.step", run_id, agent_id, step="Still waiting for the cloud model: you chose to wait")
         return True
 
     def rerun_agent(self, run_id: str, agent_id: str, brief: str | None = None) -> RerunOutcome | None:

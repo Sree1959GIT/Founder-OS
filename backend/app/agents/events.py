@@ -39,6 +39,9 @@ EventType = Literal[
     "queue.added",
     "queue.offered",
     "recap",
+    "agent.slow",
+    "slow.offered",
+    "spend",
 ]
 AgentStatus = Literal[
     "queued",

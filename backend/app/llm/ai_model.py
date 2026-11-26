@@ -43,6 +43,7 @@ TEST_PROMPT = "Reply with the single word OK."
 CONSERVATIVE_PRICE: tuple[float, float] = (15.0, 75.0)
 
 Resolver = Callable[[str], Awaitable[list[str]]]
+_sleep = asyncio.sleep  # the back-off between busy retries (tests make it instant)
 
 
 class SecretBox:
@@ -230,6 +231,25 @@ def build_provider(
             raise ValueError("Qwen on our server needs no key.")
 
 
+async def retry_when_busy(
+    attempt: Callable[[float], Awaitable[Any]], deadline: float, retries: int, *, backoff_s: float = 0.6
+) -> Any:
+    """Founder F7: `attempt(seconds_left)` again when the provider is busy (503) or rate limited (429), after a short
+    back-off (0.6 s, then 1.8 s, ...), never past `deadline` (the test's 15 s). The last failure is raised."""
+    loop = asyncio.get_running_loop()
+    for tries in range(retries + 1):
+        left = deadline - loop.time()
+        try:
+            return await attempt(max(left, 1.0))
+        except LLMError as exc:
+            wait = round(backoff_s * (3**tries), 2)
+            if not is_busy(exc) or tries == retries or deadline - loop.time() < wait + 1.0:
+                raise
+            logger.info("AI model test: provider busy (HTTP {}), asking again in {:.1f} s", exc.status, wait)
+            await _sleep(wait)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 async def probe_key(provider: LLMProvider, timeout_s: float) -> None:
     """One tiny request. Raises `LLMError` (or `TimeoutError`) when it does not answer."""
     await asyncio.wait_for(provider.complete([Message.user(TEST_PROMPT)]), timeout=timeout_s)
@@ -255,8 +275,30 @@ MODEL_MISSING = (
 )
 
 
-def explain_failure(exc: BaseException, label: str, model: str, timeout_s: float) -> tuple[str, str]:
-    """(code, one plain-English line) for a failed key test. Never includes the provider's own text or the key."""
+# Founder F7: who runs each provider's servers, for "Gemini is busy right now (Google error 503)".
+VENDORS = {"Gemini": "Google", "Claude": "Anthropic", "OpenAI": "OpenAI"}
+BUSY_STATUSES = (429, 502, 503, 504)
+
+
+def is_busy(exc: BaseException) -> bool:
+    """Overloaded (503, 502, 504) or rate limited (429): worth asking again in a moment. Not a quota with no credit."""
+    if not isinstance(exc, LLMError) or exc.status not in BUSY_STATUSES:
+        return False
+    return not any(word in exc.detail.lower() for word in CREDIT_WORDS)
+
+
+def busy_line(label: str, status: int | None, *, key_ok: bool) -> str:
+    vendor = VENDORS.get(label, label)
+    fine = " Your key is fine." if key_ok else ""
+    return f"{label} is busy right now ({vendor} error {status}).{fine} Try again in a minute."
+
+
+def explain_failure(
+    exc: BaseException, label: str, model: str, timeout_s: float, *, key_ok: bool = False
+) -> tuple[str, str]:
+    """(code, one plain-English line) for a failed key test. Never includes the provider's own text or the key.
+
+    `key_ok`: the provider already accepted the key (its model list answered), so a busy server can say so (F7)."""
     if isinstance(exc, TimeoutError | asyncio.TimeoutError):
         return "unreachable", (
             f"Can't reach the server: {label} did not answer within {timeout_s:.0f} seconds. "
@@ -277,10 +319,8 @@ def explain_failure(exc: BaseException, label: str, model: str, timeout_s: float
         )
     if status in (401, 403) or (status == 400 and any(word in detail for word in KEY_WORDS) and "model" not in detail):
         return "wrong_key", f"Wrong key: {label} did not accept it. Copy the whole key again from your {label} account."
-    if status == 429:
-        return "rate_limited", (
-            f"Rate limited: {label} is getting too many requests on this key right now. Wait a minute, then test again."
-        )
+    if is_busy(exc):  # founder F7: busy is not "check your internet", and not a red error
+        return "busy", busy_line(label, status, key_ok=key_ok)
     if status in (400, 404, 422) and "model" in detail and any(word in detail for word in MODEL_MISSING):
         return "model_not_found", (
             f'Model not found: {label} has no model called "{model}" for this key. '
@@ -292,10 +332,8 @@ def explain_failure(exc: BaseException, label: str, model: str, timeout_s: float
             "(and the address, for Custom)."
         )
     if status is not None and status >= 500:
-        return (
-            "unreachable",
-            f"Can't reach the server: {label} had a problem of its own (HTTP {status}). Try again later.",
-        )
+        fine = " Your key is fine." if key_ok else ""
+        return "server_error", f"{label} had a problem of its own (HTTP {status}).{fine} Try again in a minute."
     code = f" (HTTP {status})" if status else ""
     return "other", f"{label} refused the test{code}. Check the key and the model name, then test again."
 

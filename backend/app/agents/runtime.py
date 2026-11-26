@@ -75,7 +75,8 @@ from app.agents.verifier import (
 from app.decision.base import DecisionError, DecisionService
 from app.engine.hybrid_rag import bm25_tokens
 from app.engine.lineage import Lineage
-from app.llm.base import Completion, LLMError, Message, StreamChunk, ToolCall, Usage
+from app.llm.base import Completion, LLMError, Message, StreamChunk, ToolCall, ToolSpec, Usage
+from app.llm.presets import PRESETS
 from app.llm.router import LLMRouter
 from app.vault.decisions import DecisionRecord
 from app.vault.manager import VaultError
@@ -306,6 +307,9 @@ class AgentResult(BaseModel):
     fallback_from: str | None = None
     usage: Usage = Field(default_factory=Usage)
     elapsed_ms: float = 0.0
+    # Founder F12: model calls this agent made, for the spend report (cloud per provider label; local counted).
+    cloud_calls: dict[str, int] = Field(default_factory=dict)
+    local_calls: int = 0
 
     @property
     def numbers(self) -> list[float]:
@@ -550,6 +554,17 @@ async def _plan_decision(message: str, router: LLMRouter, how: str, decision_id:
         return _default_decision_plan(message, router, f"{how}; default team", decision_id)
 
 
+_PROVIDER_LABELS = {"gemini": "Gemini", "anthropic": "Claude", "claude": "Claude", "openai": "OpenAI"}
+
+
+def provider_label(name: str) -> str:
+    """ "gemini" -> "Gemini", "openrouter" -> "OpenRouter" (the AI model card's names), for what the member reads."""
+    if name in _PROVIDER_LABELS:
+        return _PROVIDER_LABELS[name]
+    preset = PRESETS.get(name)
+    return preset.label if preset is not None else name.replace("_", " ").title()
+
+
 class AgentRunner:
     """Runs one agent instance: LLM tool loop (or rules when the LLM is down), then the Verifier (one retry)."""
 
@@ -567,6 +582,13 @@ class AgentRunner:
         self.ctx_factory = ctx_factory
         self.max_steps = max_steps
         self.frame: DecisionFrame | None = None
+        # Founder F8: a cloud call well past its usual time is named, and Qwen is offered. The member's OK sets
+        # `go_local`; from then on this agent runs on the local model.
+        self.go_local: asyncio.Event | None = None
+        self.slow_after_s = 0.0
+        self.slow_min_s = 15.0
+        self.on_local = False
+        self.slow_offered = False
 
     def _emit(self, type_: Any, agent_id: str, **data: Any) -> None:
         self.bus.emit(type_, self.run_id, agent_id, **data)
@@ -1030,10 +1052,9 @@ class AgentRunner:
         ] or None
         for step in range(self.max_steps + 1):
             final = step == self.max_steps
-            self._emit("agent.status", inst.id, status="waiting_cloud" if inst.is_cloud else "thinking")
-            completion = await self.router.complete(
-                spec.privacy, messages, tools=None if final else tools, agent_type=spec.name
-            )
+            waiting = inst.is_cloud and not self.on_local
+            self._emit("agent.status", inst.id, status="waiting_cloud" if waiting else "thinking")
+            completion = await self._complete(spec, inst, messages, None if final else tools)
             self._account(result, completion)
             if not completion.tool_calls or final:
                 result.text = completion.text.strip()
@@ -1043,8 +1064,74 @@ class AgentRunner:
                 outcome = await self._call_tool(spec, inst, call, result)
                 messages.append(Message.tool(call, outcome.for_model()))
 
-    @staticmethod
-    def _account(result: AgentResult, completion: Completion) -> None:
+    def slow_limit(self, agent_type: str) -> tuple[float, float | None]:
+        """(seconds before the offer, the usual seconds when known): CLOUD_SLOW_AFTER_S, or twice the usual time
+        this month if that comes first, never under CLOUD_SLOW_MIN_S."""
+        ledger = self.router.ledger
+        usual = ledger.usual_cloud_latency_s(agent_type) if ledger is not None else None
+        limit = self.slow_after_s if usual is None else min(self.slow_after_s, 2 * usual)
+        return max(limit, self.slow_min_s), usual
+
+    async def _complete(
+        self, spec: AgentType, inst: AgentInstance, messages: list[Message], tools: list[ToolSpec] | None
+    ) -> Completion:
+        """The model call. A cloud call that runs well past its usual time is named on the card and to the Advisor
+        (`agent.slow`); the member may then continue this agent on Qwen (founder F8). Nothing switches on its own."""
+        privacy: Any = "local" if self.on_local else spec.privacy
+        call = self.router.complete(privacy, messages, tools=tools, agent_type=spec.name)
+        if self.on_local or not inst.is_cloud or self.go_local is None or self.slow_after_s <= 0:
+            return await call
+        cloud = self.router.primary(spec.privacy, needs_tools=bool(tools), agent_type=spec.name)
+        if not cloud.is_cloud:  # the cap or a missing key already puts it on Qwen
+            return await call
+        where = provider_label(cloud.name)
+        task = asyncio.ensure_future(call)
+        switch = asyncio.ensure_future(self.go_local.wait())
+        started = time.perf_counter()
+        reason = ""
+        try:
+            limit, usual = self.slow_limit(spec.name)
+            done, _ = await asyncio.wait(
+                {task, switch}, timeout=None if self.slow_offered else limit, return_when=asyncio.FIRST_COMPLETED
+            )
+            if not done:
+                self.slow_offered = True
+                waited = time.perf_counter() - started
+                expected = f"it usually takes about {usual:.0f} s" if usual else f"expected under {limit:.0f} s"
+                reason = f"{where} has not answered in {waited:.0f} s ({expected})"
+                self._emit("agent.step", inst.id, step=f"Slow: {reason}")
+                self._emit(
+                    "agent.slow",
+                    inst.id,
+                    reason=reason,
+                    waited_s=round(waited),
+                    usual_s=round(usual) if usual else None,
+                    provider=where,
+                    model=cloud.model,
+                )
+                done, _ = await asyncio.wait({task, switch}, return_when=asyncio.FIRST_COMPLETED)
+            if task in done:
+                return task.result()
+            task.cancel()
+            self.on_local = True
+            waited = time.perf_counter() - started
+            reason = reason or f"{where} had not answered in {waited:.0f} s"
+            self._emit("agent.step", inst.id, step=f"Switched to Qwen on our server, with your OK: {reason}")
+            self._emit("agent.status", inst.id, status="thinking")
+            completion = await self.router.complete("local", messages, tools=tools, agent_type=spec.name)
+            completion.fallback_from = completion.fallback_from or cloud.name
+            return completion
+        finally:
+            switch.cancel()
+            if not task.done():
+                task.cancel()
+
+    def _account(self, result: AgentResult, completion: Completion) -> None:
+        if completion.provider == self.router.local.name:
+            result.local_calls += 1
+        else:
+            label = provider_label(completion.provider)
+            result.cloud_calls[label] = result.cloud_calls.get(label, 0) + 1
         result.provider, result.model = completion.provider, completion.model
         result.usage = result.usage + completion.usage
         if result.est_cost_usd is not None:

@@ -62,7 +62,12 @@ function cssMaskWorks(): boolean {
  * list stays as a manual override, "Change model" offers the models the key has. The buttons act at once and do not
  * wait for the page's Save: a key is only ever kept once "Test key" has passed.
  */
-export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
+/** Founder F5: said when a pasted key's start matches no known provider (never silently stay on Qwen). */
+export const UNKNOWN_KEY = "We couldn't recognise this key. Please check it, or pick the provider that issued it.";
+/** Founder F7: busy or a server problem of the provider's own: a yellow notice, not a red error. */
+const NOTICE_CODES = new Set(["busy", "server_error"]);
+
+export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => void; redetect?: number }) {
   const [view, setView] = useState<AIModelView | null>(null);
   const [presetId, setPresetId] = useState("qwen_local");
   const [manual, setManual] = useState(false); // the member picked the provider: the key's shape no longer overrides
@@ -71,6 +76,7 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState<null | "test" | "local" | "remove">(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [masked] = useState(cssMaskWorks);
 
   const pick = (v: AIModelView, id: string, byHand: boolean) => {
@@ -82,7 +88,17 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
     setCustomModel(preset.custom_base_url ? (saved?.model ?? "") : "");
     setBaseUrl(saved?.base_url || preset.base_url);
     setFailure(null);
+    setNotice(null);
   };
+
+  // Founder F5: after the page's Discard, the key's shape decides again (a manual pick no longer holds).
+  useEffect(() => {
+    if (!redetect || !view) return;
+    setManual(false);
+    const found = detectPreset(view, apiKey);
+    if (found && found !== presetId) pick(view, found, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the page says so
+  }, [redetect]);
 
   useEffect(() => {
     fetchAIModel()
@@ -122,6 +138,7 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
   const onKey = (value: string) => {
     setApiKey(value);
     setFailure(null);
+    setNotice(null);
     const found = detectPreset(view, value);
     if (found && !manual && found !== presetId) pick(view, found, false);
   };
@@ -132,6 +149,7 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
   ) => {
     setBusy(kind);
     setFailure(null);
+    setNotice(null);
     try {
       if (kind === "test") {
         // Qwen in the list and a key that matches no known shape: the backend says to pick the provider.
@@ -147,7 +165,9 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
         if (result.ok) {
           setApiKey("");
           if (result.preset) pick(result.view, result.preset, manual);
-        } else setFailure(result.message);
+          onChanged?.(); // founder F4: only a passing, saved key changes the page (cloud on)
+        } else if (NOTICE_CODES.has(result.code)) setNotice(result.message);
+        else setFailure(result.message);
       } else {
         const next =
           kind === "local"
@@ -155,8 +175,8 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
             : await removeAIModelKey();
         setView(next);
         if (kind === "remove") pick(next, "qwen_local", false);
+        onChanged?.();
       }
-      onChanged?.();
     } catch (err) {
       setFailure(
         err instanceof Error ? err.message : "That did not work. Try again.",
@@ -167,6 +187,14 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
   };
 
   const testable = preset.needs_key || apiKey.trim() !== "" || busy !== null;
+  // F5: a key typed while the list says Qwen (or nothing picked by hand) that matches no known start.
+  const unknownKey = apiKey.trim() !== "" && !detected && (!preset.needs_key || !manual);
+  // F5: picking Qwen with a key in the box re-detects, so the key is never silently left on Qwen.
+  const choose = (id: string) => {
+    const found = id === "qwen_local" ? detectPreset(view, apiKey) : null;
+    if (found) pick(view, found, false);
+    else pick(view, id, true);
+  };
 
   return (
     <section
@@ -258,10 +286,13 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
             }
           />
           <p
-            className="text-xs text-muted-foreground"
+            id="ai-key-hint"
+            className={cn("text-xs", unknownKey ? "text-signal" : "text-muted-foreground")}
             data-testid="ai-key-hint"
           >
-            {detectedPreset && apiKey.trim()
+            {unknownKey
+              ? UNKNOWN_KEY
+              : detectedPreset && apiKey.trim()
               ? `Looks like a ${detectedPreset.label} key. Press Test key: FounderOS finds the best model this key can use.`
               : keyPreset
                 ? `Get one at ${keyPreset.key_hint}. Kept encrypted, only after the test passes, and never shown again.`
@@ -275,9 +306,11 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
           </label>
           <select
             id="ai-preset"
-            className={inputClass}
+            className={cn(inputClass, unknownKey && "border-signal ring-2 ring-signal/60")}
             value={preset.id}
-            onChange={(e) => pick(view, e.target.value, true)}
+            aria-describedby={unknownKey ? "ai-key-hint" : undefined}
+            data-attention={unknownKey ? "true" : undefined}
+            onChange={(e) => choose(e.target.value)}
           >
             {view.presets.map((p) => (
               <option key={p.id} value={p.id}>
@@ -396,6 +429,15 @@ export function AIModelCard({ onChanged }: { onChanged?: () => void }) {
         {!preset.needs_key && !verified && !apiKey.trim() ? (
           <p className="text-xs text-muted-foreground">
             Qwen is in use: free and private, slower than the cloud models.
+          </p>
+        ) : null}
+        {notice ? (
+          <p
+            className="rounded-lg border border-[#4A3A1C] bg-[#1A1610] px-3 py-2 text-xs text-signal"
+            role="status"
+            data-testid="ai-model-notice"
+          >
+            {notice}
           </p>
         ) : null}
         {failure ? <ErrorNote>{failure}</ErrorNote> : null}

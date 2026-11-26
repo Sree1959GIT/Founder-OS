@@ -14,7 +14,9 @@ import {
 import {
   answerAmendment,
   answerQueue,
+  continueOnLocal,
   fetchRun,
+  keepWaiting,
   postTurn,
   setQuiet,
   streamRun,
@@ -81,7 +83,17 @@ export type Turn =
       /** The run the change would restart. */
       runId?: string;
     }
-  | { id: string; role: "queued"; queueId: string; text: string; status: "queued" | "offered" | "accepted" | "declined" };
+  | { id: string; role: "queued"; queueId: string; text: string; status: "queued" | "offered" | "accepted" | "declined" }
+  | {
+      /** Founder F8: a cloud agent well past its usual time. Qwen only with the member's OK. */
+      id: string;
+      role: "slow";
+      runId: string;
+      agentId: string;
+      text: string;
+      reason: string;
+      status: "offered" | "local" | "waiting";
+    };
 
 /** The agents of a run, in the order they were spawned. */
 export const teamOf = (run: RunView | null): AgentView[] =>
@@ -112,7 +124,8 @@ type Action =
   | { type: "run-ended"; runId: string; status: RunView["status"] }
   | { type: "amendment"; id: string; status: "accepted" | "declined" }
   | { type: "card-last"; id: string }
-  | { type: "queue"; id: string; status: "accepted" | "declined" };
+  | { type: "queue"; id: string; status: "accepted" | "declined" }
+  | { type: "slow"; id: string; status: "local" | "waiting" };
 
 export const initialState: WorkspaceState = {
   sessionId: null,
@@ -129,7 +142,7 @@ const MAX_HELD = 2000;
 const RECOVER_WAIT_MS = 3000;
 const RECOVER_ATTEMPTS = 400; // 20 minutes: longer than any run
 
-const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered"]);
+const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered", "slow.offered", "spend"]);
 
 function emptyRun(id: string, message: string, at: string): RunView {
   return {
@@ -280,6 +293,25 @@ function laneTurn(state: WorkspaceState, event: AgentEvent): WorkspaceState {
   const sessionId = data.session_id as string | undefined;
   if (state.sessionId && sessionId && sessionId !== state.sessionId) return state;
   if (!state.sessionId) return state; // another window's conversation
+  if (event.type === "spend") {
+    // Founder F12: what the decision cost, in the member's currency, as one lane line.
+    const turn: Turn = { id, role: "lane", text: data.text as string, kind: "recap" };
+    return { ...state, turns: [...state.turns, turn] };
+  }
+  if (event.type === "slow.offered") {
+    const agentId = (data.agent as string | undefined) ?? event.agent_id ?? "";
+    if (state.turns.some((t) => t.role === "slow" && t.agentId === agentId && t.runId === data.run)) return state;
+    const turn: Turn = {
+      id,
+      role: "slow",
+      runId: (data.run as string | undefined) ?? event.run_id,
+      agentId,
+      text: data.text as string,
+      reason: (data.reason as string | undefined) ?? "",
+      status: "offered",
+    };
+    return { ...state, turns: [...state.turns, turn] };
+  }
   if (event.type === "narration" || event.type === "recap") {
     const turn: Turn = { id, role: "lane", text: data.text as string, kind: event.type };
     return { ...state, turns: [...state.turns, turn] };
@@ -426,6 +458,11 @@ export function reducer(state: WorkspaceState, action: Action): WorkspaceState {
           t.role === "amendment" && t.amendmentId === action.id ? { ...t, status: action.status } : t,
         ),
       };
+    case "slow":
+      return {
+        ...state,
+        turns: state.turns.map((t) => (t.role === "slow" && t.id === action.id ? { ...t, status: action.status } : t)),
+      };
     case "queue":
       return {
         ...state,
@@ -444,6 +481,8 @@ interface WorkspaceApi {
   toggleQuiet: () => Promise<void>;
   amendment: (id: string, accept: boolean) => Promise<void>;
   queued: (id: string, accept: boolean) => Promise<void>;
+  /** Founder F8: the member's answer to "continue on Qwen, or keep waiting?". */
+  slow: (id: string, local: boolean) => Promise<void>;
   /** A turn the founder spoke: the voice socket already sent it to the lane, so only its outcome is shown. */
   spoken: (text: string, outcome: TurnOutcome) => void;
   currentRun: RunView | null;
@@ -692,6 +731,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [follow],
   );
 
+  const slow = useCallback(async (id: string, local: boolean) => {
+    const turn = stateRef.current.turns.find((t) => t.role === "slow" && t.id === id);
+    if (!turn || turn.role !== "slow") return;
+    try {
+      await (local ? continueOnLocal(turn.runId, turn.agentId) : keepWaiting(turn.runId, turn.agentId));
+      dispatch({ type: "slow", id, status: local ? "local" : "waiting" });
+    } catch (err) {
+      dispatch({ type: "error", error: err instanceof Error ? err.message : "That agent has already finished" });
+    }
+  }, []);
+
   const value = useMemo<WorkspaceApi>(
     () => ({
       state,
@@ -701,6 +751,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       toggleQuiet,
       amendment,
       queued,
+      slow,
       spoken,
       currentRun: state.currentRunId ? (state.runs[state.currentRunId] ?? null) : null,
       decisionRun:
@@ -708,7 +759,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           .filter((run) => run.frame || run.decisionType)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
     }),
-    [state, send, follow, toggleQuiet, amendment, queued, spoken],
+    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

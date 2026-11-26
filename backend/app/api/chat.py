@@ -200,6 +200,21 @@ async def rerun_agent(run_id: str, agent_id: str, body: RerunRequest, orchestrat
     return outcome
 
 
+@router.post("/runs/{run_id}/agents/{agent_id}/continue-local")
+async def continue_on_local(run_id: str, agent_id: str, orchestrator: OrchestratorDep) -> dict[str, Any]:
+    """Founder F8: "Continue on Qwen on our server" for a slow cloud agent. Only ever on the member's OK."""
+    if not orchestrator.continue_on_local(run_id, agent_id):
+        raise HTTPException(status_code=409, detail="agent not found or not running")
+    return {"run_id": run_id, "agent_id": agent_id, "local": True}
+
+
+@router.post("/runs/{run_id}/agents/{agent_id}/keep-waiting")
+async def keep_waiting(run_id: str, agent_id: str, orchestrator: OrchestratorDep) -> dict[str, Any]:
+    if not orchestrator.keep_waiting(run_id, agent_id):
+        raise HTTPException(status_code=409, detail="agent not found or not running")
+    return {"run_id": run_id, "agent_id": agent_id, "local": False}
+
+
 @router.get("/agents")
 async def agents(orchestrator: OrchestratorDep) -> dict[str, Any]:
     """The registered agent types, where each one runs now, this month's cost and latency, and the settings."""

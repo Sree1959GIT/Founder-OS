@@ -21,10 +21,12 @@ export function PrivacyBadge({ health }: { health: HealthState }) {
       </Badge>
     );
   }
+  // Founder F6: the verified AI model card choice is what the deep-work agents use: say which.
+  const aiModel = cloud?.info["ai_model"] as { text?: string } | null | undefined;
   return (
-    <Badge variant="signal">
+    <Badge variant="signal" data-testid="privacy-cloud">
       <Cloud aria-hidden="true" className="h-3 w-3" />
-      Local · cloud on approval
+      {aiModel?.text ? `Cloud: ${aiModel.text}` : "Local · cloud on approval"}
     </Badge>
   );
 }

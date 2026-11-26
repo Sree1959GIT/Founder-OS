@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app import __version__
+from app.api.settings import ai_model_in_use
 from app.deps import ProbesDep, SettingsDep
 from app.probes import DependencyState, DependencyStatus, run_probes
 
@@ -52,7 +53,15 @@ async def health(request: Request, settings: SettingsDep, probes: ProbesDep) -> 
             allowed = bool(orchestrator.router.cloud_allowed)
             dependency.info["cloud_allowed"] = allowed
             keys = any(bool(v) for v in dict(dependency.info.get("configured") or {}).values())
+            # Founder F6: a verified AI model card key is a key, and it is what the deep-work agents use.
+            current = getattr(request.app.state, "effective_settings", settings)
+            in_use = ai_model_in_use(current)
+            dependency.info["ai_model"] = in_use
+            keys = keys or in_use is not None
             dependency.info["cloud_usable"] = allowed and keys
+            if allowed and in_use is not None:
+                dependency.state = DependencyState.OK
+                dependency.detail = f"Deep-work agents use {in_use['text']}"
             # The strip and the privacy badge read the same facts (founder review 35).
             if not allowed:
                 dependency.state = DependencyState.NOT_CONFIGURED

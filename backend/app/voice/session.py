@@ -1070,6 +1070,17 @@ class VoiceSession:
                 self._stopped.add(event.run_id)
                 for s in [s for s in _drain(self._says) if not self._dropped(s)]:
                     self._says.put_nowait(s)
+            if event.type == "spend" and not event.data.get("spoken"):
+                continue
+            if event.type == "spend" and event.data.get("text"):
+                # Founder F12: the cost, said after the answer's summary (never over it).
+                await self._answers_idle.wait()
+                await self._say("conversation", str(event.data["text"]), event.run_id, None, keep=True)
+                continue
+            if event.type == "slow.offered" and event.data.get("text"):
+                # Founder F8: a slow cloud agent is said at once; the choice is on the card.
+                await self._say("conversation", str(event.data["text"]), event.run_id, self.current_turn, keep=True)
+                continue
             text = self._spoken_line(event)
             if text:
                 keep = event.type == "recap" or event.data.get("kind") in ("approval", "held", "team")

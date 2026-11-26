@@ -122,6 +122,17 @@ class CostLedger:
                     grouped[record.agent_type or "unknown"].append(record)
         return {agent: _summary(records) for agent, records in grouped.items()}
 
+    def usual_cloud_latency_s(self, agent_type: str) -> float | None:
+        """Founder F8: this agent type's median answered cloud call this month, in seconds (None: fewer than 3)."""
+        month = _month(datetime.now(UTC))
+        with self._lock:
+            times = sorted(
+                r.latency_ms
+                for r in self._records
+                if r.is_cloud and r.error is None and r.agent_type == agent_type and _month(r.at) == month
+            )
+        return round(times[len(times) // 2] / 1000, 1) if len(times) >= 3 else None
+
     def summary(self) -> dict[str, Any]:
         spent = self.month_spend()
         return {
