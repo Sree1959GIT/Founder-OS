@@ -31,6 +31,9 @@ class ScoredOption(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     scores: dict[str, float]
     cost: float | None = Field(None, ge=0, description="Optional size of the bubble (e.g. investment)")
+    # Founder F14: the open decision this entry stands for (one entry per decision) and the path of its latest memo.
+    decision: str | None = Field(None, max_length=200)
+    memo: str | None = Field(None, max_length=300)
 
 
 class ScoringRequest(BaseModel):

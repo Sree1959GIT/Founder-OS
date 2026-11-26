@@ -52,6 +52,7 @@ from app.agents.specialists import (
     needs_analyst,
     risk_register,
     rule_draft,
+    scout_no_web_note,
     scout_without_web,
     team_for_message,
     with_real_outcomes,
@@ -750,11 +751,21 @@ class AgentRunner:
             result.text = f"{result.text} {REGULATORY_NOTE}".strip()
         web_used = any(c["tool"] == "web_search" and not c.get("error") for c in result.tool_calls)
         if spec.name == "market_scout" and not web_used and not self._can_search_web(spec):
-            result.text = scout_without_web(result.text, {c.path for c in result.retrieved})
+            result.text = scout_without_web(result.text, {c.path for c in result.retrieved}, self._no_web_note(spec))
             result.removed = []  # what to find is in its text now: the model's recollections go nowhere, even reworded
         pages = [c for c in result.retrieved if c.chunk_id == "web" and c.path not in result.text]
         if pages and spec.name in ("market_scout", "regulatory_tax"):
             result.text = f"{result.text} Sources: {', '.join(c.path for c in pages[:5])}."
+
+    def _no_web_note(self, spec: AgentType) -> str:
+        """Founder F16: why there was no web search: cloud off, no cloud provider, Qwen, or a provider without it."""
+        cloud = self.router._cloud_for(spec.name)
+        in_chain = any(p.is_cloud for p in self.router.chain(spec.privacy, agent_type=spec.name))
+        return scout_no_web_note(
+            cloud_on=bool(self.router.cloud_allowed) and spec.privacy != "local",
+            provider=provider_label(cloud.name) if cloud is not None else "",
+            ran_local=self.on_local or not in_chain,  # switched with the member's OK, or the cap put it on Qwen
+        )
 
     def _can_search_web(self, spec: AgentType) -> bool:
         return "web_search" in spec.tools and self.router.can_search_web(spec.privacy, spec.name)
@@ -1087,10 +1098,25 @@ class AgentRunner:
         (`agent.slow`); the member may then continue this agent on Qwen (founder F8). Nothing switches on its own."""
         privacy: Any = "local" if self.on_local else spec.privacy
         call = self.router.complete(privacy, messages, tools=tools, agent_type=spec.name)
-        if self.on_local or not inst.is_cloud or self.go_local is None or self.slow_after_s <= 0:
+        # Founder F8c: every check is logged in plain words, so the backend window shows where the offer stops.
+        skip = (
+            "already on Qwen"
+            if self.on_local
+            else "planned on Qwen, not a cloud agent"
+            if not inst.is_cloud
+            else "no way to switch for this run"
+            if self.go_local is None
+            else "offer turned off (CLOUD_SLOW_AFTER_S is 0)"
+            if self.slow_after_s <= 0
+            else ""
+        )
+        if skip:
+            if inst.is_cloud:
+                logger.info("Slow check: {} skipped ({})", inst.name, skip)
             return await call
         cloud = self.router.primary(spec.privacy, needs_tools=bool(tools), agent_type=spec.name)
         if not cloud.is_cloud:  # the cap or a missing key already puts it on Qwen
+            logger.info("Slow check: {} skipped (this call goes to {}, not the cloud)", inst.name, cloud.name)
             return await call
         where = provider_label(cloud.name)
         task = asyncio.ensure_future(call)
@@ -1108,6 +1134,14 @@ class AgentRunner:
             done, _ = await asyncio.wait(
                 {task, switch}, timeout=None if self.slow_offered else timeout, return_when=asyncio.FIRST_COMPLETED
             )
+            if not self.slow_offered:
+                logger.info(
+                    "Slow check: {} {:.1f} s of {:.0f} s -> {}",
+                    inst.name,
+                    time.perf_counter() - self.cloud_started,
+                    self.agent_slow_limit(),
+                    "not yet" if done else "offer sent",
+                )
             if not done:
                 self.slow_offered = True
                 waited = time.perf_counter() - self.cloud_started
@@ -1392,7 +1426,7 @@ def _missing_facts(text: str, record: DecisionRecord) -> tuple[list[str], bool]:
     plain = PATH_RE.sub(" ", text.replace(record.path, " "))
     lowered = plain.lower()
     wanted: list[tuple[str, bool]] = []
-    if record.decided:
+    if record.decided and record.is_decided:  # founder F15: a proposal has no decision date to state
         wanted.append((f"decided {record.decided}", _states_month(record.decided, plain)))
     if not record.is_decided:
         wanted.append((f"status {record.status}", record.status.lower() in lowered))
@@ -1424,8 +1458,29 @@ def decision_covered(text: str, record: DecisionRecord, *, needs_path: bool) -> 
     return not decision_note(text, record, needs_path=needs_path, lead="")
 
 
+def honest_status(text: str, records: list[DecisionRecord]) -> str:
+    """Founder F15: a past memo's status exactly as recorded. A model wrote that a proposed memo was "decided
+    2026-11-26"; for a record that is not decided, "decided (on) <its date>" becomes "<status> on <date> (not decided
+    yet)". A decided record of that date keeps the words."""
+    decided_days = {str(r.decided)[:10] for r in records if r.is_decided and r.decided}
+    for record in records:
+        if record.is_decided:
+            continue
+        day = record.drafted_on()
+        if not day or day in decided_days:
+            continue
+        status = record.status if record.status.lower() != "unknown" else "proposed"
+        pattern = re.compile(
+            rf"\b(?:(?:was|were|been|is)\s+)?(?:already\s+)?decided(?:\s+(?:on|in))?\s+(?:the\s+)?{re.escape(day)}",
+            re.I,
+        )
+        text = pattern.sub(f"{status} on {day} (not decided yet)", text)
+    return text
+
+
 def _surface_decisions(result: AgentResult) -> None:
     """A small model can ignore what it was told, so code guarantees that the facts of a past decision are stated."""
+    result.text = honest_status(result.text, result.past_decisions)
     notes = [decision_note(result.text, r, needs_path=True, lead="On record:") for r in result.past_decisions]
     result.text = " ".join([result.text, *(n for n in notes if n)]).strip()
 

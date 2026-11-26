@@ -386,6 +386,9 @@ export interface ScoredOption {
   name: string;
   scores: Record<string, number>;
   cost: number | null;
+  /** Founder F14: the open decision this entry is for (one entry per decision), and its latest memo. */
+  decision?: string | null;
+  memo?: string | null;
 }
 
 export interface OptionScore {
@@ -604,6 +607,7 @@ export type AIModelCode =
   | "no_credit"
   | "busy"
   | "free_limit"
+  | "slow"
   | "server_error"
   | "unreachable"
   | "model_not_found"

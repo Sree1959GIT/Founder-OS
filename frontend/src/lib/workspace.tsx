@@ -71,7 +71,7 @@ export interface RunView {
 export type Turn =
   | { id: string; role: "you"; text: string }
   | { id: string; role: "advisor"; runId: string }
-  | { id: string; role: "lane"; text: string; kind: "narration" | "recap" | "reply" }
+  | { id: string; role: "lane"; text: string; kind: "narration" | "recap" | "reply"; lineKey?: string }
   | {
       id: string;
       role: "amendment";
@@ -313,7 +313,16 @@ function laneTurn(state: WorkspaceState, event: AgentEvent): WorkspaceState {
     return { ...state, turns: [...state.turns, turn] };
   }
   if (event.type === "narration" || event.type === "recap") {
-    const turn: Turn = { id, role: "lane", text: data.text as string, kind: event.type };
+    // Founder F17: a line with a key ("People & Ops is waiting for a cloud model.") is one line per agent, updated in
+    // place, never added again.
+    const lineKey = (data.line_key as string | undefined) || undefined;
+    const same = lineKey ? state.turns.findIndex((t) => t.role === "lane" && t.lineKey === lineKey) : -1;
+    if (same >= 0) {
+      const turns = [...state.turns];
+      turns[same] = { ...(turns[same] as Extract<Turn, { role: "lane" }>), text: data.text as string };
+      return { ...state, turns };
+    }
+    const turn: Turn = { id, role: "lane", text: data.text as string, kind: event.type, lineKey };
     return { ...state, turns: [...state.turns, turn] };
   }
   if (event.type === "amendment.offered") {

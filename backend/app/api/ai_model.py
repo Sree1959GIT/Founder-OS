@@ -32,6 +32,8 @@ from app.llm.ai_model import (
     build_provider,
     check_base_url,
     explain_failure,
+    internet_works,
+    is_timeout,
     list_models,
     mask,
     pick_models,
@@ -175,7 +177,10 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
         listed, created = await retry_when_busy(listing, deadline, retries)
         key_ok = True  # the provider answered with this key's model list: the key is accepted
     except (LLMError, TimeoutError) as exc:
-        code, message = explain_failure(exc, preset.label, body.model.strip(), timeout, key_ok=key_ok)
+        internet_ok = await _internet_ok(exc, preset)
+        code, message = explain_failure(
+            exc, preset.label, body.model.strip(), timeout, key_ok=key_ok, internet_ok=internet_ok
+        )
         if isinstance(exc, TimeoutError) or getattr(exc, "network", False) or code in _KEY_PROBLEMS:
             logger.info("AI model test failed: {} {} (list, {})", preset.label, code, getattr(exc, "status", None))
             return _fail(request, code, message, preset=preset.id)
@@ -231,7 +236,14 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
     }
 
 
-_KEY_PROBLEMS = ("wrong_key", "no_credit", "busy", "free_limit", "server_error")
+async def _internet_ok(exc: BaseException, preset: Preset) -> bool:
+    """Founder F7c: only for a connection error (not a timeout): does another AI provider answer from here?"""
+    if not isinstance(exc, LLMError) or not exc.network or is_timeout(exc):
+        return False
+    return await internet_works(preset.id)
+
+
+_KEY_PROBLEMS = ("wrong_key", "no_credit", "busy", "free_limit", "server_error", "slow")
 UNKNOWN_KEY = "We couldn't recognise this key. Please check it, or pick the provider that issued it."
 
 
@@ -265,7 +277,8 @@ async def _try_models(
             await retry_when_busy(probe, deadline, retries)
             return model, None
         except (LLMError, TimeoutError) as exc:
-            code, message = explain_failure(exc, preset.label, model, timeout, key_ok=key_ok)
+            internet_ok = await _internet_ok(exc, preset)
+            code, message = explain_failure(exc, preset.label, model, timeout, key_ok=key_ok, internet_ok=internet_ok)
             failure = (code, message, getattr(exc, "status", None))
             if code != "model_not_found":
                 break
