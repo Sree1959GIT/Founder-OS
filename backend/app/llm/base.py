@@ -102,6 +102,9 @@ class Completion(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     latency_ms: float = 0.0
     fallback_from: str | None = Field(default=None, description="Provider that failed before this one answered")
+    fallback_reason: str | None = Field(
+        default=None, description="Founder F19: why `fallback_from` failed: rate_limit, busy, unreachable or error"
+    )
     est_cost_usd: float | None = Field(default=None, description="From the router's price table; 0 for local models")
 
     def json(self) -> Any:  # type: ignore[override]

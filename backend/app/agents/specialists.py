@@ -11,6 +11,7 @@ import calendar
 import datetime as dt
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -37,6 +38,7 @@ from app.agents.sources import (
 from app.agents.verifier import Fact, extract_figures, number_supported, split_sentences, verify_numbers
 from app.engine.calibration import PredictionIn
 from app.vault.manager import NoteExistsError
+from app.vault.memo_versions import find_memo_for, keep_version
 
 REVIEW_AFTER_DAYS = 30
 MAX_TEAM = 8
@@ -947,6 +949,33 @@ def decision_key(frame: DecisionFrame | None) -> str:
     return f"{frame.type}:{' '.join(frame.subject.casefold().split())}"
 
 
+def memo_versions_dir(ctx: Any) -> Path | None:
+    """Founder F18: where earlier versions of the memos are kept (the workspace's data folder, outside the vault)."""
+    service = ctx.vault
+    settings = getattr(service, "settings", None)
+    if settings is None or not hasattr(settings, "workspace_data_dir"):
+        return None
+    return Path(settings.workspace_data_dir(getattr(service, "workspace_id", None))) / "memo_versions"
+
+
+def _replace_decision_memo(ctx: Any, key: str, frontmatter: dict[str, Any], body: str, now: dt.datetime) -> str:
+    """Founder F18: one memo per open decision. The decision's memo is rewritten in place (no more "-2.md" files)
+    and the text it had is kept as an earlier version. "" when this decision has no memo yet."""
+    root = memo_versions_dir(ctx)
+    vault = ctx.vault.vault
+    existing = find_memo_for(vault, key) if root is not None else None
+    if existing is None or root is None:
+        return ""
+    try:
+        old = vault.read_note(existing).get("content") or ""
+        if old:
+            keep_version(root, existing, old, at=now)
+    except (OSError, ValueError) as exc:  # without a kept copy the old text would be lost: write a new file instead
+        logger.warning("Could not keep the earlier version of {}: {}", existing, exc)
+        return ""
+    return vault.write_note(existing, frontmatter=frontmatter, body=body)
+
+
 def write_memo(
     ctx: Any,
     draft: MemoDraft,
@@ -983,9 +1012,16 @@ def write_memo(
         "tags": ["decision"],
     }
     body = render_body(draft, upstream, frame, message, evidence)
+    key = decision_key(frame)
+    now = dt.datetime.now().replace(microsecond=0)
+    if key:
+        frontmatter["decision"] = key  # founder F18: which open decision this memo is for
+    frontmatter["written_at"] = now.isoformat(timespec="minutes")
     base = f"decisions/{today.isoformat()}-{memo_slug(draft.title)}"
-    written = ""
+    written = _replace_decision_memo(ctx, key, frontmatter, body, now)
     for attempt in range(1, 100):
+        if written:
+            break
         path = f"{base}.md" if attempt == 1 else f"{base}-{attempt}.md"
         try:
             written = ctx.vault.vault.write_note(path, frontmatter=frontmatter, body=body, create_only=True)
