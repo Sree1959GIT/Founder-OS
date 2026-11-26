@@ -2,17 +2,16 @@ import { ArrowLeft, Plus, RotateCcw, Square, TriangleAlert, X } from "lucide-rea
 import { useEffect, useMemo, useState } from "react";
 
 import { ErrorNote, EmptyNote, Pill, VerifiedBadge } from "@/components/common";
+import { AgentNotices, WhereBadge } from "@/components/activity/AgentNotices";
+import { Face } from "@/components/boardroom/faces";
 import { Button } from "@/components/ui/button";
 import { approveRun, cancelAgent, cancelRun, rerunAgent, type AgentInstance, type TeamEdit } from "@/lib/api";
-import { agentCode, agentKind, runTitle, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
+import { agentKind, runTitle, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
 import { cloudOn, slotsInUse, useCatalog, type AgentCatalog } from "@/hooks/useCatalog";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
 import { usdText } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
-function WhereBadge({ isCloud, provider }: { isCloud: boolean; provider: string }) {
-  return <Pill tone={isCloud ? "amber" : "ok"}>{isCloud ? `Cloud · ${provider}` : "Local"}</Pill>;
-}
 
 function statusTone(status: string): string {
   if (status === "done") return "text-ok";
@@ -74,12 +73,10 @@ function Proposal({ run, catalog }: { run: RunView; catalog: AgentCatalog | null
         {team.map((agent: AgentInstance) => (
           <article key={agent.id} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3">
             <div className="flex items-center gap-2">
-              <span className="num flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-background text-xs font-semibold">
-                {agentCode(agent.type)}
-              </span>
+              <Face type={agent.type} size={36} />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{agent.name}</p>
-                <WhereBadge isCloud={agent.is_cloud} provider={agent.provider} />
+                <WhereBadge agent={agent} />
               </div>
               <Button
                 variant="ghost"
@@ -105,9 +102,7 @@ function Proposal({ run, catalog }: { run: RunView; catalog: AgentCatalog | null
         {added.map((agent, i) => (
           <article key={`${agent.type}-${i}`} className="flex flex-col gap-2 rounded-xl border border-dashed border-border-strong bg-card p-3">
             <div className="flex items-center gap-2">
-              <span className="num flex h-[34px] w-[34px] items-center justify-center rounded-lg bg-background text-xs font-semibold">
-                {agentCode(agent.type)}
-              </span>
+              <Face type={agent.type} size={36} />
               <p className="min-w-0 flex-1 truncate font-semibold">
                 {catalog?.agents.find((c) => c.type === agent.type)?.title ?? agent.type}
               </p>
@@ -221,15 +216,14 @@ function AgentCard({ run, agent }: { run: RunView; agent: AgentView }) {
   return (
     <article className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5" aria-label={agent.name} data-testid="agent-card">
       <div className="flex items-center gap-2.5">
-        <span className="num flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-background text-xs font-semibold">
-          {agentCode(agent.type)}
-        </span>
+        <Face type={agent.type} size={38} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold">{agent.name}</p>
           <p className="truncate text-xs text-muted-foreground">{agentKind(agent.type)}</p>
         </div>
-        <WhereBadge isCloud={agent.is_cloud} provider={agent.provider} />
+        <WhereBadge agent={agent} />
       </div>
+      <AgentNotices runId={run.id} agent={agent} />
       <p className="text-[13px] leading-snug text-muted-foreground">
         <span className="text-foreground">Brief: </span>
         {agent.brief}

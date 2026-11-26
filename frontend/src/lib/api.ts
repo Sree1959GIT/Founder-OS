@@ -315,6 +315,8 @@ export interface VaultNote {
   content?: string;
   body?: string;
   frontmatter?: Record<string, unknown>;
+  /** When the file last changed (ISO). */
+  modified?: string;
   backlinks: string[];
   links?: unknown[];
 }
@@ -678,3 +680,19 @@ export function parseFrame(block: string): { event: string; data: unknown } | nu
     return null;
   }
 }
+
+/** Founder F18: earlier versions of one decision's memo, newest first (the memo itself is the latest). */
+export interface MemoVersion {
+  id: string;
+  written_at: string;
+  title: string;
+  proposed_option: string;
+}
+
+export const fetchMemoVersions = (path: string) =>
+  request<{ path: string; versions: MemoVersion[] }>(`/api/memos/versions?path=${encodeURIComponent(path)}`);
+
+export const fetchMemoVersion = (path: string, id: string) =>
+  request<{ id: string; frontmatter: Record<string, unknown>; body: string }>(
+    `/api/memos/versions/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`,
+  );

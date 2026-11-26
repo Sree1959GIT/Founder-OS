@@ -66,12 +66,14 @@ function cssMaskWorks(): boolean {
 export const UNKNOWN_KEY = "We couldn't recognise this key. Please check it, or pick the provider that issued it.";
 /** Founder F7: busy or a server problem of the provider's own: a yellow notice, not a red error. */
 const NOTICE_CODES = new Set(["busy", "free_limit", "server_error", "slow"]); // F7b: a used-up free quota; F7c: slow
+const RECOMMENDED = 4; // M7b polish: the best 3-4 models first, the rest behind "Show all"
 
 export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => void; redetect?: number }) {
   const [view, setView] = useState<AIModelView | null>(null);
   const [presetId, setPresetId] = useState("qwen_local");
   const [manual, setManual] = useState(false); // the member picked the provider: the key's shape no longer overrides
   const [customModel, setCustomModel] = useState("");
+  const [allModels, setAllModels] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState<null | "test" | "local" | "remove">(null);
@@ -133,6 +135,8 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
       ? view.saved
       : null;
   const models = savedHere?.models ?? [];
+  // M7b polish: "Recommended (3–4) · Show all": the best few first (the backend lists them best first).
+  const shownModels = allModels ? models : models.slice(0, RECOMMENDED);
   const keyPreset = preset.needs_key ? preset : detectedPreset;
 
   const onKey = (value: string) => {
@@ -146,6 +150,7 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
   const run = async (
     kind: "test" | "local" | "remove",
     changeModel?: string,
+    pasted?: { key: string; preset: string },
   ) => {
     setBusy(kind);
     setFailure(null);
@@ -153,13 +158,14 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
     try {
       if (kind === "test") {
         // Qwen in the list and a key that matches no known shape: the backend says to pick the provider.
-        const target = preset.needs_key ? preset.id : (detected ?? "");
+        // M7b: a pasted key is tested at once, with the provider its shape names.
+        const target = pasted ? pasted.preset : preset.needs_key ? preset.id : (detected ?? "");
         const result = await testAIModel({
           preset: target,
           model:
-            changeModel ?? (preset.custom_base_url ? customModel.trim() : ""),
-          base_url: preset.custom_base_url ? baseUrl.trim() : "",
-          api_key: changeModel ? "" : apiKey.trim(),
+            changeModel ?? (preset.custom_base_url && !pasted ? customModel.trim() : ""),
+          base_url: preset.custom_base_url && !pasted ? baseUrl.trim() : "",
+          api_key: changeModel ? "" : (pasted?.key ?? apiKey.trim()),
         });
         setView(result.view);
         if (result.ok) {
@@ -273,6 +279,15 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
             data-testid="ai-key"
             value={apiKey}
             onChange={(e) => onKey(e.target.value)}
+            onPaste={(e) => {
+              // M7b polish: test on paste. Only a key whose shape names its provider, and never twice at once.
+              const value = e.clipboardData.getData("text").trim();
+              const found = value ? detectPreset(view, value) : null;
+              if (!found || busy !== null) return;
+              e.preventDefault();
+              onKey(value);
+              void run("test", undefined, { key: value, preset: found });
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && testable) {
                 e.preventDefault();
@@ -337,15 +352,27 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
               disabled={busy !== null}
               onChange={(e) => void run("test", e.target.value)}
             >
-              {models.some((m) => m.id === view.in_use.model) ? null : (
+              {shownModels.some((m) => m.id === view.in_use.model) ? null : (
                 <option value={view.in_use.model}>{view.in_use.model}</option>
               )}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label && m.label !== m.id ? `${m.label} (${m.id})` : m.id}
-                </option>
-              ))}
+              <optgroup label={allModels ? `All models (${models.length})` : `Recommended (${shownModels.length})`}>
+                {shownModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label && m.label !== m.id ? `${m.label} (${m.id})` : m.id}
+                  </option>
+                ))}
+              </optgroup>
             </select>
+            {models.length > RECOMMENDED ? (
+              <button
+                type="button"
+                className="self-start text-xs text-info underline"
+                aria-pressed={allModels}
+                onClick={() => setAllModels(!allModels)}
+              >
+                {allModels ? `Recommended (${Math.min(RECOMMENDED, models.length)}) only` : `Show all ${models.length}`}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -392,7 +419,9 @@ export function AIModelCard({ onChanged, redetect = 0 }: { onChanged?: () => voi
             >
               {busy === "test"
                 ? `Testing… (up to ${view.test_timeout_s} s)`
-                : "Test key"}
+                : verified && savedHere && !apiKey.trim()
+                  ? "Test again"
+                  : "Test key"}
             </Button>
           ) : null}
           {!preset.needs_key && verified ? (

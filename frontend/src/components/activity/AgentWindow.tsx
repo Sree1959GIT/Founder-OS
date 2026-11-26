@@ -1,6 +1,7 @@
 import { GripHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 
+import { AgentNotices } from "@/components/activity/AgentNotices";
 import { Pill } from "@/components/common";
 import { agentBars, countAgents, isPosition, keepOnScreen, stageNodes, type NodeState, type Position } from "@/lib/agentGraph";
 import { agentCode, runTitle, safeStep, seconds, stepWords, STATUS_PROGRESS, STATUS_WORDS } from "@/lib/format";
@@ -201,12 +202,19 @@ export function AgentWindow({ onClose }: { onClose: () => void }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{agent.name}</span>
-                      <Pill tone={agent.is_cloud ? "amber" : "ok"}>{agent.is_cloud ? "Cloud" : "Local"}</Pill>
+                      {agent.fallback ? (
+                        <Pill tone="info" title={agent.fallback}>
+                          Qwen
+                        </Pill>
+                      ) : (
+                        <Pill tone={agent.is_cloud ? "amber" : "ok"}>{agent.is_cloud ? "Cloud" : "Local"}</Pill>
+                      )}
                     </div>
                     <p className="truncate text-xs text-muted-foreground" title={agent.step ? safeStep(agent.step) : undefined}>
                       {stepWords(agent.step, agent.status)}
                       {agent.elapsedMs ? ` · ${seconds(agent.elapsedMs)}` : ""}
                     </p>
+                    {run ? <AgentNotices runId={run.id} agent={agent} compact /> : null}
                     <span className="relative mt-1 block h-1.5 rounded bg-background" aria-hidden="true">
                       <span
                         className={cn(

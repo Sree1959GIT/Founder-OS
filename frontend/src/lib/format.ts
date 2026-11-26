@@ -273,3 +273,15 @@ export function collapseVersions<
   const key = (v: T) => [v.table, v.rows, v.source_file ?? "", Boolean(v.clean_sample)].join("|");
   return versions.filter((v, i) => i === 0 || key(versions[i - 1] as T) !== key(v));
 }
+
+/** Founder F18: "26 Nov 2026, 10:42" for the memo's Latest badge and its earlier versions ("" when unknown). */
+export function memoWhen(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const compact = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/.exec(iso);
+  const text = compact ? `${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5]}` : iso;
+  const date = new Date(text.length === 10 ? `${text}T00:00` : text);
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  if (text.length === 10) return day;
+  return `${day}, ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+}
