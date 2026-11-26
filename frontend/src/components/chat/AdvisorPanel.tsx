@@ -27,12 +27,31 @@ function Chip({ children, onClick, primary }: { children: string; onClick: () =>
 }
 
 function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "advisor" }> }) {
-  const { amendment, queued } = useWorkspace();
+  const { amendment, queued, slow } = useWorkspace();
   if (turn.role === "lane") {
     return (
       <p className="border-l-2 border-border-strong pl-2.5 text-[13px] leading-relaxed text-muted-foreground" data-testid="narration">
         {turn.text}
       </p>
+    );
+  }
+  if (turn.role === "slow") {
+    return (
+      <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="slow-cloud" role="status">
+        <p className="text-[13px] text-foreground">{turn.text}</p>
+        {turn.status === "offered" ? (
+          <div className="flex flex-wrap gap-2">
+            <Chip primary onClick={() => void slow(turn.id, true)}>
+              Continue on Qwen on our server
+            </Chip>
+            <Chip onClick={() => void slow(turn.id, false)}>Keep waiting</Chip>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {turn.status === "local" ? `Moved to Qwen on our server: ${turn.reason}.` : "Still waiting for the cloud model."}
+          </p>
+        )}
+      </div>
     );
   }
   if (turn.role === "amendment") {

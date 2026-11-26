@@ -31,6 +31,7 @@ from app.engine.metrics import MetricError
 from app.engine.sql_guard import SqlGuardError
 from app.llm.base import LLMError
 from app.llm.ollama import OllamaProvider
+from app.llm.spend import FxRates
 from app.logging_setup import configure_logging
 from app.responses import Utf8JSONResponse
 from app.vault.manager import NoteExistsError, NoteNotFoundError, VaultError, VaultPathError
@@ -96,6 +97,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             asyncio.get_running_loop().run_in_executor(None, app.state.voice.load) if settings.voice_enabled else None
         )
         apply_saved(app, settings)
+        # Founder F12: costs in the member's currency, at a daily rate (cached; US dollars when there is none).
+        app.state.fx = FxRates(settings._resolve(settings.data_dir), settings.fx_rates_url)
+
+        def currency_rate() -> tuple[str, float]:
+            current = getattr(app.state, "effective_settings", settings)
+            return app.state.fx.rate(current.member_currency or "USD")
+
+        orchestrator.currency_rate = currency_rate
+        app.state.fx.refresh_soon()
         logger.info(
             "Agents ready: local LLM {}:{} (thinking {}), deep provider {}, team approval {}",
             orchestrator.router.local.name,

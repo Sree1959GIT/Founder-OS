@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AgentActivity } from "@/components/activity/AgentActivity";
 import { AgentRail } from "@/components/activity/AgentRail";
@@ -13,6 +13,8 @@ import { SettingsPanel } from "@/components/panels/SettingsPanel";
 import { VaultPanel } from "@/components/panels/VaultPanel";
 import { useHealth } from "@/hooks/useHealth";
 import { useRoute } from "@/hooks/useRoute";
+import { fetchSettings, putSettings } from "@/lib/api";
+import { browserCurrency } from "@/lib/currency";
 import { LEFT, maxWidth, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
 import { WorkspaceProvider } from "@/lib/workspace";
 
@@ -81,6 +83,14 @@ export default function App() {
   const [agentsOpen, setAgentsOpen] = useState(false);
   const toggleAgents = useCallback(() => setAgentsOpen((open) => !open), []);
   const closeAgents = useCallback(() => setAgentsOpen(false), []);
+  // Founder F12: until the member picks a currency in Settings, the browser's region decides (silently, once).
+  const ready = health.kind === "ready";
+  useEffect(() => {
+    if (!ready) return;
+    fetchSettings()
+      .then((s) => (s.member_currency === "" ? putSettings({ member_currency: browserCurrency() }) : null))
+      .catch(() => undefined);
+  }, [ready]);
   return (
     <WorkspaceProvider>
       <div className="flex min-h-full flex-col">

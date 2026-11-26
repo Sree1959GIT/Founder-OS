@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -43,6 +43,8 @@ class SettingsUpdate(BaseModel):
     team_approval: Literal["always", "cloud_only", "never"] | None = None
     max_local_agents: int | None = Field(None, ge=1, le=16)
     max_cloud_agents: int | None = Field(None, ge=1, le=32)
+    # Founder F12: the member's currency for costs and the cap (the cap is still stored in USD).
+    member_currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
 
 
 def _file(settings: Settings) -> Path:
@@ -125,6 +127,35 @@ def ai_model_provider(settings: Settings) -> tuple[bool, LLMProvider | None]:
         return True, None
 
 
+def ai_model_in_use(settings: Settings) -> dict[str, Any] | None:
+    """Founder F6: the verified AI model card choice in use for the deep-work agents, or None (Qwen / `.env`).
+
+    The top bar, the Cloud section and "Default" in Provider per agent show this, e.g. "Gemini · gemini-3.8-flash
+    (from AI model)", instead of the `.env` providers' "no key"."""
+    choice = AIModelStore(settings.workspace_data_dir()).load()
+    if choice is None or not choice.active or not choice.has_key or choice.verified_at is None:
+        return None
+    if SecretBox.from_settings(settings).decrypt(choice.key_token) is None:
+        return None
+    try:
+        preset = preset_for(choice.preset)
+    except ValueError:
+        return None
+    return {
+        "preset": preset.id,
+        "label": preset.label,
+        "model": choice.model,
+        "text": f"{preset.label} · {choice.model} (from AI model)",
+    }
+
+
+def cloud_usable(settings: Settings) -> bool:
+    """A key that can be used: a verified AI model card key, or a `.env` provider key."""
+    if ai_model_in_use(settings) is not None:
+        return True
+    return any(settings.provider_configured(p) for p in DeepProvider if p is not DeepProvider.OLLAMA)
+
+
 def save_choices(app: Any, update: dict[str, Any]) -> Settings:
     """Merge `update` into `ui_settings.json`, write it atomically and apply it to the running app."""
     base: Settings = app.state.base_settings
@@ -148,8 +179,13 @@ def _current(request: Request) -> Settings:
     return getattr(request.app.state, "effective_settings", request.app.state.base_settings)
 
 
+def _usd_info(asked: str) -> dict[str, Any]:
+    return {"asked": asked or "USD", "currency": "USD", "symbol": "$", "rate": 1.0, "as_of": None, "source": ""}
+
+
 def _view(request: Request) -> dict[str, Any]:
     settings = _current(request)
+    fx = getattr(request.app.state, "fx", None)
     llm = request.app.state.orchestrator.router
     ledger = llm.ledger.summary() if llm.ledger is not None else {}
     return {
@@ -168,6 +204,11 @@ def _view(request: Request) -> dict[str, Any]:
             for spec in REGISTRY.values()
         ],
         "spend": ledger,
+        "ai_model": ai_model_in_use(settings),
+        "cloud_usable": cloud_usable(settings),
+        "member_currency": settings.member_currency,
+        # Founder F12: the member's currency and today's rate (US dollars when there is none). The cap stays in USD.
+        "fx": fx.info(settings.member_currency) if fx is not None else _usd_info(settings.member_currency),
         "privacy_note": PRIVACY_NOTE,
     }
 
@@ -179,5 +220,10 @@ async def get_settings_view(request: Request) -> dict[str, Any]:
 
 @router.put("/settings")
 async def update_settings(body: SettingsUpdate, request: Request) -> dict[str, Any]:
+    # Founder F4: only a passing, saved key may turn cloud on. With none, nothing could leave this PC anyway.
+    if body.cloud_allowed and not _current(request).cloud_allowed and not cloud_usable(_current(request)):
+        raise HTTPException(
+            422, "Test and save a key in the AI model card first: only a key that passed its test can turn cloud on."
+        )
     save_choices(request.app, body.model_dump(mode="json", exclude_none=True))
     return _view(request)

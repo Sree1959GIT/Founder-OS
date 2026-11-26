@@ -69,6 +69,7 @@ def settings(tmp_path: Path) -> Settings:
         voice_stt="fake",
         voice_tts="fake",
         voice_vad="energy",  # off; tests/test_m5_carried.py turns it on
+        fx_rates_url="",  # founder F12: no exchange-rate fetch in tests (US dollars, or a fake table)
     )
 
 

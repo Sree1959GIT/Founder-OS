@@ -241,9 +241,12 @@ def test_the_matrix_uses_the_same_four_words_on_the_board_and_in_the_note(client
 
 
 def test_cloud_allowed_with_no_key_reads_the_same_on_the_strip_and_the_badge(settings: Settings) -> None:
-    """Founder review 35: allowed in Settings, but no provider has a key, so nothing can leave this PC."""
-    with TestClient(create_app(settings.model_copy(update={"auto_load_sample_data": False}))) as client:
-        client.put("/api/settings", json={"cloud_allowed": True})
+    """Founder review 35: allowed (here from `.env`), but no provider has a key, so nothing can leave this PC.
+    Founder F4 (M7a fix round 2): Settings can no longer turn cloud on without a key that passed its test."""
+    no_key = settings.model_copy(update={"auto_load_sample_data": False})
+    with TestClient(create_app(no_key)) as client:
+        assert client.put("/api/settings", json={"cloud_allowed": True}).status_code == 422
+    with TestClient(create_app(no_key.model_copy(update={"cloud_allowed": True}))) as client:
         cloud = next(d for d in client.get("/api/health").json()["dependencies"] if d["name"] == "cloud")
         assert cloud["info"]["cloud_allowed"] is True and cloud["info"]["cloud_usable"] is False
         assert cloud["state"] == "degraded" and "no provider has a key" in cloud["detail"]

@@ -37,9 +37,10 @@ from app.llm.ai_model import (
     pick_models,
     preset_for,
     probe_key,
+    retry_when_busy,
 )
-from app.llm.base import LLMError
-from app.llm.presets import KEY_SHAPES, LOCAL_PRESET, PRESETS, Preset, default_model, detect_preset
+from app.llm.base import LLMError, LLMProvider
+from app.llm.presets import LOCAL_PRESET, PRESETS, Preset, default_model, detect_preset, load_key_shapes
 
 router = APIRouter(prefix="/settings/ai-model", tags=["settings"])
 
@@ -97,7 +98,7 @@ def _view(request: Request) -> dict[str, Any]:
         "secret_ready": box.ready,
         "secret_problem": box.problem,
         "test_timeout_s": settings.ai_model_test_timeout_s,
-        "key_shapes": [{"prefix": prefix, "preset": preset_id} for prefix, preset_id in KEY_SHAPES],
+        "key_shapes": [{"prefix": s.prefix, "preset": s.preset} for s in load_key_shapes(settings)],
         "presets": [
             {
                 "id": p.id,
@@ -129,14 +130,12 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
     key = body.api_key.get_secret_value().strip()
     if len(key) > 500 or any(ch.isspace() for ch in key):
         return _fail(request, "wrong_key", "That does not look like an API key: copy it again.")
-    preset_id = body.preset.strip() or (detect_preset(key) if key else "")
+    preset_id = body.preset.strip() or (detect_preset(key, load_key_shapes(settings)) if key else "")
     if not preset_id:
         return _fail(
             request,
             "unknown_provider" if key else "missing",
-            "FounderOS can't tell which provider this key is for. Pick the provider in the list, then test again."
-            if key
-            else "Paste your API key first.",
+            UNKNOWN_KEY if key else "Paste your API key first.",
         )
     try:
         preset = preset_for(preset_id)
@@ -165,12 +164,18 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
     deadline = loop.time() + timeout  # the whole test (list + try) stays within the card's 15 s
 
     # 1. Which models can this key use? A wrong key, no credit or a rate limit already shows here.
+    retries = settings.ai_model_busy_retries
+    typed = bool(body.api_key.get_secret_value().strip())
+    key_ok = saved is not None and saved.verified_at is not None and saved.preset == preset.id and not typed
     try:
-        listed, created = await asyncio.wait_for(
-            list_models(preset, key, base_url=base_url, timeout_s=timeout), timeout=timeout
-        )
+
+        async def listing(left: float) -> tuple[list[ModelInfo], dict[str, float]]:
+            return await asyncio.wait_for(list_models(preset, key, base_url=base_url, timeout_s=left), timeout=left)
+
+        listed, created = await retry_when_busy(listing, deadline, retries)
+        key_ok = True  # the provider answered with this key's model list: the key is accepted
     except (LLMError, TimeoutError) as exc:
-        code, message = explain_failure(exc, preset.label, body.model.strip(), timeout)
+        code, message = explain_failure(exc, preset.label, body.model.strip(), timeout, key_ok=key_ok)
         if isinstance(exc, TimeoutError) or getattr(exc, "network", False) or code in _KEY_PROBLEMS:
             logger.info("AI model test failed: {} {} (list, {})", preset.label, code, getattr(exc, "status", None))
             return _fail(request, code, message, preset=preset.id)
@@ -193,7 +198,7 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
         )
 
     # 2. One tiny request to the chosen model; a listed model that refuses is skipped for the next best one.
-    model, failure = await _try_models(preset, key, base_url, candidates, deadline, timeout)
+    model, failure = await _try_models(preset, key, base_url, candidates, deadline, timeout, retries, key_ok=key_ok)
     if failure is not None:
         code, message, status = failure
         logger.info("AI model test failed: {} {} ({})", preset.label, code, status)  # the reason only, never the key
@@ -215,6 +220,8 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
     )
     save_choices(request.app, {"cloud_allowed": True})  # verifying a key is the member's choice to use it
     logger.info("AI model set for the deep-work agents: {} {}", preset.label, model)
+    # Founder F5: only the first 3 characters and the provider, to grow the key-shape list. Never more of the key.
+    logger.info("AI model key shape: starts {!r} -> {}", key[:3], preset.id)
     return {
         "ok": True,
         "code": "ok",
@@ -224,11 +231,20 @@ async def test_ai_model(body: KeyTestRequest, request: Request) -> dict[str, Any
     }
 
 
-_KEY_PROBLEMS = ("wrong_key", "no_credit", "rate_limited")
+_KEY_PROBLEMS = ("wrong_key", "no_credit", "busy", "server_error")
+UNKNOWN_KEY = "We couldn't recognise this key. Please check it, or pick the provider that issued it."
 
 
 async def _try_models(
-    preset: Preset, key: str, base_url: str, candidates: list[str], deadline: float, timeout: float
+    preset: Preset,
+    key: str,
+    base_url: str,
+    candidates: list[str],
+    deadline: float,
+    timeout: float,
+    retries: int = 0,
+    *,
+    key_ok: bool = False,
 ) -> tuple[str, tuple[str, str, int | None] | None]:
     """(the model that answered, None) or (the last model tried, (code, message, HTTP status))."""
     loop = asyncio.get_running_loop()
@@ -242,10 +258,14 @@ async def _try_models(
             break
         provider = build_provider(preset, model, key, base_url=base_url, timeout_s=timeout, max_tokens=limit)
         try:
-            await probe_key(provider, max(left, 1.0))  # the list and every try share the 15 s
+
+            async def probe(seconds: float, provider: LLMProvider = provider) -> None:
+                await probe_key(provider, seconds)  # the list and every try share the 15 s
+
+            await retry_when_busy(probe, deadline, retries)
             return model, None
         except (LLMError, TimeoutError) as exc:
-            code, message = explain_failure(exc, preset.label, model, timeout)
+            code, message = explain_failure(exc, preset.label, model, timeout, key_ok=key_ok)
             failure = (code, message, getattr(exc, "status", None))
             if code != "model_not_found":
                 break

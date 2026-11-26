@@ -151,9 +151,25 @@ class Settings(BaseSettings):
     # Custom base URLs must be https on a public address (a hosted server must not call its own network). True allows
     # http and private addresses, e.g. a model server on your own LAN. Leave false on a hosted server.
     ai_model_allow_private_urls: bool = False
+    # Founder F5: which provider a key belongs to, from how it starts. Empty: <DATA_DIR>/key_shapes.json when it exists,
+    # else the copy shipped in app/llm/key_shapes.json. Read on every test, so the list changes without a code change.
+    ai_model_key_shapes_file: Path | None = None
+    # Founder F7: a provider that is busy (HTTP 503) or rate limited (429) during Test key is asked again this many
+    # times, with a short back-off, inside the test's time limit.
+    ai_model_busy_retries: int = Field(default=2, ge=0, le=5)
+    # Founder F8: a cloud agent still waiting after this many seconds (or twice its usual time, whichever is first, but
+    # never under CLOUD_SLOW_MIN_S) is named by the Advisor, who offers to continue on Qwen. 0 turns the offer off.
+    cloud_slow_after_s: float = Field(default=45.0, ge=0, le=3600)
+    cloud_slow_min_s: float = Field(default=15.0, ge=0, le=3600)
+    # Founder F12: the spend report in the member's currency. A free exchange rate with no key, fetched once a day and
+    # cached in <DATA_DIR>/fx_rates.json; any failure shows US dollars. Empty URL: always US dollars.
+    fx_rates_url: str = "https://open.er-api.com/v6/latest/USD"
 
     # Display
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    # Founder F12: the member's own currency for what the cloud costs (Settings → Currency; the browser's region until
+    # chosen). Empty: US dollars. Business-country detection comes in M7f.
+    member_currency: str = Field(default="", pattern=r"^([A-Z]{3})?$")
 
     # Logging
     log_level: str = Field(default="INFO", pattern=r"^(?i:TRACE|DEBUG|INFO|SUCCESS|WARNING|ERROR|CRITICAL)$")
