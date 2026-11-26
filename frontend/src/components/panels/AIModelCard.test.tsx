@@ -300,7 +300,7 @@ describe("AI model card polish (M7b)", () => {
 
   it("says Test again after a pass, and shows the recommended models first with Show all", async () => {
     const many = Array.from({ length: 7 }, (_, i) => ({ id: `claude-m${i}`, label: `Model ${i}` }));
-    initial = { ...verified, saved: { ...verified.saved!, models: [{ id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" }, ...many] } };
+    initial = { ...verified, saved: { ...(verified.saved as NonNullable<AIModelView["saved"]>), models: [{ id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" }, ...many] } };
     render(<AIModelCard />);
     expect(await screen.findByRole("button", { name: "Test again" })).toBeInTheDocument();
     const select = screen.getByLabelText("Change model (optional)") as HTMLSelectElement;
