@@ -7,7 +7,7 @@
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** M7c (invite login), only after **M7b** (PR #17, Major) is ACCEPTED: the founder runs MB1–MB12 below. M7b built F8d, F19, F9 and F18 (Founder feedback, top: RESOLVED on `claude/serene-knuth-si17hr`). Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-26 (M7b built, PR #17 open, awaiting the Major gate MB1–MB12)
+- **Last updated:** 2026-11-27 (M7b founder gate in progress: design accepted in principle, F20–F27 recorded, not fixed yet)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -82,7 +82,7 @@
 | M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | ACCEPTED (SM, merged after the re-test of 2026-11-26 in Edge): F4 pass, F5 pass (AQ. detected, unknown-key message, re-detect on Qwen), F6 pass, F7 pass for 429, F12 pass in Settings and the memo ("about ₹26: Groq 9 calls"), **F8 fail** (now F8b). The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`). New findings F4b, F7b, F8b, F12b, F13 fixed in fix round 3 below |
 | M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | [Sree1959GIT/Founder-OS#15](https://github.com/Sree1959GIT/Founder-OS/pull/15) | Light | MERGED; re-test 2026-11-26 (main, Edge, Groq key): AM-R2 pass; AM-R3 Groq pass, **Gemini fail** (now F7c); **AM-R4 fail** (now F8c); AM-R5 pass (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"); **AM-R6 fail** (now F13b). Voice stopping when Activity opens is F9 (M7b). New findings F14–F17 fixed in fix round 4 below |
 | M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | MERGED; re-test 2026-11-26: AM-S1, AM-S4, AM-S6, AM-S7 pass; **AM-S3 partly**: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" but no offer appears on screen (now F8d, M7b); AM-S5 and AM-S8 to re-test in M7b |
-| M7b Decision Room UI redesign | [Sree1959GIT/Founder-OS#17](https://github.com/Sree1959GIT/Founder-OS/pull/17) | **Major** | AWAITING FOUNDER: Windows check MB1–MB12 (Edge and a phone), plus AM-S5 and AM-S8 |
+| M7b Decision Room UI redesign | [Sree1959GIT/Founder-OS#17](https://github.com/Sree1959GIT/Founder-OS/pull/17) | **Major** | M7b founder gate in progress (2026-11-26/27, Edge): design accepted in principle; findings F20–F27 to fix before ACCEPTED (see Founder feedback). Still to re-test: MB2, AM-S5, AM-S8 |
 
 ## Current session
 - Started (UTC): 2026-11-26 10:36 (cloud session, **M7b: Decision Room UI redesign**, Major gate, time-box ~2 h), branch `claude/serene-knuth-si17hr` from `origin/main` (66000f5, PR #16 merged). Brief: `docs/design/M7B_DESIGN_BRIEF.md`.
@@ -1625,6 +1625,20 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M7b] Founder gate 2026-11-26/27 (Edge; PR #17): design accepted in principle; F20–F27 to fix before ACCEPTED
+Design reference for the fixes: `docs/design/DESIGN.md` (read it before any UI change).
+**To fix:**
+- **F20.** Money figures are cut off in the metric cards ("$172,280.…", "$255,344.…"). Never truncate a number: shrink or wrap it.
+- **F21.** The top bar is technical ("Ollama (down) · Qdrant (down) · GPU (off) · Storage"). Show members one plain status ("All systems OK" / "Slow right now"); move the details into Settings.
+- **F22.** The app opens in the last open decision, and the Advisor recites earlier team work unasked. Always open on Welcome. If a decision is unfinished, show one line: "You have an open decision: Dubai office. Continue it?"
+- **F23.** The Advisor panel shows walls of text (kill criteria and predictions from several old memos, repeated). Answers stay at 3 sentences or fewer; details stay in the memo.
+- **F24.** "On the table" shows "This decision". It must show the current topic ("Dubai office"), updated with each new question.
+- **F25.** The table adapts to the team: one seat per agent the planner chose (2 to 8), evenly spaced, each with its own bright colour and coloured name tag and a warmer glow. No empty seats. The phone keeps the strip.
+- **F26.** Dragging the left panel squeezes the centre (the table collapses, faces overlap the topic, metric cards break apart), and the right panel can't be resized. Both side panels must be resizable and foldable (drag handles, remembered per viewer). The centre has a minimum width; when it gets narrow, the table switches to the phone-style layout. Metric cards wrap. A "Focus on the team" button folds both panels.
+- **F27.** Voice lives on the faces, replacing the two "Start voice" buttons (left panel and LIVE bar). Tap a face to talk to that agent: the LIVE bar says "Talking to <agent>", and a "Speaking" tag with a stop button appears under the face of whoever is speaking. Stop by tapping that button or by speaking over them. Stopping a voice only stops talking: research and number work carry on, and the cards keep updating (today "voice off" shuts everything down). Keyboard: Space = hold to talk, Esc = stop speaking, M = mute the mic. The left panel keeps typing only.
+
+**Still to re-test:** MB2 (Accept writes the memo, not a new team), AM-S5 (one Matrix entry per decision), AM-S8 (one "waiting" line per agent).
+
 ### [M7a] Fix round 4 re-test 2026-11-26 (PR #16 merged): AM-S1, AM-S4, AM-S6, AM-S7 PASS; AM-S3 partly; AM-S5, AM-S8 to re-test in M7b. F8d, F19, F9, F18 RESOLVED in M7b (PR #17), awaiting MB1–MB12
 Design brief for M7b (locked by the founder): `docs/design/M7B_DESIGN_BRIEF.md`.
 **To fix (M7b, in the new screens):**
