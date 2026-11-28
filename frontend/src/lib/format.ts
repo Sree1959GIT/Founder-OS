@@ -338,3 +338,39 @@ export function tableTopic(
   if (decision) return ofDecision(decision);
   return current ? topicOf(current.message) : "Your question";
 }
+
+/** Markdown to plain sentences: headings, list marks, emphasis, links and tables go; the words stay. */
+function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*\|/.test(line) && !/^\s*#{1,6}\s/.test(line) && !/^\s*[-*_]{3,}\s*$/.test(line))
+    .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean)
+    .map((line) => (/[.!?:;]$/.test(line) ? line : `${line}.`))
+    .join(" ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/(^|\s)[*_](\S[^*_]*?)[*_](?=\s|[.,;:!?]|$)/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Founder F23: on screen the Advisor answers in 3 sentences or fewer; the rest stays one tap away and in the memo.
+ * A figure's decimal point ("$1.5M", "2.4 months") is not a sentence end. Returns the brief and whether it is shorter.
+ */
+export function briefAnswer(markdown: string, max = 3): { brief: string; more: boolean } {
+  const text = plainText(markdown);
+  // A sentence ends at . ! or ? followed by a space: "$1.5M" and "2.4 months" never split.
+  const sentences = text.split(/(?<=[.!?]["”')\]]*)\s+/).map((s) => s.trim()).filter(Boolean);
+  const merged: string[] = [];
+  for (const s of sentences) {
+    // "e.g." / "vs." / "approx." are not ends of a sentence.
+    const prev = merged[merged.length - 1];
+    if (prev && /\b(?:e\.g|i\.e|vs|approx|etc|Mr|Ms|Dr|No)\.$/i.test(prev)) merged[merged.length - 1] = `${prev} ${s}`;
+    else merged.push(s);
+  }
+  const structured = /(?:^|\n)\s*(?:[-*+]\s|\d+[.)]\s|\||#{1,6}\s)/.test(markdown);
+  return { brief: merged.slice(0, max).join(" "), more: merged.length > max || structured };
+}

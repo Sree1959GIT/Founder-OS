@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Figure } from "@/components/common";
-import { figureSize, tableTopic, topicOf } from "@/lib/format";
+import { BriefAnswer } from "@/components/chat/AnswerCard";
+import { briefAnswer, figureSize, tableTopic, topicOf } from "@/lib/format";
 
 /** M7b founder gate (2026-11-26/27): regression tests for F20–F27. Fakes only. */
 
@@ -71,5 +72,32 @@ describe("F22 the app always opens on Welcome", () => {
     const earlier = screen.getAllByTestId("earlier-turns")[0];
     expect(earlier).toHaveTextContent("Earlier in this conversation (2)");
     expect(earlier).not.toHaveAttribute("open");
+  });
+});
+
+describe("F23 the Advisor answers in 3 sentences or fewer", () => {
+  const wall = [
+    "Open through a partner first. It keeps the runway above 14 months. A full office costs $1.5M more a year.",
+    "The Verifier checked every figure.",
+    "",
+    "**Kill criteria**",
+    "- Revenue under $40k by June",
+    "- Partner churn over 10 %",
+    "",
+    "**Predictions**",
+    "1. Two clients sign by Q2.",
+  ].join("\n");
+
+  it("keeps three sentences, and a decimal figure is not a sentence end", () => {
+    const { brief, more } = briefAnswer(wall);
+    expect(brief).toBe("Open through a partner first. It keeps the runway above 14 months. A full office costs $1.5M more a year.");
+    expect(more).toBe(true);
+    expect(briefAnswer("Runway is 14.2 months.").more).toBe(false);
+  });
+
+  it("folds the rest under Full answer", () => {
+    render(<BriefAnswer text={wall} streaming={false} />);
+    expect(screen.getByTestId("answer-brief").querySelector("p")).not.toHaveTextContent("Kill criteria");
+    expect(screen.getByTestId("answer-full")).not.toHaveAttribute("open");
   });
 });

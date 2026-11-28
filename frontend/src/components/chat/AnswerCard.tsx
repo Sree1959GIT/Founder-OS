@@ -3,7 +3,7 @@ import remarkGfm from "remark-gfm";
 
 import { AssumptionTag, CitationChips, LineageChip, Pill, VerificationBadge, VerifiedBadge } from "@/components/common";
 import type { DecisionFrame, OptionCost } from "@/lib/api";
-import { metricValue, money, seconds, signedMonths } from "@/lib/format";
+import { briefAnswer, metricValue, money, seconds, signedMonths } from "@/lib/format";
 import type { RunView } from "@/lib/workspace";
 
 function optionCost(option: OptionCost, currency: string): string {
@@ -49,6 +49,27 @@ export function DecisionLead({ frame }: { frame: DecisionFrame }) {
   );
 }
 
+/**
+ * Founder F23: the answer in 3 sentences or fewer. Lists, tables, kill criteria and predictions stay folded under
+ * "Full answer" (and in the memo); they are never shown as a wall of text.
+ */
+export function BriefAnswer({ text, streaming }: { text: string; streaming: boolean }) {
+  const { brief, more } = briefAnswer(text);
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="answer-brief">
+      <p className="text-[13.5px] leading-relaxed">{brief}</p>
+      {more && !streaming ? (
+        <details className="text-[13px]" data-testid="answer-full">
+          <summary className="cursor-pointer text-muted-foreground">Full answer</summary>
+          <div className="mt-2">
+            <AnswerText text={text} />
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 export function AnswerText({ text }: { text: string }) {
   return (
     <div className="prose-chat text-[13.5px] leading-relaxed">
@@ -89,7 +110,7 @@ export function AnswerCard({ run }: { run: RunView }) {
         ) : null}
       </div>
       {run.frame ? <DecisionLead frame={run.frame} /> : null}
-      {run.answer ? <AnswerText text={run.answer} /> : null}
+      {run.answer ? <BriefAnswer text={run.answer} streaming={!finished} /> : null}
       {!finished && !run.answer ? (
         <p className="text-[13px] text-muted-foreground" aria-live="polite">
           {run.awaitingApproval ? "The team is waiting for your approval." : "Working on it…"}
