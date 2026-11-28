@@ -85,6 +85,24 @@
 | M7b Decision Room UI redesign | [Sree1959GIT/Founder-OS#17](https://github.com/Sree1959GIT/Founder-OS/pull/17) | **Major** | M7b founder gate in progress (2026-11-26/27, Edge): design accepted in principle; findings F20–F27 to fix before ACCEPTED (see Founder feedback). Still to re-test: MB2, AM-S5, AM-S8 |
 
 ## Current session
+- Started (UTC): 2026-11-28 04:14 (cloud session, **M7b gate fix round: F20–F27**, on the existing branch `claude/serene-knuth-si17hr`, PR #17; no new PR; time-box 2 h). Design reference: `docs/design/DESIGN.md`.
+- Plan for F25–F27, checked against the brief (M7B_DESIGN_BRIEF §2 and Phone) and DESIGN.md (Layout, Components):
+  - **F25 table:** seats = the host plus exactly the agents the planner chose (proposed, then working), 2 to 8, evenly spaced on the oval from the top; no placeholders and no dimmed "empty" faces. Each seat: face ringed in its own agent colour, a name tag filled with that colour (ink text, AA), a warmer glow (tomato plus the agent's colour). Seats shrink a step for 7–8 agents so none sits on the topic. The phone keeps the strip.
+  - **F26 panels:** both side panels resizable (drag handle, arrow keys, double-click resets) and foldable (a fold button on each), remembered per viewer (`founderos.layout.v1`, new `rightCollapsed`). The centre keeps `centre-min` 560 px: a panel cannot be dragged into it; when the centre is still narrower (small window), the stage switches to the phone-style layout (speaking card and strip) by measuring its own width. Metric cards wrap. "Focus on the team" folds both panels (and "Show panels" brings them back).
+  - **F27 voice on the faces:** each face is a button "Talk to <agent>": it turns voice on if needed (hands-free) and the LIVE bar says "Talking to <agent>". The speaking face gets a "Speaking" tag with a Stop button; Stop, Esc or speaking over it only stops the speech (a new `hush` voice control that drops queued lines and flushes playback; the team, research and number work carry on). Space = hold to talk, M = mute the mic (client side: no audio is sent). Both "Start voice" buttons go; the left panel is typing only. "Voice off" in the LIVE bar ends the voice socket only (tested: a running team is never cancelled). A spoken "stop" still stops the team (accepted in M5/M6, D3); the brief's routing of answers to a named agent is M7g, so until then the Advisor answers for the agent you talk to.
+- Plan:
+  - [ ] F20 numbers never truncated (shrink, then wrap)
+  - [ ] F24 "On the table" shows the current topic
+  - [ ] F21 one plain status in the top bar; details in Settings
+  - [ ] F22 always open on Welcome; one line to continue an open decision
+  - [ ] F23 Advisor answers 3 sentences or fewer on screen; details in the memo
+  - [ ] F25 adaptive table
+  - [ ] F26 panels, centre minimum, compact stage, Focus on the team
+  - [ ] F27 voice on the faces, hush, keys
+  - [ ] Screenshots 1440 / 390 + narrow centre + long numbers; MB re-test list; self-review; CI
+- Progress log:
+
+### Previous session (M7b build)
 - Started (UTC): 2026-11-26 10:36 (cloud session, **M7b: Decision Room UI redesign**, Major gate, time-box ~2 h), branch `claude/serene-knuth-si17hr` from `origin/main` (66000f5, PR #16 merged). Brief: `docs/design/M7B_DESIGN_BRIEF.md`.
 - Plan:
   - [x] F19 backend: the router names why a cloud call fell back (`fallback_reason`); one `agent.fallback` event per agent, said by the Advisor; only answered cloud calls are counted
