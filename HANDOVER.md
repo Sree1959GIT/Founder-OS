@@ -1004,7 +1004,7 @@ Known issues / notes:
 - `engine/` coverage was not measured (pytest-cov is not a dev dependency); every module has dedicated tests.
 
 ## Next steps (after M7b, 2026-11-26)
-0. **Gate check:** M7b is a **Major** gate. The founder runs **MB1–MB12** below on Windows (Edge) and a phone, and writes ACCEPTED (or the issues) in the Gate log. Until then the next session works only on that feedback, on this branch.
+0. **Gate check:** M7b is a **Major** gate. The founder runs the re-test **MC1–MC10** (F20–F27, fixed 2026-11-28), then MB2, AM-S5 and AM-S8, on Windows (Edge) and a phone, and writes ACCEPTED (or the issues) in the Gate log. Until then the next session works only on that feedback, on this branch.
 1. M7c (invite login, per-member workspaces) only after M7b is ACCEPTED. The memo versions folder is already per workspace.
 2. M7g wires the Quick/Thorough toggle on Welcome (`components/welcome/Welcome.tsx`, `depth` state) and can give each face its own voice.
 3. Possible follow-ups seen this session: send Reject to the team as a constraint ("rule out X"); mark a memo decided from the memo page; calibration should replace a rewritten memo's predictions instead of adding them again.
