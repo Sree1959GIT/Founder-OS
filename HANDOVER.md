@@ -91,16 +91,21 @@
   - **F26 panels:** both side panels resizable (drag handle, arrow keys, double-click resets) and foldable (a fold button on each), remembered per viewer (`founderos.layout.v1`, new `rightCollapsed`). The centre keeps `centre-min` 560 px: a panel cannot be dragged into it; when the centre is still narrower (small window), the stage switches to the phone-style layout (speaking card and strip) by measuring its own width. Metric cards wrap. "Focus on the team" folds both panels (and "Show panels" brings them back).
   - **F27 voice on the faces:** each face is a button "Talk to <agent>": it turns voice on if needed (hands-free) and the LIVE bar says "Talking to <agent>". The speaking face gets a "Speaking" tag with a Stop button; Stop, Esc or speaking over it only stops the speech (a new `hush` voice control that drops queued lines and flushes playback; the team, research and number work carry on). Space = hold to talk, M = mute the mic (client side: no audio is sent). Both "Start voice" buttons go; the left panel is typing only. "Voice off" in the LIVE bar ends the voice socket only (tested: a running team is never cancelled). A spoken "stop" still stops the team (accepted in M5/M6, D3); the brief's routing of answers to a named agent is M7g, so until then the Advisor answers for the agent you talk to.
 - Plan:
-  - [ ] F20 numbers never truncated (shrink, then wrap)
-  - [ ] F24 "On the table" shows the current topic
-  - [ ] F21 one plain status in the top bar; details in Settings
-  - [ ] F22 always open on Welcome; one line to continue an open decision
-  - [ ] F23 Advisor answers 3 sentences or fewer on screen; details in the memo
+  - [x] F20 numbers never truncated (shrink, then wrap)
+  - [x] F24 "On the table" shows the current topic
+  - [x] F21 one plain status in the top bar; details in Settings
+  - [x] F22 always open on Welcome; one line to continue an open decision
+  - [x] F23 Advisor answers 3 sentences or fewer on screen; details in the memo
   - [ ] F25 adaptive table
   - [ ] F26 panels, centre minimum, compact stage, Focus on the team
   - [ ] F27 voice on the faces, hush, keys
   - [ ] Screenshots 1440 / 390 + narrow centre + long numbers; MB re-test list; self-review; CI
 - Progress log:
+  - F20 `Figure` (lib/format `figureSize`): a figure steps 22 → 19 → 16 px by length, then wraps; KPI cards, scenario tiles, the options' figures and the memo's key numbers never truncate; cards wrap (`auto-fit`).
+  - F24 `topicOf` / `tableTopic` (lib/format): the table and the phone stage show the newest question's topic; the open decision's subject only while it (or Accept / Ask more on it) is on the table; "This decision" never shown.
+  - F21 `SystemStatus` in the top bar (All systems OK / Slow right now / Can't reach FounderOS; links to Settings); Settings → System lists the services.
+  - F22 `entered` in the workspace: Welcome on every open; "You have an open decision: <topic>. Continue it?" opens `#/boardroom`; turns from an earlier visit stay folded ("Earlier in this conversation (N)").
+  - F23 `briefAnswer`: the answer card and lane lines show at most 3 sentences; the rest (lists, kill criteria, predictions) under "Full answer" / "More", and in the memo.
 
 ### Previous session (M7b build)
 - Started (UTC): 2026-11-26 10:36 (cloud session, **M7b: Decision Room UI redesign**, Major gate, time-box ~2 h), branch `claude/serene-knuth-si17hr` from `origin/main` (66000f5, PR #16 merged). Brief: `docs/design/M7B_DESIGN_BRIEF.md`.
