@@ -71,11 +71,15 @@ function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAg
   );
 }
 
-/** Welcome when nothing is open yet (no question asked in this window, no decision); the Boardroom after. */
+/** Founder F22: the app always opens on Welcome; the Boardroom after a question in this visit, or on "Continue it". */
 function Home({ health, agentsOpen, toggleAgents }: { health: HealthState; agentsOpen: boolean; toggleAgents: () => void }) {
-  const { state, decisionRun } = useWorkspace();
+  const { entered, enter } = useWorkspace();
   const route = useRoute();
-  if (route.path !== "boardroom" && state.turns.length === 0 && !decisionRun) return <Welcome health={health} />;
+  const boardroom = route.path === "boardroom";
+  useEffect(() => {
+    if (boardroom) enter();
+  }, [boardroom, enter]);
+  if (!boardroom && !entered) return <Welcome health={health} />;
   return <Workspace agentsOpen={agentsOpen} toggleAgents={toggleAgents} />;
 }
 
@@ -135,9 +139,9 @@ function Shell({
   agentsOpen: boolean;
   toggleAgents: () => void;
 }) {
-  const { state, decisionRun } = useWorkspace();
+  const { entered } = useWorkspace();
   const route = useRoute();
-  const welcome = view === "workspace" && route.path !== "boardroom" && state.turns.length === 0 && !decisionRun;
+  const welcome = view === "workspace" && route.path !== "boardroom" && !entered;
   return (
     <div className={welcome ? "theme-cream flex min-h-full flex-col bg-background text-foreground" : "flex min-h-full flex-col"}>
       <TopBar health={health} view={view} />

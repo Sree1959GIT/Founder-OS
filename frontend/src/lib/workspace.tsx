@@ -7,6 +7,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type Dispatch,
   type ReactNode,
 } from "react";
@@ -509,6 +510,14 @@ interface WorkspaceApi {
   currentRun: RunView | null;
   /** The latest decision stays open on the canvas when a small question follows it. */
   decisionRun: RunView | null;
+  /**
+   * Founder F22: the app always opens on Welcome. The Boardroom shows once the member asks something in this visit,
+   * or chooses to continue the open decision (`enter`).
+   */
+  entered: boolean;
+  enter: () => void;
+  /** Founder F22: how many turns were restored from an earlier visit (shown folded, never recited). */
+  restoredTurns: number;
 }
 
 const Context = createContext<WorkspaceApi | null>(null);
@@ -564,6 +573,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Runs this window already follows. A turn sent while the first is still being planned arrives before React has
   // rendered that run, so the state alone cannot say whether it is new (founder re-test RW6).
   const followed = useRef(new Set<string>());
+  const [entered, setEntered] = useState(false);
+  const enter = useCallback(() => setEntered(true), []);
+  const restoredTurns = useRef(state.turns.length).current;
 
   // A reload keeps the conversation and the open decision (founder review 17). Streaming text saves at most twice a second.
   useEffect(() => {
@@ -691,6 +703,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const spoken = useCallback(
     (text: string, outcome: TurnOutcome) => {
+      setEntered(true);
       dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text } });
       void adopt(text, outcome);
     },
@@ -701,6 +714,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (text: string) => {
       const clean = text.trim();
       if (!clean) return Promise.resolve();
+      setEntered(true);
       dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text: clean } });
       const next = chain.current.then(() => post(clean));
       chain.current = next.catch(() => undefined);
@@ -781,8 +795,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         Object.values(state.runs)
           .filter((run) => run.frame || run.decisionType)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
+      entered,
+      enter,
+      restoredTurns,
     }),
-    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken],
+    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken, entered, enter, restoredTurns],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

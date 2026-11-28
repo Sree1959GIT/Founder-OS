@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Figure } from "@/components/common";
 import { figureSize, tableTopic, topicOf } from "@/lib/format";
@@ -37,5 +37,37 @@ describe("F24 the table shows the current topic", () => {
     expect(tableTopic(dubai, { message: "Should we raise prices by 10%?", isDecision: false })).toBe("Prices by 10%");
     // Accept and Ask more are steps of the open decision: the topic stays.
     expect(tableTopic(dubai, { message: 'Go with "Partner or distributor": write the decision memo.', isDecision: false })).toBe("Dubai office");
+  });
+});
+
+describe("F22 the app always opens on Welcome", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    window.location.hash = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("offers the open decision in one line instead of reopening it", async () => {
+    const { reducer, initialState } = await import("@/lib/workspace");
+    const { save } = await import("@/lib/persist");
+    let s = reducer(initialState, { type: "session", id: "s1" });
+    s = reducer(s, { type: "run", runId: "r1", message: "Should we open a Dubai office?" });
+    s = reducer(s, { type: "turn", turn: { id: "you-1", role: "you", text: "Should we open a Dubai office?" } });
+    s = reducer(s, { type: "turn", turn: { id: "advisor-r1", role: "advisor", runId: "r1" } });
+    const r1 = s.runs.r1;
+    if (!r1) throw new Error("no run");
+    s = { ...s, runs: { ...s.runs, r1: { ...r1, decisionType: "new_office", status: "done" } } };
+    save(s);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+    vi.stubGlobal("EventSource", undefined);
+    const { default: App } = await import("@/App");
+    render(<App />);
+    expect(await screen.findByTestId("welcome")).toBeInTheDocument();
+    expect(screen.queryByTestId("boardroom")).not.toBeInTheDocument();
+    expect(screen.getByTestId("open-decision")).toHaveTextContent(/You have an open decision: Dubai office\.\s*Continue it\?/);
+    fireEvent.click(screen.getByRole("link", { name: /Continue it/ }));
+    expect(await screen.findByTestId("boardroom")).toBeInTheDocument();
+    // What was said before stays folded: the Advisor does not recite it.
+    expect(screen.queryByTestId("earlier-turns")).not.toBeInTheDocument();
   });
 });

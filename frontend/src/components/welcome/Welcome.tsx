@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import type { HealthState } from "@/hooks/useHealth";
 import { unlockAudio } from "@/lib/audioUnlock";
 import { useVoice } from "@/lib/voiceContext";
-import { useWorkspace } from "@/lib/workspace";
+import { tableTopic } from "@/lib/format";
+import { useWorkspace, type RunView } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
 const EXAMPLES = ["Should we open a Dubai office?", "Can we afford two more engineers this year?", "Should we raise our prices by 10%?"];
@@ -36,8 +37,10 @@ export function KeyChip({ health }: { health: HealthState }) {
   );
 }
 
+const openTopic = (run: RunView) => tableTopic({ message: run.message, subject: run.frame?.subject }, null);
+
 export function Welcome({ health }: { health: HealthState }) {
-  const { send, state } = useWorkspace();
+  const { send, state, decisionRun, enter } = useWorkspace();
   const voice = useVoice();
   const [text, setText] = useState("");
   const [depth, setDepth] = useState<"quick" | "thorough">("thorough");
@@ -57,7 +60,25 @@ export function Welcome({ health }: { health: HealthState }) {
   return (
     <main className="theme-cream flex min-h-[calc(100vh-61px)] w-full flex-col bg-background text-foreground" data-testid="welcome">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-14 px-4 pb-20 pt-8 sm:px-8 md:pt-14">
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {decisionRun ? (
+            // Founder F22: an unfinished decision is offered in one line; it is never reopened by itself.
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-border bg-card py-1 pl-4 pr-1 text-[14px]" data-testid="open-decision">
+              <span>
+                You have an open decision: <strong className="font-semibold">{openTopic(decisionRun)}</strong>.
+              </span>
+              <a
+                href="#/boardroom"
+                onClick={enter}
+                className="inline-flex min-h-[40px] items-center gap-1 rounded-full bg-ink px-4 text-[13px] font-semibold text-paper hover:no-underline"
+              >
+                Continue it?
+                <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+              </a>
+            </p>
+          ) : (
+            <span />
+          )}
           <KeyChip health={health} />
         </div>
 

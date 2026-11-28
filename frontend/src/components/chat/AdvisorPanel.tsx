@@ -126,7 +126,24 @@ function AgentsButton({ onAgents, agentsOpen, compact }: { onAgents: () => void;
 }
 
 export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, agentsOpen = false }: PanelProps = {}) {
-  const { state, send, toggleQuiet } = useWorkspace();
+  const { state, send, toggleQuiet, restoredTurns } = useWorkspace();
+  const renderTurn = (turn: Turn) => {
+    if (turn.role === "you") {
+      return (
+        <p
+          key={turn.id}
+          className="ml-6 self-end rounded-[12px_12px_4px_12px] bg-bubble px-3 py-2 text-[13.5px] leading-relaxed text-foreground"
+        >
+          {turn.text}
+        </p>
+      );
+    }
+    if (turn.role === "advisor") {
+      const run = state.runs[turn.runId];
+      return run ? <AnswerCard key={turn.id} run={run} /> : null;
+    }
+    return <LaneTurn key={turn.id} turn={turn} />;
+  };
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -235,23 +252,14 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
             </div>
           </div>
         ) : null}
-        {state.turns.map((turn) => {
-          if (turn.role === "you") {
-            return (
-              <p
-                key={turn.id}
-                className="ml-6 self-end rounded-[12px_12px_4px_12px] bg-bubble px-3 py-2 text-[13.5px] leading-relaxed text-foreground"
-              >
-                {turn.text}
-              </p>
-            );
-          }
-          if (turn.role === "advisor") {
-            const run = state.runs[turn.runId];
-            return run ? <AnswerCard key={turn.id} run={run} /> : null;
-          }
-          return <LaneTurn key={turn.id} turn={turn} />;
-        })}
+        {restoredTurns > 0 && state.turns.length > restoredTurns ? (
+          // Founder F22: what was said in an earlier visit stays folded; the Advisor never recites it unasked.
+          <details className="rounded-xl border border-border bg-card px-3 py-2 text-[13px]" data-testid="earlier-turns">
+            <summary className="cursor-pointer text-muted-foreground">Earlier in this conversation ({restoredTurns})</summary>
+            <div className="mt-2 flex flex-col gap-3">{state.turns.slice(0, restoredTurns).map(renderTurn)}</div>
+          </details>
+        ) : null}
+        {(restoredTurns > 0 && state.turns.length > restoredTurns ? state.turns.slice(restoredTurns) : state.turns).map(renderTurn)}
         {progress ? (
           <p className="text-xs text-muted-foreground" data-testid="run-progress" aria-live="polite">
             {progress}
