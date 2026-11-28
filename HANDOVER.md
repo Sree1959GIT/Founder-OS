@@ -7,7 +7,7 @@
 - **Branching:** `main` is stable. Each session works on its own assigned branch, created from `main`, and ends by opening a PR into `main`. The founder reviews and merges that PR before starting the next session.
 - **Next milestone:** M7c (invite login), only after **M7b** (PR #17, Major) is ACCEPTED: the founder runs the re-test MC1–MC10 below (F20–F27, 2026-11-28), plus MB2, AM-S5, AM-S8. M7b built F8d, F19, F9 and F18 (Founder feedback, top: RESOLVED on `claude/serene-knuth-si17hr`). Fix rounds 2 and 3 (PRs #14, #15) are merged. M7a itself is merged (PR #13, Medium gate 2026-11-26). v1 (M0–M6) is ACCEPTED and tagged `v1.0-local`.
 - **Review:** every PR must pass the 4 gates in "Review gates" below
-- **Last updated:** 2026-11-28 (M7b gate fix round: F20–F27 fixed on `claude/serene-knuth-si17hr`, PR #17; awaiting the founder's re-test MC1–MC10)
+- **Last updated:** 2026-11-28 (M7b re-test: F20, F21 pass; new findings F28–F34 recorded, not fixed yet)
 
 ## Milestones
 | # | Milestone | Status | Notes |
@@ -82,7 +82,7 @@
 | M7a fix round 2 (F4–F8, F12) | [Sree1959GIT/Founder-OS#14](https://github.com/Sree1959GIT/Founder-OS/pull/14) | Light | ACCEPTED (SM, merged after the re-test of 2026-11-26 in Edge): F4 pass, F5 pass (AQ. detected, unknown-key message, re-detect on Qwen), F6 pass, F7 pass for 429, F12 pass in Settings and the memo ("about ₹26: Groq 9 calls"), **F8 fail** (now F8b). The Gemini AI Studio key hit free-tier limits (429), so the cloud tests used a free Groq key (`gsk_…`, `openai/gpt-oss-120b`). New findings F4b, F7b, F8b, F12b, F13 fixed in fix round 3 below |
 | M7a fix round 3 (F4b, F7b, F8b, F12b, F13) | [Sree1959GIT/Founder-OS#15](https://github.com/Sree1959GIT/Founder-OS/pull/15) | Light | MERGED; re-test 2026-11-26 (main, Edge, Groq key): AM-R2 pass; AM-R3 Groq pass, **Gemini fail** (now F7c); **AM-R4 fail** (now F8c); AM-R5 pass (memo "about ₹11: Groq 7 calls (Estimated: US$0.12)", Activity "Run cost about ₹35"); **AM-R6 fail** (now F13b). Voice stopping when Activity opens is F9 (M7b). New findings F14–F17 fixed in fix round 4 below |
 | M7a fix round 4 (F7c, F8c, F13b, F14–F17) | [Sree1959GIT/Founder-OS#16](https://github.com/Sree1959GIT/Founder-OS/pull/16) | Light | MERGED; re-test 2026-11-26: AM-S1, AM-S4, AM-S6, AM-S7 pass; **AM-S3 partly**: the backend logs "Slow check: People & Ops 5.3 s of 3 s -> offer sent" but no offer appears on screen (now F8d, M7b); AM-S5 and AM-S8 to re-test in M7b |
-| M7b Decision Room UI redesign | [Sree1959GIT/Founder-OS#17](https://github.com/Sree1959GIT/Founder-OS/pull/17) | **Major** | M7b founder gate in progress (2026-11-26/27, Edge): design accepted in principle; findings F20–F27 FIXED 2026-11-28 on this branch, AWAITING FOUNDER re-test MC1–MC10, plus MB2, AM-S5, AM-S8 |
+| M7b Decision Room UI redesign | [Sree1959GIT/Founder-OS#17](https://github.com/Sree1959GIT/Founder-OS/pull/17) | **Major** | M7b founder gate in progress (2026-11-26/27, Edge): design accepted in principle; findings F20–F27 fixed 2026-11-28. M7b re-test 2026-11-28: F20, F21 pass; new findings F28–F34 (see Founder feedback), to fix before ACCEPTED |
 
 ## Current session
 - Started (UTC): 2026-11-28 04:14 (cloud session, **M7b gate fix round: F20–F27**, on the existing branch `claude/serene-knuth-si17hr`, PR #17; no new PR; time-box 2 h). Design reference: `docs/design/DESIGN.md`.
@@ -1668,6 +1668,16 @@ write the issues under "Founder feedback".
     search (BM25) only`, and **never** `(None)`.
 
 ## Founder feedback
+### [M7b] Re-test 2026-11-28 (PR #17): F20, F21 PASS; new findings F28–F34 to fix before ACCEPTED
+**To fix:**
+- **F28.** Topics and open decisions are taken from chit-chat. The table showed "I want to know like why…", and Welcome offered "You have an open decision: But right now I want him….". Only a real decision question (e.g. "Should we open a Dubai office?") may set the topic or create an open decision. Small talk, meta-questions ("why are you speaking for the Financial Analyst?") and requests ("introduce the team") never do; the topic stays as it was.
+- **F29.** After visiting Activity or Decisions and returning, the Workspace shows a different colour scheme from the first visit. The same page must always look the same.
+- **F30.** One look across the whole app, with light and dark mode. Today Welcome is cream and Activity, Decisions, Data, Vault and Settings are navy, so it looks like two apps. Define two themes in docs/design/DESIGN.md: Light = cream (as Welcome) and Dark = navy (as the Boardroom). Every page, including the header, cards, inputs, Settings, Activity, Decisions, Data and Vault, follows the chosen theme. Add a light/dark toggle in the top bar (remembered per viewer; first visit follows the system setting). Both themes keep WCAG AA contrast.
+- **F31.** Add a Home tab (and make the FounderOS logo clickable) that returns to the Welcome page.
+- **F32.** Prioritisation Matrix help: hovering over or focusing a quadrant explains it in plain words (e.g. "Plan carefully: high value but hard to do. Break it into steps first"). Hovering over a bubble shows its title and scores. After dragging a bubble, show what changed ("Moved from Plan carefully to Do now; rank 2 → 1").
+- **F33.** A floating black "……" pill sits at the bottom centre and covers content on Welcome and Settings. Remove it, or dock it where it never covers content.
+- **F34.** The Welcome headline says "Six AI advisors", but the team is 2–8 agents chosen per question. Use: "Ask a hard question. A team of AI advisors argues it out. You decide." Fix the same wording elsewhere ("How it works").
+
 ### [M7b] Founder gate 2026-11-26/27 (Edge; PR #17): design accepted in principle; F20–F27 RESOLVED 2026-11-28 on `claude/serene-knuth-si17hr`, awaiting re-test MC1–MC10
 Design reference for the fixes: `docs/design/DESIGN.md` (read it before any UI change).
 **To fix:**
