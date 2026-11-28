@@ -7,6 +7,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type Dispatch,
   type ReactNode,
 } from "react";
@@ -42,6 +43,10 @@ export interface AgentView extends AgentInstance {
   provided: string;
   artifactIds: string[];
   checks: number;
+  /** Founder F8d: the slow-agent offer on the agent's own card ("" when none). */
+  slowReason?: string;
+  /** Founder F19: "Groq hit its per-minute limit, so People & Ops finished on Qwen on our server." ("" when not). */
+  fallback?: string;
 }
 
 export interface RunView {
@@ -142,7 +147,7 @@ const MAX_HELD = 2000;
 const RECOVER_WAIT_MS = 3000;
 const RECOVER_ATTEMPTS = 400; // 20 minutes: longer than any run
 
-const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered", "slow.offered", "spend"]);
+export const LANE_EVENTS = new Set(["narration", "recap", "amendment.offered", "queue.added", "queue.offered", "slow.offered", "spend"]);
 
 function emptyRun(id: string, message: string, at: string): RunView {
   return {
@@ -183,6 +188,8 @@ function agentFrom(instance: AgentInstance, at: string): AgentView {
     provided: instance.provider,
     artifactIds: [],
     checks: 0,
+    slowReason: "",
+    fallback: "",
   };
 }
 
@@ -269,6 +276,12 @@ function withRunEvent(run: RunView, event: AgentEvent): RunView {
           },
         };
       }
+      break;
+    case "agent.slow":
+      if (agent) next.agents = { ...next.agents, [agentId]: { ...agent, slowReason: (data.reason as string) || "slow" } };
+      break;
+    case "agent.fallback":
+      if (agent) next.agents = { ...next.agents, [agentId]: { ...agent, fallback: (data.text as string) || "", slowReason: "" } };
       break;
     case "run.progress":
       next.progress = (data.text as string) ?? next.progress;
@@ -497,11 +510,23 @@ interface WorkspaceApi {
   currentRun: RunView | null;
   /** The latest decision stays open on the canvas when a small question follows it. */
   decisionRun: RunView | null;
+  /**
+   * Founder F22: the app always opens on Welcome. The Boardroom shows once the member asks something in this visit,
+   * or chooses to continue the open decision (`enter`).
+   */
+  entered: boolean;
+  enter: () => void;
+  /** Founder F22: the turns restored from an earlier visit, by id (shown folded, never recited). */
+  restoredTurnIds: ReadonlySet<string>;
 }
 
 const Context = createContext<WorkspaceApi | null>(null);
 
-const EVENT_TYPES = [
+/**
+ * Every event type the page listens for on /api/events. An SSE frame with a named event reaches only a listener for
+ * that name, so a type missing here is dropped in the browser (founder F8d: the slow offer was sent, never shown).
+ */
+export const EVENT_TYPES = [
   "run.started",
   "team.proposed",
   "team.approved",
@@ -513,14 +538,12 @@ const EVENT_TYPES = [
   "agent.artifact",
   "agent.done",
   "agent.rerun",
+  "agent.slow",
+  "agent.fallback",
   "run.finished",
   "run.progress",
-  "narration",
-  "recap",
-  "amendment.offered",
-  "queue.added",
-  "queue.offered",
   "turn.classified",
+  ...LANE_EVENTS,
 ];
 
 async function recover(runId: string, send: Dispatch<Action>, giveUpAfterMisses = RECOVER_ATTEMPTS) {
@@ -550,6 +573,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Runs this window already follows. A turn sent while the first is still being planned arrives before React has
   // rendered that run, so the state alone cannot say whether it is new (founder re-test RW6).
   const followed = useRef(new Set<string>());
+  const [entered, setEntered] = useState(false);
+  const enter = useCallback(() => setEntered(true), []);
+  const restoredTurnIds = useRef<ReadonlySet<string>>(new Set(state.turns.map((t) => t.id))).current;
 
   // A reload keeps the conversation and the open decision (founder review 17). Streaming text saves at most twice a second.
   useEffect(() => {
@@ -677,6 +703,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const spoken = useCallback(
     (text: string, outcome: TurnOutcome) => {
+      setEntered(true);
       dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text } });
       void adopt(text, outcome);
     },
@@ -687,6 +714,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (text: string) => {
       const clean = text.trim();
       if (!clean) return Promise.resolve();
+      setEntered(true);
       dispatch({ type: "turn", turn: { id: `you-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: "you", text: clean } });
       const next = chain.current.then(() => post(clean));
       chain.current = next.catch(() => undefined);
@@ -767,8 +795,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         Object.values(state.runs)
           .filter((run) => run.frame || run.decisionType)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
+      entered,
+      enter,
+      restoredTurnIds,
     }),
-    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken],
+    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken, entered, enter, restoredTurnIds],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

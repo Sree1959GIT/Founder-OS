@@ -292,3 +292,31 @@ describe("AI model card (M7a, key-only setup F2/F3)", () => {
     );
   });
 });
+
+describe("AI model card polish (M7b)", () => {
+  beforeEach(() => {
+    testAIModel.mockReset();
+  });
+
+  it("says Test again after a pass, and shows the recommended models first with Show all", async () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ id: `claude-m${i}`, label: `Model ${i}` }));
+    initial = { ...verified, saved: { ...(verified.saved as NonNullable<AIModelView["saved"]>), models: [{ id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" }, ...many] } };
+    render(<AIModelCard />);
+    expect(await screen.findByRole("button", { name: "Test again" })).toBeInTheDocument();
+    const select = screen.getByLabelText("Change model (optional)") as HTMLSelectElement;
+    expect(select.querySelector("optgroup")?.getAttribute("label")).toBe("Recommended (4)");
+    expect(select.options).toHaveLength(4);
+    fireEvent.click(screen.getByRole("button", { name: "Show all 8" }));
+    expect(select.options).toHaveLength(8);
+  });
+
+  it("tests a pasted key at once, with the provider its shape names", async () => {
+    initial = local;
+    testAIModel.mockResolvedValue({ ok: false, code: "wrong_key", message: "Wrong key.", preset: "claude", view: local } as AIModelTestResult);
+    render(<AIModelCard />);
+    const box = await screen.findByTestId("ai-key");
+    fireEvent.paste(box, { clipboardData: { getData: () => "sk-ant-api03-abc" } });
+    await waitFor(() => expect(testAIModel).toHaveBeenCalledTimes(1));
+    expect(testAIModel.mock.calls[0]?.[0]).toMatchObject({ preset: "claude", api_key: "sk-ant-api03-abc" });
+  });
+});

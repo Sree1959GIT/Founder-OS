@@ -319,6 +319,14 @@ class VoiceSession:
             self.manager.set_quiet(self.session_id, bool(message.get("quiet")))
             if self.quiet:
                 await self._interrupt("quiet")
+        elif kind == "hush":
+            # Founder F27: the Stop button under the speaking face (or Esc). Only the speech stops: queued lines and
+            # the audio being made go; the team, its research and its numbers carry on (no stop of the run).
+            was_speaking = self.speaking()
+            await self._interrupt("hush")
+            # Only a voice that was speaking goes back to listening; "thinking" or a held push-to-talk is left as is.
+            if was_speaking and not self.ptt_active:
+                await self._set_state("listening" if self.config.mode == "duplex" else "idle")
         elif kind == "playback_stopped" and self.barge is not None:
             flushed = message.get("flush_ms")
             if isinstance(flushed, int | float):

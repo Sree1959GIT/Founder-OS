@@ -40,6 +40,7 @@ EventType = Literal[
     "queue.offered",
     "recap",
     "agent.slow",
+    "agent.fallback",
     "slow.offered",
     "spend",
 ]

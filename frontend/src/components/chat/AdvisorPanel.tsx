@@ -2,9 +2,9 @@ import { BellOff, Bell, PanelLeftClose, PanelLeftOpen, SendHorizontal, Workflow 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
 import { AnswerCard } from "@/components/chat/AnswerCard";
-import { VoiceControls } from "@/components/chat/VoiceControls";
 import { ErrorNote } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { briefAnswer } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { teamOf, useWorkspace, type Turn } from "@/lib/workspace";
 
@@ -17,7 +17,7 @@ function Chip({ children, onClick, primary }: { children: string; onClick: () =>
       onClick={onClick}
       className={
         primary
-          ? "h-9 rounded-full bg-signal px-3 text-xs font-semibold text-[#1A1206] hover:bg-signal/90"
+          ? "h-9 rounded-full bg-signal px-3 text-xs font-semibold text-on-signal hover:bg-signal/90"
           : "h-9 rounded-full border border-border-strong bg-card px-3 text-xs text-foreground hover:bg-accent"
       }
     >
@@ -29,15 +29,23 @@ function Chip({ children, onClick, primary }: { children: string; onClick: () =>
 function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "advisor" }> }) {
   const { amendment, queued, slow } = useWorkspace();
   if (turn.role === "lane") {
+    // Founder F23: a lane line is 3 sentences or fewer too; a longer one folds the rest.
+    const { brief, more } = briefAnswer(turn.text);
     return (
-      <p className="border-l-2 border-border-strong pl-2.5 text-[13px] leading-relaxed text-muted-foreground" data-testid="narration">
-        {turn.text}
-      </p>
+      <div className="border-l-2 border-border-strong pl-2.5 text-[13px] leading-relaxed text-muted-foreground" data-testid="narration">
+        <p>{more ? brief : turn.text}</p>
+        {more ? (
+          <details>
+            <summary className="cursor-pointer">More</summary>
+            <p className="mt-1 whitespace-pre-line">{turn.text}</p>
+          </details>
+        ) : null}
+      </div>
     );
   }
   if (turn.role === "slow") {
     return (
-      <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="slow-cloud" role="status">
+      <div className="flex flex-col gap-2 rounded-xl border border-attention-border bg-attention p-3" data-testid="slow-cloud" role="status">
         <p className="text-[13px] text-foreground">{turn.text}</p>
         {turn.status === "offered" ? (
           <div className="flex flex-wrap gap-2">
@@ -56,7 +64,7 @@ function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "adv
   }
   if (turn.role === "amendment") {
     return (
-      <div className="flex flex-col gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3" data-testid="amendment">
+      <div className="flex flex-col gap-2 rounded-xl border border-attention-border bg-attention p-3" data-testid="amendment">
         <p className="text-[13px] text-foreground">{turn.offer ?? "That changes the decision. Restart with your change?"}</p>
         <p className="text-xs text-muted-foreground">{turn.text}</p>
         {turn.status === "offered" ? (
@@ -117,7 +125,7 @@ function AgentsButton({ onAgents, agentsOpen, compact }: { onAgents: () => void;
       <Workflow aria-hidden="true" className="h-3.5 w-3.5" />
       {compact ? null : "Agents"}
       {working > 0 ? (
-        <span className="num rounded-full bg-signal px-1.5 text-[10px] font-semibold leading-4 text-[#1A1206]" aria-label={`${working} working`}>
+        <span className="num rounded-full bg-signal px-1.5 text-[10px] font-semibold leading-4 text-on-signal" aria-label={`${working} working`}>
           {working}
         </span>
       ) : null}
@@ -126,7 +134,27 @@ function AgentsButton({ onAgents, agentsOpen, compact }: { onAgents: () => void;
 }
 
 export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, agentsOpen = false }: PanelProps = {}) {
-  const { state, send, toggleQuiet } = useWorkspace();
+  const { state, send, toggleQuiet, restoredTurnIds } = useWorkspace();
+  // Founder F22: folded by id, so a restored card the reducer moves to the end stays folded and a new turn never folds.
+  const earlier = state.turns.filter((t) => restoredTurnIds.has(t.id));
+  const now = earlier.length ? state.turns.filter((t) => !restoredTurnIds.has(t.id)) : state.turns;
+  const renderTurn = (turn: Turn) => {
+    if (turn.role === "you") {
+      return (
+        <p
+          key={turn.id}
+          className="ml-6 self-end rounded-[12px_12px_4px_12px] bg-bubble px-3 py-2 text-[13.5px] leading-relaxed text-foreground"
+        >
+          {turn.text}
+        </p>
+      );
+    }
+    if (turn.role === "advisor") {
+      const run = state.runs[turn.runId];
+      return run ? <AnswerCard key={turn.id} run={run} /> : null;
+    }
+    return <LaneTurn key={turn.id} turn={turn} />;
+  };
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -145,8 +173,11 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
   const current = state.currentRunId ? state.runs[state.currentRunId] : undefined;
   const progress = current && (current.status === "running" || current.status === "done") ? (current.progress ?? "") : "";
 
+  // Scrolls the conversation only, never the page (M7b phone: the page jumped to the answer, away from the table).
+  const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: "end" });
+    const el = list.current;
+    if (el && el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
   }, [state.turns.length, lastAnswerLength, progress]);
 
   const submit = (e: FormEvent) => {
@@ -217,7 +248,7 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-2" aria-live="polite" aria-relevant="additions">
+      <div ref={list} className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-2" aria-live="polite" aria-relevant="additions">
         {state.turns.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center gap-3">
             <p className="leading-relaxed text-muted-foreground">
@@ -232,23 +263,14 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
             </div>
           </div>
         ) : null}
-        {state.turns.map((turn) => {
-          if (turn.role === "you") {
-            return (
-              <p
-                key={turn.id}
-                className="ml-6 self-end rounded-[12px_12px_4px_12px] bg-[#1F2A3A] px-3 py-2 text-[13.5px] leading-relaxed text-foreground"
-              >
-                {turn.text}
-              </p>
-            );
-          }
-          if (turn.role === "advisor") {
-            const run = state.runs[turn.runId];
-            return run ? <AnswerCard key={turn.id} run={run} /> : null;
-          }
-          return <LaneTurn key={turn.id} turn={turn} />;
-        })}
+        {earlier.length > 0 ? (
+          // Founder F22: what was said in an earlier visit stays folded; the Advisor never recites it unasked.
+          <details className="rounded-xl border border-border bg-card px-3 py-2 text-[13px]" data-testid="earlier-turns">
+            <summary className="cursor-pointer text-muted-foreground">Earlier in this conversation ({earlier.length})</summary>
+            <div className="mt-2 flex flex-col gap-3">{earlier.map(renderTurn)}</div>
+          </details>
+        ) : null}
+        {now.map(renderTurn)}
         {progress ? (
           <p className="text-xs text-muted-foreground" data-testid="run-progress" aria-live="polite">
             {progress}
@@ -280,7 +302,6 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
         <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()} className="h-11 w-11 rounded-lg">
           <SendHorizontal aria-hidden="true" />
         </Button>
-        <VoiceControls />
       </form>
     </aside>
     </>

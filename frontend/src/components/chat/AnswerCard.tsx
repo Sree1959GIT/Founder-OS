@@ -3,7 +3,7 @@ import remarkGfm from "remark-gfm";
 
 import { AssumptionTag, CitationChips, LineageChip, Pill, VerificationBadge, VerifiedBadge } from "@/components/common";
 import type { DecisionFrame, OptionCost } from "@/lib/api";
-import { metricValue, money, seconds, signedMonths } from "@/lib/format";
+import { briefAnswer, metricValue, money, seconds, signedMonths } from "@/lib/format";
 import type { RunView } from "@/lib/workspace";
 
 function optionCost(option: OptionCost, currency: string): string {
@@ -21,7 +21,7 @@ export function DecisionLead({ frame }: { frame: DecisionFrame }) {
   const fullOption = frame.options.find((o) => o.is_full);
   if (!proposed && !full) return null;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-[#4A3A1C] bg-[#1A1610] p-2.5 text-[13px]" data-testid="decision-lead">
+    <div className="flex flex-col gap-2 rounded-lg border border-attention-border bg-attention p-2.5 text-[13px]" data-testid="decision-lead">
       {proposed ? (
         <div>
           <p className="text-xs text-muted-foreground">Proposed</p>
@@ -34,7 +34,7 @@ export function DecisionLead({ frame }: { frame: DecisionFrame }) {
         </div>
       ) : null}
       {full && !proposed?.is_full ? (
-        <div className="border-t border-[#4A3A1C] pt-2">
+        <div className="border-t border-attention-border pt-2">
           <p className="text-xs text-muted-foreground">Full model{fullOption ? `: ${fullOption.name}` : ""}</p>
           <p className="num text-xs text-foreground">
             {money(full.one_off, frame.currency, 0)} one-off + {money(full.monthly, frame.currency, 0)} a month · runway{" "}
@@ -45,6 +45,27 @@ export function DecisionLead({ frame }: { frame: DecisionFrame }) {
       <div>
         <AssumptionTag />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Founder F23: the answer in 3 sentences or fewer. Lists, tables, kill criteria and predictions stay folded under
+ * "Full answer" (and in the memo); they are never shown as a wall of text.
+ */
+export function BriefAnswer({ text, streaming }: { text: string; streaming: boolean }) {
+  const { brief, more } = briefAnswer(text);
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="answer-brief">
+      <p className="text-[13.5px] leading-relaxed">{brief}</p>
+      {more && !streaming ? (
+        <details className="text-[13px]" data-testid="answer-full">
+          <summary className="cursor-pointer text-muted-foreground">Full answer</summary>
+          <div className="mt-2">
+            <AnswerText text={text} />
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -89,7 +110,7 @@ export function AnswerCard({ run }: { run: RunView }) {
         ) : null}
       </div>
       {run.frame ? <DecisionLead frame={run.frame} /> : null}
-      {run.answer ? <AnswerText text={run.answer} /> : null}
+      {run.answer ? <BriefAnswer text={run.answer} streaming={!finished} /> : null}
       {!finished && !run.answer ? (
         <p className="text-[13px] text-muted-foreground" aria-live="polite">
           {run.awaitingApproval ? "The team is waiting for your approval." : "Working on it…"}
@@ -98,7 +119,7 @@ export function AnswerCard({ run }: { run: RunView }) {
       {run.awaitingApproval ? (
         <a
           href="#/activity"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-signal px-3 text-[13px] font-semibold text-[#1A1206] hover:no-underline"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-signal px-3 text-[13px] font-semibold text-on-signal hover:no-underline"
         >
           Review the team
         </a>

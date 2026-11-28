@@ -1,4 +1,4 @@
-import { Download, FileText, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Download, FileText, History, MessageSquare, Pencil, Printer, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -6,8 +6,9 @@ import remarkGfm from "remark-gfm";
 import { EmptyNote, ErrorNote, LineageChip, Pill } from "@/components/common";
 import { PriorityMatrix } from "@/components/memo/PriorityMatrix";
 import { Button } from "@/components/ui/button";
-import { fetchNote, fetchNotes, saveNote, type VaultNote, type VaultNoteInfo } from "@/lib/api";
-import { metricValue, stripFrontmatter, syncTitle, withoutWikilinks } from "@/lib/format";
+import { fetchMemoVersion, fetchMemoVersions, fetchNote, fetchNotes, saveNote, type MemoVersion, type VaultNote, type VaultNoteInfo } from "@/lib/api";
+import { memoWhen, metricValue, prefillAsk, stripFrontmatter, syncTitle, withoutWikilinks } from "@/lib/format";
+import { canGoBackInApp } from "@/hooks/useRoute";
 import { useWorkspace } from "@/lib/workspace";
 
 /** Markdown exactly as it is stored, frontmatter included, so it opens the same in Obsidian. */
@@ -20,8 +21,22 @@ function downloadText(filename: string, text: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Founder F18: "Ask the team about this" opens the Boardroom with the question started in the Advisor's box. */
+function askTeam(title: string): void {
+  window.location.hash = "#/";
+  window.setTimeout(() => prefillAsk(`About the memo "${title}": `), 80);
+}
+
+/** Back where the member came from inside FounderOS; never out of the app (a bookmark opened in a used tab). */
+function closeMemo(): void {
+  if (canGoBackInApp()) window.history.back();
+  else window.location.hash = "#/";
+}
+
 export function MemoView({ path: wanted }: { path?: string }) {
-  const { currentRun: run } = useWorkspace();
+  const { currentRun: run, send, state } = useWorkspace();
+  const [versions, setVersions] = useState<MemoVersion[]>([]);
+  const [earlier, setEarlier] = useState<{ id: string; frontmatter: Record<string, unknown>; body: string } | null>(null);
   const runMemo = run?.result?.memo ?? null;
   const [notes, setNotes] = useState<VaultNoteInfo[]>([]);
   const [path, setPath] = useState<string | null>(wanted ?? runMemo?.path ?? null);
@@ -44,6 +59,15 @@ export function MemoView({ path: wanted }: { path?: string }) {
     if (runMemo?.path) setPath(runMemo.path);
   }, [runMemo?.path]);
 
+  // F18: a regenerated memo keeps its path (one memo per decision), so a new result reloads it.
+  useEffect(() => {
+    if (runMemo?.path && runMemo.path === path) {
+      fetchNote(runMemo.path).then(setNote).catch(() => undefined);
+      fetchMemoVersions(runMemo.path).then((v) => setVersions(v.versions)).catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new result, not a path change, reloads here
+  }, [runMemo]);
+
   const load = useCallback((p: string) => {
     fetchNote(p)
       .then((n) => {
@@ -56,8 +80,19 @@ export function MemoView({ path: wanted }: { path?: string }) {
   useEffect(() => {
     if (!path) return;
     setEditing(false); // a draft belongs to the memo it was opened on: Save must never write it over another
+    setEarlier(null);
     load(path);
+    fetchMemoVersions(path)
+      .then((v) => setVersions(Array.isArray(v.versions) ? v.versions : []))
+      .catch(() => setVersions([]));
   }, [path, load]);
+
+  const openVersion = (id: string) => {
+    if (!path) return;
+    fetchMemoVersion(path, id)
+      .then(setEarlier)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "That version could not be read"));
+  };
 
   const save = async () => {
     if (!path) return;
@@ -70,8 +105,14 @@ export function MemoView({ path: wanted }: { path?: string }) {
     }
   };
 
-  const front = note?.frontmatter ?? {};
-  const body = note ? withoutWikilinks(stripFrontmatter(note.body ?? note.content ?? "")) : "";
+  const front = earlier?.frontmatter ?? note?.frontmatter ?? {};
+  const body = earlier
+    ? withoutWikilinks(earlier.body)
+    : note
+      ? withoutWikilinks(stripFrontmatter(note.body ?? note.content ?? ""))
+      : "";
+  const title = (note?.frontmatter?.title as string | undefined) ?? note?.title ?? "this decision";
+  const latestWhen = memoWhen((note?.frontmatter?.written_at as string | undefined) ?? note?.modified ?? "");
   const isRunMemo = runMemo?.path === path;
   const status = (front.status as string | undefined) ?? (isRunMemo ? runMemo?.status : undefined);
   const review = (front.review_date as string | undefined) ?? (isRunMemo ? runMemo?.review_date : undefined);
@@ -83,6 +124,15 @@ export function MemoView({ path: wanted }: { path?: string }) {
         <PriorityMatrix />
       </div>
       <div className="flex min-w-0 flex-col gap-3">
+        <div className="print-hide flex items-center justify-between gap-2">
+          <a href="#/" className="inline-flex min-h-[44px] items-center gap-1.5 text-sm">
+            <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+            Back to the decision
+          </a>
+          <Button variant="ghost" size="icon" aria-label="Close the memo" title="Close the memo" className="h-11 w-11" onClick={closeMemo}>
+            <X aria-hidden="true" />
+          </Button>
+        </div>
         <div className="print-hide flex flex-wrap items-center gap-2">
           <FileText aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
           <label htmlFor="memo-picker" className="sr-only">
@@ -109,6 +159,19 @@ export function MemoView({ path: wanted }: { path?: string }) {
             <>
               <Button
                 variant="outline"
+                disabled={state.sending}
+                onClick={() => void send(`Write the memo again for "${title}", with what we know now.`)}
+                title="The team writes this memo again; the version you see now is kept under Earlier versions"
+              >
+                <RefreshCw aria-hidden="true" />
+                Regenerate memo
+              </Button>
+              <Button variant="outline" onClick={() => askTeam(title)}>
+                <MessageSquare aria-hidden="true" />
+                Ask the team about this
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
                   setDraft(note.content ?? "");
                   setEditing(!editing);
@@ -124,7 +187,7 @@ export function MemoView({ path: wanted }: { path?: string }) {
                 <Download aria-hidden="true" />
                 Export .md
               </Button>
-              <Button onClick={() => window.print()} className="bg-[#1B1D21] text-[#F6F4EE] hover:bg-[#1B1D21]/90">
+              <Button onClick={() => window.print()} className="bg-ink text-paper hover:bg-ink/90">
                 <Printer aria-hidden="true" />
                 Export PDF
               </Button>
@@ -155,8 +218,21 @@ export function MemoView({ path: wanted }: { path?: string }) {
             </div>
           </div>
         ) : note ? (
-          <article className="memo-sheet rounded-xl bg-paper px-9 py-8 text-[#1B1D21]" data-testid="memo-sheet">
+          <article className="memo-sheet rounded-xl bg-paper px-5 py-6 text-ink sm:px-9 sm:py-8" data-testid="memo-sheet">
             <div className="memo-chips mb-3 flex flex-wrap gap-2">
+              {earlier ? (
+                <Pill tone="amber">
+                  <History aria-hidden="true" className="h-3 w-3" />
+                  Earlier version · {memoWhen(earlier.id)}
+                </Pill>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full bg-signal px-2.5 py-0.5 text-xs font-semibold text-on-signal"
+                  data-testid="memo-latest"
+                >
+                  Latest{latestWhen ? ` · ${latestWhen}` : ""}
+                </span>
+              )}
               {status ? <Pill>{status === "draft" ? "Draft · Memo Writer" : status}</Pill> : null}
               {review ? (
                 <Pill>
@@ -165,11 +241,11 @@ export function MemoView({ path: wanted }: { path?: string }) {
               ) : null}
             </div>
             {keyNumbers.length ? (
-              <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2">
                 {keyNumbers.map((m, i) => (
                   <div key={`${m.metric}-${i}`} className="min-w-0 rounded-lg border border-[#D9D5C8] p-2.5">
                     <p className="font-sans text-xs text-[#6A6E76]">{m.label}</p>
-                    <p className="num text-[15px] font-semibold">{metricValue(m.value, m.unit, m.metric)}</p>
+                    <p className="num text-[15px] font-semibold [overflow-wrap:anywhere]">{metricValue(m.value, m.unit, m.metric)}</p>
                     <span className="print-hide">
                       <LineageChip lineage={m.lineage} label="lineage" />
                     </span>
@@ -177,10 +253,44 @@ export function MemoView({ path: wanted }: { path?: string }) {
                 ))}
               </div>
             ) : null}
-            <div className="memo-prose font-serif text-[15px] leading-relaxed">
+            <div className="memo-prose font-sans text-[15px] leading-relaxed">
               <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
             </div>
           </article>
+        ) : null}
+        {note && (versions.length || earlier) ? (
+          <section className="print-hide rounded-xl border border-border bg-card p-4" aria-labelledby="memo-versions" data-testid="memo-versions">
+            <h2 id="memo-versions" className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Earlier versions of this memo
+            </h2>
+            <ul className="flex flex-col gap-1">
+              <li>
+                <button
+                  type="button"
+                  aria-current={earlier ? undefined : "true"}
+                  onClick={() => setEarlier(null)}
+                  className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] hover:bg-accent aria-[current=true]:bg-accent"
+                >
+                  <span className="font-semibold">Latest</span>
+                  <span className="num text-muted-foreground">{latestWhen}</span>
+                  <span className="truncate text-muted-foreground">{(note.frontmatter?.proposed_option as string | undefined) ?? ""}</span>
+                </button>
+              </li>
+              {versions.map((v) => (
+                <li key={v.id}>
+                  <button
+                    type="button"
+                    aria-current={earlier?.id === v.id ? "true" : undefined}
+                    onClick={() => openVersion(v.id)}
+                    className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] hover:bg-accent aria-[current=true]:bg-accent"
+                  >
+                    <span className="num text-muted-foreground">{memoWhen(v.written_at || v.id)}</span>
+                    <span className="truncate">{v.proposed_option || v.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         ) : null}
       </div>
     </main>

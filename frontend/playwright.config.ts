@@ -9,7 +9,12 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   // Every spec talks to the same backend, and some change its settings (approval policy): run them one at a time.
   workers: 1,
-  use: { baseURL: "http://127.0.0.1:3021", viewport: { width: 1440, height: 900 } },
+  use: {
+    baseURL: "http://127.0.0.1:3021",
+    viewport: { width: 1440, height: 900 },
+    // A machine with its own Chromium build (a cloud sandbox) can point at it; CI and Windows use Playwright's own.
+    launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {},
+  },
   reporter: [["list"]],
   webServer: [
     {

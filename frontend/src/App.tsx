@@ -1,36 +1,46 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { AgentActivity } from "@/components/activity/AgentActivity";
-import { AgentRail } from "@/components/activity/AgentRail";
 import { AgentWindow } from "@/components/activity/AgentWindow";
-import { Canvas } from "@/components/canvas/Canvas";
+import { BoardroomStage, OptionsPanel, PhoneBar } from "@/components/boardroom/Boardroom";
+import { CanvasCards } from "@/components/canvas/Canvas";
 import { AdvisorPanel } from "@/components/chat/AdvisorPanel";
+import { VoiceDock } from "@/components/chat/VoiceControls";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { TopBar } from "@/components/layout/TopBar";
 import { MemoView } from "@/components/memo/MemoView";
 import { DataPanel } from "@/components/panels/DataPanel";
 import { SettingsPanel } from "@/components/panels/SettingsPanel";
 import { VaultPanel } from "@/components/panels/VaultPanel";
-import { useHealth } from "@/hooks/useHealth";
+import { Welcome } from "@/components/welcome/Welcome";
+import { useHealth, type HealthState } from "@/hooks/useHealth";
 import { useRoute } from "@/hooks/useRoute";
 import { fetchSettings, putSettings } from "@/lib/api";
 import { browserCurrency, currencyMissing } from "@/lib/currency";
-import { LEFT, maxWidth, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
-import { WorkspaceProvider } from "@/lib/workspace";
+import { LEFT, maxWidth, railShown, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
+import { cn } from "@/lib/utils";
+import { VoiceProvider } from "@/lib/voiceContext";
+import { useWorkspace, WorkspaceProvider } from "@/lib/workspace";
 
+/** The Boardroom (M7b): the Advisor on the left, the table and the decision's cards in the middle, the options on
+ * the right. On a phone the table comes first, then the options, then the conversation. */
 function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAgents: () => void }) {
-  const { layout, setWidth, reset, toggleLeft } = usePanelLayout();
+  const { layout, setWidth, reset, toggleLeft, toggleRight, focused, toggleFocus } = usePanelLayout();
   const vw = useViewportWidth();
   const shown = shownWidths(layout, vw);
   return (
     <>
-      <AdvisorPanel
-        width={shown.left}
-        collapsed={layout.leftCollapsed}
-        onToggle={toggleLeft}
-        onAgents={toggleAgents}
-        agentsOpen={agentsOpen}
-      />
+      <div aria-hidden="true" className="glow glow-tomato -left-24 top-24 h-80 w-80" />
+      <div aria-hidden="true" className="glow glow-violet -right-24 top-[45%] h-96 w-96" />
+      <div className="order-3 flex w-full md:order-none md:w-auto">
+        <AdvisorPanel
+          width={shown.left}
+          collapsed={layout.leftCollapsed}
+          onToggle={toggleLeft}
+          onAgents={toggleAgents}
+          agentsOpen={agentsOpen}
+        />
+      </div>
       {layout.leftCollapsed ? null : (
         <ResizeHandle
           side="left"
@@ -42,23 +52,40 @@ function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAg
           onReset={() => reset("left")}
         />
       )}
-      <Canvas />
-      <ResizeHandle
-        side="right"
-        label="Agents panel width"
-        width={shown.right}
-        min={RIGHT.min}
-        max={maxWidth("right", layout, vw)}
-        onResize={(w) => setWidth("right", w)}
-        onReset={() => reset("right")}
-        className="md:hidden xl:block"
-      />
-      <AgentRail width={shown.right} />
+      <BoardroomStage focus={{ on: focused, toggle: toggleFocus }}>
+        <CanvasCards />
+      </BoardroomStage>
+      {layout.rightCollapsed ? null : (
+        <ResizeHandle
+          side="right"
+          label="Options panel width"
+          width={shown.right}
+          min={RIGHT.min}
+          max={maxWidth("right", layout, vw)}
+          onResize={(w) => setWidth("right", w)}
+          onReset={() => reset("right")}
+          className="md:hidden lg:block"
+        />
+      )}
+      <OptionsPanel width={railShown(vw) ? shown.right : undefined} collapsed={layout.rightCollapsed} onToggle={toggleRight} />
+      <PhoneBar />
     </>
   );
 }
 
-function Body({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAgents: () => void }) {
+/** Founder F22: the app always opens on Welcome; the Boardroom after a question in this visit, or on "Continue it". */
+function Home({ health, agentsOpen, toggleAgents }: { health: HealthState; agentsOpen: boolean; toggleAgents: () => void }) {
+  const { entered, enter } = useWorkspace();
+  const route = useRoute();
+  const boardroom = route.path === "boardroom";
+  useEffect(() => {
+    if (boardroom) enter();
+  }, [boardroom, enter]);
+  if (!boardroom && !entered) return <Welcome health={health} />;
+  return <Workspace agentsOpen={agentsOpen} toggleAgents={toggleAgents} />;
+}
+
+function Body({ health, agentsOpen, toggleAgents }: { health: HealthState; agentsOpen: boolean; toggleAgents: () => void }) {
   const route = useRoute();
   switch (route.view) {
     case "activity":
@@ -72,7 +99,7 @@ function Body({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAgents:
     case "settings":
       return <SettingsPanel />;
     default:
-      return <Workspace agentsOpen={agentsOpen} toggleAgents={toggleAgents} />;
+      return <Home health={health} agentsOpen={agentsOpen} toggleAgents={toggleAgents} />;
   }
 }
 
@@ -94,13 +121,35 @@ export default function App() {
   }, [ready]);
   return (
     <WorkspaceProvider>
-      <div className="flex min-h-full flex-col">
-        <TopBar health={health} view={route.view} />
-        <div className="flex flex-1 flex-wrap items-stretch md:flex-nowrap">
-          <Body agentsOpen={agentsOpen} toggleAgents={toggleAgents} />
-        </div>
-      </div>
+      <VoiceProvider>
+        <Shell health={health} view={route.view} agentsOpen={agentsOpen} toggleAgents={toggleAgents} />
+        {route.view !== "workspace" ? <VoiceDock /> : null}
+      </VoiceProvider>
       {agentsOpen ? <AgentWindow onClose={closeAgents} /> : null}
     </WorkspaceProvider>
+  );
+}
+
+function Shell({
+  health,
+  view,
+  agentsOpen,
+  toggleAgents,
+}: {
+  health: HealthState;
+  view: ReturnType<typeof useRoute>["view"];
+  agentsOpen: boolean;
+  toggleAgents: () => void;
+}) {
+  const { entered } = useWorkspace();
+  const route = useRoute();
+  const welcome = view === "workspace" && route.path !== "boardroom" && !entered;
+  return (
+    <div className={welcome ? "theme-cream flex min-h-full flex-col bg-background text-foreground" : "flex min-h-full flex-col"}>
+      <TopBar health={health} view={view} />
+      <div className={cn("relative flex flex-1 flex-wrap items-stretch overflow-x-clip md:flex-nowrap", view === "workspace" && !welcome && "pb-24 md:pb-0")}>
+        <Body health={health} agentsOpen={agentsOpen} toggleAgents={toggleAgents} />
+      </div>
+    </div>
   );
 }

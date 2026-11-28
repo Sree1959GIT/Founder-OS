@@ -25,6 +25,17 @@ from app.llm.privacy import FilterReport, NameIndex, NamesUnavailable, StreamRes
 Privacy = Literal["local", "cloud_allowed", "cloud"]
 
 
+def fallback_reason(exc: LLMError) -> str:
+    """Founder F19: why a cloud call fell back to Qwen, in one word the UI turns into a sentence."""
+    if exc.status == 429:
+        return "rate_limit"
+    if exc.status in (502, 503, 504):
+        return "busy"
+    if exc.network or isinstance(exc, LLMUnavailable):
+        return "unreachable"
+    return "error"
+
+
 class LLMRouter:
     def __init__(
         self,
@@ -133,6 +144,7 @@ class LLMRouter:
     ) -> Completion:
         chain = self.chain(privacy, needs_tools=bool(tools), agent_type=agent_type)
         failed: str | None = None
+        reason = "error"
         for i, provider in enumerate(chain):
             report = FilterReport()
             started = time.perf_counter()
@@ -144,9 +156,11 @@ class LLMRouter:
                 if i == len(chain) - 1:
                     raise
                 logger.warning("LLM {} failed, falling back to {}: {}", provider.name, chain[i + 1].name, exc)
-                failed = provider.name
+                failed, reason = provider.name, fallback_reason(exc)
                 continue
             self._record(provider, agent_type, started, report, completion, failed)
+            if failed:
+                completion.fallback_reason = reason
             return self._with_real_names(provider, completion)
         raise LLMError("no provider available")  # unreachable: the chain is never empty
 
@@ -162,6 +176,7 @@ class LLMRouter:
         """Stream from the first provider that answers. Fallback only happens before the first chunk."""
         chain = self.chain(privacy, needs_tools=bool(tools), agent_type=agent_type)
         failed: str | None = None
+        reason = "error"
         for i, provider in enumerate(chain):
             report = FilterReport()
             started_at = time.perf_counter()
@@ -175,6 +190,8 @@ class LLMRouter:
                         delta = restorer.feed(chunk.delta) + restorer.flush()
                         if chunk.completion is not None:
                             self._record(provider, agent_type, started_at, report, chunk.completion, failed)
+                            if failed:
+                                chunk.completion.fallback_reason = reason
                             chunk = chunk.model_copy(
                                 update={"completion": self._with_real_names(provider, chunk.completion)}
                             )
@@ -189,7 +206,7 @@ class LLMRouter:
                 if started or i == len(chain) - 1:
                     raise
                 logger.warning("LLM {} failed, falling back to {}: {}", provider.name, chain[i + 1].name, exc)
-                failed = provider.name
+                failed, reason = provider.name, fallback_reason(exc)
 
     def can_search_web(self, privacy: Privacy, agent_type: str) -> bool:
         return any(p.is_cloud and p.supports_web_search for p in self.chain(privacy, agent_type=agent_type))

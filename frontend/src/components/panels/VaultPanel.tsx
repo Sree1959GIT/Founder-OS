@@ -101,7 +101,7 @@ export function VaultPanel({ path: wanted }: { path?: string }) {
   return (
     <main className="grid min-w-0 flex-1 grid-cols-1 gap-4 px-6 py-5 lg:grid-cols-[320px_1fr]">
       <div className="flex min-w-0 flex-col gap-3">
-        <h1 className="text-[22px] font-bold tracking-tight">Vault</h1>
+        <h1 className="display text-[34px] leading-tight">Vault</h1>
         <form onSubmit={search} className="flex gap-2">
           <label htmlFor="vault-search" className="sr-only">
             Search the vault

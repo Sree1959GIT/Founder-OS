@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { AnswerText } from "@/components/chat/AnswerCard";
 import { DecisionFrameCard } from "@/components/canvas/DecisionFrameCard";
 import { ScenarioSimulator } from "@/components/canvas/ScenarioSimulator";
-import { CitationChips, EmptyNote, LineageChip, Pill, Section, VerifiedBadge } from "@/components/common";
+import { CitationChips, EmptyNote, Figure, LineageChip, Pill, Section, VerifiedBadge } from "@/components/common";
 import { fetchSummary, type AgentResult, type Artifact, type MetricResult } from "@/lib/api";
 import { decisionTitle, metricValue, monthLabel, runTitle } from "@/lib/format";
 import { proposedFrame, runsAfter } from "@/lib/proposal";
@@ -17,7 +17,7 @@ const KPI_TITLES: Record<string, string> = {
   gross_margin: "Gross margin",
 };
 
-function KpiRow({ refreshKey }: { refreshKey: string }) {
+export function KpiRow({ refreshKey }: { refreshKey: string }) {
   const [metrics, setMetrics] = useState<MetricResult[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   useEffect(() => {
@@ -43,13 +43,13 @@ function KpiRow({ refreshKey }: { refreshKey: string }) {
     );
   }
   return (
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" data-testid="kpi-row">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-3" data-testid="kpi-row">
       {metrics.map((m) => {
         const zero = m.metric === "runway" ? (m.detail?.zero_cash_month as string | undefined) : undefined;
         return (
           <article key={m.metric} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border bg-card p-3.5" data-testid={`kpi-${m.metric}`}>
             <p className="text-xs text-muted-foreground">{KPI_TITLES[m.metric] ?? m.label}</p>
-            <p className="num truncate text-[22px] font-semibold leading-tight">{metricValue(m.value, m.unit, m.metric)}</p>
+            <Figure value={metricValue(m.value, m.unit, m.metric)} />
             <p className="min-h-4 text-xs text-muted-foreground">
               {zero ? <>Zero cash {monthLabel(zero.slice(0, 7))}</> : <>As of {monthLabel(m.as_of)}</>}
             </p>
@@ -83,7 +83,7 @@ function RiskList({ artifact }: { artifact: Artifact }) {
               <span
                 className={
                   high
-                    ? "rounded bg-signal px-1.5 py-0.5 text-[11px] font-semibold text-[#1A1206]"
+                    ? "rounded bg-signal px-1.5 py-0.5 text-[11px] font-semibold text-on-signal"
                     : "rounded bg-[#3A4150] px-1.5 py-0.5 text-[11px] font-semibold text-foreground"
                 }
               >
@@ -139,6 +139,21 @@ function Findings({ run }: { run: RunView }) {
       {agents.map((agent) => (
         <FindingCard key={agent.agent_id} agent={agent} />
       ))}
+    </div>
+  );
+}
+
+/** The decision's cards (numbers, frame, scenario chart, findings). In the Boardroom (`bare`) the table above them
+ * shows the question, so they carry no title of their own. */
+export function CanvasCards() {
+  const { currentRun, decisionRun, state } = useWorkspace();
+  const run = decisionRun ?? currentRun;
+  return (
+    <div className="flex flex-col gap-4" data-testid="canvas-cards">
+      <KpiRow refreshKey={run?.status ?? "none"} />
+      {run?.frame ? <DecisionFrameCard frame={proposedFrame(run.frame, runsAfter(run, Object.values(state.runs)))} /> : null}
+      <ScenarioSimulator frame={run?.frame ?? null} />
+      {run ? <Findings run={run} /> : null}
     </div>
   );
 }

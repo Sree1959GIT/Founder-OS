@@ -566,6 +566,21 @@ def provider_label(name: str) -> str:
     return preset.label if preset is not None else name.replace("_", " ").title()
 
 
+_FALLBACK_WHY = {
+    "rate_limit": "{provider} hit its per-minute limit",
+    "busy": "{provider} was busy",
+    "slow": "{provider} was slow and you chose Qwen",
+    "unreachable": "{provider} could not be reached",
+    "error": "{provider} did not answer properly",
+}
+
+
+def fallback_sentence(provider: str, reason: str | None, agent: str) -> str:
+    """Founder F19: "Groq hit its per-minute limit, so People & Ops finished on Qwen on our server." """
+    why = _FALLBACK_WHY.get(reason or "error", _FALLBACK_WHY["error"]).format(provider=provider_label(provider))
+    return f"{why}, so {agent} finished on Qwen on our server."
+
+
 class AgentRunner:
     """Runs one agent instance: LLM tool loop (or rules when the LLM is down), then the Verifier (one retry)."""
 
@@ -590,6 +605,7 @@ class AgentRunner:
         self.slow_min_s = 15.0
         self.on_local = False
         self.slow_offered = False
+        self.fell_back = False  # founder F19: the switch to Qwen is said once per agent
         # Founder F8b: when this agent's first cloud call started. The limit is for the agent as a whole: Groq answers
         # each call in 2-3 s, so an 11 s agent of four calls never passed a 3 s limit on any single call.
         self.cloud_started: float | None = None
@@ -816,7 +832,9 @@ class AgentRunner:
         """The model drafts as JSON, the Verifier checks the prose (one repair turn), and code writes the file."""
         evidence = self._evidence(inst, user_message, [result, *upstream])
         dropped = [v for r in upstream for v in r.removed_figures]
-        draft = await self._draft_memo(spec, messages, user_message, result, evidence=evidence, dropped=dropped)
+        draft = await self._draft_memo(
+            spec, messages, user_message, result, evidence=evidence, dropped=dropped, inst=inst
+        )
         report = self._check_memo(draft, user_message, result)
         if not report.ok and result.provider != "rules":
             result.attempts = 2
@@ -829,7 +847,7 @@ class AgentRunner:
                 )
             )
             draft = await self._draft_memo(
-                spec, messages, user_message, result, fallback=draft, evidence=evidence, dropped=dropped
+                spec, messages, user_message, result, fallback=draft, evidence=evidence, dropped=dropped, inst=inst
             )
             report = self._check_memo(draft, user_message, result)
         result.verified, result.issues = report.ok, report.issues
@@ -874,12 +892,13 @@ class AgentRunner:
         fallback: MemoDraft | None = None,
         evidence: Evidence | None = None,
         dropped: list[float] | None = None,
+        inst: AgentInstance | None = None,
     ) -> MemoDraft:
         try:
             completion = await self.router.complete(
                 spec.privacy, messages, json_schema=memo_schema(self.frame), agent_type=spec.name
             )
-            self._account(result, completion)
+            self._account(result, completion, inst)  # F19: a Memo Writer that fell back to Qwen is said too
             draft = MemoDraft.model_validate(completion.json())
             if evidence is not None:
                 draft = with_real_outcomes(draft, evidence, dropped or [])
@@ -1069,7 +1088,7 @@ class AgentRunner:
             waiting = inst.is_cloud and not self.on_local
             self._emit("agent.status", inst.id, status="waiting_cloud" if waiting else "thinking")
             completion = await self._complete(spec, inst, messages, None if final else tools)
-            self._account(result, completion)
+            self._account(result, completion, inst)
             if not completion.tool_calls or final:
                 result.text = completion.text.strip()
                 return
@@ -1172,13 +1191,16 @@ class AgentRunner:
             self._emit("agent.status", inst.id, status="thinking")
             completion = await self.router.complete("local", messages, tools=tools, agent_type=spec.name)
             completion.fallback_from = completion.fallback_from or cloud.name
+            completion.fallback_reason = completion.fallback_reason or "slow"  # F19: the member chose Qwen
             return completion
         finally:
             switch.cancel()
             if not task.done():
                 task.cancel()
 
-    def _account(self, result: AgentResult, completion: Completion) -> None:
+    def _account(self, result: AgentResult, completion: Completion, inst: AgentInstance | None = None) -> None:
+        if inst is not None and completion.fallback_from and completion.provider == self.router.local.name:
+            self._fell_back(inst, completion)
         if completion.provider == self.router.local.name:
             result.local_calls += 1
         else:
@@ -1192,6 +1214,22 @@ class AgentRunner:
             )
         if completion.fallback_from:
             result.fallback_from = completion.fallback_from
+
+    def _fell_back(self, inst: AgentInstance, completion: Completion) -> None:
+        """Founder F19: a cloud call that failed (a 429 from Groq's per-minute limit, say) and was answered by Qwen is
+        said once per agent, on its card and by the Advisor. It was silent: the card kept saying "Cloud · groq"."""
+        if self.fell_back:
+            return
+        self.fell_back = True
+        sentence = fallback_sentence(completion.fallback_from or "", completion.fallback_reason, inst.name)
+        self._emit("agent.step", inst.id, step=sentence)
+        self._emit(
+            "agent.fallback",
+            inst.id,
+            text=sentence,
+            provider=provider_label(completion.fallback_from or ""),
+            reason=completion.fallback_reason or "error",
+        )
 
     async def _rules(self, spec: AgentType, inst: AgentInstance, user_message: str, result: AgentResult) -> None:
         """No LLM: run the obvious tool and answer with a template built only from its result."""

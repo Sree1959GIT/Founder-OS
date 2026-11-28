@@ -77,6 +77,16 @@ class CalibrationStore:
             self._save(items)
             return stored
 
+    def drop_pending(self, decision: str) -> int:
+        """Founder F18: a memo rewritten in place replaces its open predictions (resolved ones are kept: they were
+        scored). Returns how many were dropped."""
+        with self._lock:
+            items = self._load()
+            kept = [p for p in items if not (p.decision == decision and p.outcome is None)]
+            if len(kept) != len(items):
+                self._save(kept)
+            return len(items) - len(kept)
+
     def resolve(self, prediction_id: str, outcome: bool) -> Prediction:
         with self._lock:
             items = self._load()

@@ -34,7 +34,6 @@ vi.mock("@/lib/workspace", async (importOriginal) => {
   };
 });
 // The voice client needs a microphone and a socket; here it only has to stay mounted.
-vi.mock("@/components/chat/VoiceControls", () => ({ VoiceControls: () => <span data-testid="voice-controls" /> }));
 
 const { AgentWindow, WINDOW_KEY } = await import("@/components/activity/AgentWindow");
 const { AdvisorPanel } = await import("@/components/chat/AdvisorPanel");
@@ -109,20 +108,25 @@ describe("F: panel sizes", () => {
     expect(resize(DEFAULT_LAYOUT, "left", 5000, 0).left).toBe(LEFT.max);
     expect(resize(DEFAULT_LAYOUT, "left", 10, 0).left).toBe(LEFT.min);
     expect(resize(DEFAULT_LAYOUT, "right", 10, 0).right).toBe(RIGHT.min);
-    // 1280 wide: the left may grow to 1280 - 300 (right) - 420 (canvas) = 560
-    expect(maxWidth("left", DEFAULT_LAYOUT, 1280)).toBe(560);
-    expect(resize(DEFAULT_LAYOUT, "left", 700, 1280).left).toBe(560);
+    // Founder F26: 1280 wide: the left may grow to 1280 - 320 (right) - 560 (centre) = 400
+    expect(maxWidth("left", DEFAULT_LAYOUT, 1280)).toBe(400);
+    expect(resize(DEFAULT_LAYOUT, "left", 700, 1280).left).toBe(400);
+    // with the right folded the left may take more
+    expect(maxWidth("left", { ...DEFAULT_LAYOUT, rightCollapsed: true }, 1280)).toBe(1280 - 44 - 560);
     // with the left folded the right may take more
-    expect(maxWidth("right", { ...DEFAULT_LAYOUT, leftCollapsed: true }, 1100)).toBe(RIGHT.max);
+    expect(maxWidth("right", { ...DEFAULT_LAYOUT, leftCollapsed: true }, 1100)).toBe(1100 - 44 - 560);
+    expect(maxWidth("right", { ...DEFAULT_LAYOUT, leftCollapsed: true }, 1600)).toBe(RIGHT.max);
   });
 
   it("a width saved on a big screen is drawn narrower on a small one, and kept", () => {
-    const wide = { left: 720, right: 560, leftCollapsed: false };
-    // 1024: the Agents panel is hidden (below xl), so the Advisor may take 1024 - 420 = 604
-    expect(shownWidths(wide, 1024)).toEqual({ left: 604, right: 560 });
-    // 1440 with both panels: the canvas keeps 420
+    const wide = { left: 720, right: 560, leftCollapsed: false, rightCollapsed: false };
+    // 900: the Options panel is not beside the centre (below lg), so the Advisor may take 900 - 560 = 340
+    expect(shownWidths(wide, 900)).toEqual({ left: 340, right: 560 });
+    // 1024: both panels at their minimum; the centre (still narrower than the table) shows the phone-style stage
+    expect(shownWidths(wide, 1024)).toEqual({ left: 280, right: 240 });
+    // 1440 with both panels: the centre keeps 560
     const shown = shownWidths(wide, 1440);
-    expect(shown.left + shown.right + 420).toBeLessThanOrEqual(1440);
+    expect(shown.left + shown.right + 560).toBeLessThanOrEqual(1440);
     expect(shownWidths(wide, 2560)).toEqual({ left: 720, right: 560 });
   });
 
@@ -131,11 +135,11 @@ describe("F: panel sizes", () => {
   });
 
   it("remembers sizes per viewer, and ignores a broken stored value", () => {
-    saveLayout({ left: 500, right: 260, leftCollapsed: true });
-    expect(loadLayout()).toEqual({ left: 500, right: 260, leftCollapsed: true });
+    saveLayout({ left: 500, right: 260, leftCollapsed: true, rightCollapsed: true });
+    expect(loadLayout()).toEqual({ left: 500, right: 260, leftCollapsed: true, rightCollapsed: true });
     window.localStorage.setItem(LAYOUT_KEY, "{not json");
     expect(loadLayout()).toEqual(DEFAULT_LAYOUT);
-    expect(parseLayout(JSON.stringify({ left: 99999, right: "wide" }))).toEqual({ left: LEFT.max, right: RIGHT.initial, leftCollapsed: false });
+    expect(parseLayout(JSON.stringify({ left: 99999, right: "wide" }))).toEqual({ left: LEFT.max, right: RIGHT.initial, leftCollapsed: false, rightCollapsed: false });
   });
 
   it("the handle moves with the arrow keys and Home resets it", () => {
@@ -149,14 +153,16 @@ describe("F: panel sizes", () => {
     expect(onReset).toHaveBeenCalled();
   });
 
-  it("folding the Advisor panel keeps the conversation and voice mounted", () => {
+  it("folding the Advisor panel works, and the panel is for typing only (founder F27: voice is on the faces)", () => {
     const onToggle = vi.fn();
     const { rerender } = render(<AdvisorPanel width={380} collapsed={false} onToggle={onToggle} onAgents={vi.fn()} />);
+    expect(screen.getByRole("textbox", { name: "Ask the advisor" })).toBeInTheDocument();
+    expect(screen.queryByTestId("voice-controls")).not.toBeInTheDocument();
+    expect(screen.queryByText("Start voice")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Fold the Advisor panel" }));
     expect(onToggle).toHaveBeenCalled();
     rerender(<AdvisorPanel width={380} collapsed onToggle={onToggle} onAgents={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Show the Advisor panel" })).toBeInTheDocument();
-    expect(screen.getByTestId("voice-controls")).toBeInTheDocument();
   });
 });
 

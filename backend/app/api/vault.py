@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.api.data import CHUNK_BYTES, safe_file_name
 from app.deps import SettingsDep, VaultDep
+from app.vault.memo_versions import list_versions, read_version
 from app.vault.parsers import SUPPORTED_SUFFIXES
 
 router = APIRouter(tags=["vault"])
@@ -66,6 +68,33 @@ def list_notes(vault: VaultDep, folder: str | None = None) -> dict[str, Any]:
         prefix = folder.strip("/") + "/"
         items = [i for i in items if i["path"].startswith(prefix)]
     return {"notes": items, "count": len(items)}
+
+
+def _versions_root(vault: Any) -> Path:
+    return Path(vault.settings.workspace_data_dir(vault.workspace_id)) / "memo_versions"
+
+
+@router.get("/memos/versions")
+def memo_versions(path: str, vault: VaultDep) -> dict[str, Any]:
+    """Founder F18: the earlier versions of one decision's memo, newest first (the latest is the memo itself)."""
+    if not path.startswith("decisions/"):
+        raise HTTPException(status_code=400, detail="not a decision memo")
+    try:
+        return {"path": path, "versions": list_versions(_versions_root(vault), path)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/memos/versions/{version}")
+def memo_version(version: str, path: str, vault: VaultDep) -> dict[str, Any]:
+    if not path.startswith("decisions/"):
+        raise HTTPException(status_code=400, detail="not a decision memo")
+    try:
+        return read_version(_versions_root(vault), path, version)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"no such version: {version}") from exc
 
 
 @router.get("/vault/notes/{path:path}")

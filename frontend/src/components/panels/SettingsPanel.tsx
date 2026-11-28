@@ -2,11 +2,14 @@ import { ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ErrorNote, Pill, Section } from "@/components/common";
+import { HealthBadge } from "@/components/HealthBadge";
+import { useHealth } from "@/hooks/useHealth";
 import { AIModelCard } from "@/components/panels/AIModelCard";
 import { Button } from "@/components/ui/button";
 import { leaveTo, setNavigationGuard } from "@/hooks/useRoute";
 import { fetchSettings, putSettings, type SettingsView } from "@/lib/api";
 import { CURRENCIES, moneyText } from "@/lib/currency";
+import { useLite } from "@/lib/lite";
 
 const selectClass = "h-10 rounded-lg border border-border-strong bg-background px-2 text-sm disabled:opacity-60";
 
@@ -202,11 +205,11 @@ export function SettingsPanel() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4 px-6 py-5">
-      <h1 className="text-[22px] font-bold tracking-tight">Settings</h1>
+      <h1 className="display text-[34px] leading-tight">Settings</h1>
       {error ? <ErrorNote>{error}</ErrorNote> : null}
       {dirty ? (
         <div
-          className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-xl border border-[#4A3A1C] bg-[#1A1610] p-3 text-[13px]"
+          className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-xl border border-attention-border bg-attention p-3 text-[13px]"
           data-testid="unsaved"
           role="status"
         >
@@ -274,7 +277,7 @@ export function SettingsPanel() {
                 disabled={!canAllow}
                 data-testid="cloud-allowed"
                 onChange={(e) => change({ cloud_allowed: e.target.checked })}
-                className="h-5 w-5 accent-[#F2A93B] disabled:opacity-50"
+                className="h-5 w-5 accent-signal disabled:opacity-50"
               />
             </label>
             {canAllow ? null : (
@@ -431,6 +434,55 @@ export function SettingsPanel() {
           })}
         </ul>
       </Section>
+
+      <SystemSection />
+
+      <LiteSection />
+
+      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground" data-testid="settings-footer">
+        <span>
+          Rates by{" "}
+          <a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">
+            Exchange Rate API
+          </a>
+        </span>
+      </footer>
     </main>
+  );
+}
+
+/** M7b: Lite mode (no blur, no motion). Automatic on reduced motion or a slow device; here it can be set by hand. */
+function LiteSection() {
+  const { choice, active, setChoice } = useLite();
+  return (
+    <Section title="Look">
+      <fieldset className="flex flex-col gap-2" data-testid="lite-mode">
+        <legend className="mb-1 text-[13px]">Lite mode: no blur or animation, for older PCs and phones</legend>
+        <div className="flex flex-wrap gap-2">
+          {(["auto", "on", "off"] as const).map((c) => (
+            <label key={c} className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg border border-border-strong bg-background px-3 text-[13px]">
+              <input type="radio" name="lite" value={c} checked={choice === c} onChange={() => setChoice(c)} />
+              {c === "auto" ? "Automatic" : c === "on" ? "On" : "Off"}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">{active ? "Lite mode is on." : "Lite mode is off."}</p>
+      </fieldset>
+    </Section>
+  );
+}
+
+/** Founder F21: the services behind the top bar's one status line, for whoever looks after this PC. */
+function SystemSection() {
+  const health = useHealth();
+  return (
+    <Section title="System">
+      <div className="flex flex-col gap-2" data-testid="system-details">
+        <p className="text-[13px] text-muted-foreground">
+          The top bar shows one line for members. These are the services behind it.
+        </p>
+        <HealthBadge health={health} />
+      </div>
+    </Section>
   );
 }

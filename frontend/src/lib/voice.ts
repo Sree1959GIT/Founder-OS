@@ -92,6 +92,8 @@ export class VoiceClient {
   private nextTime = 0;
   private holding = false;
   private lastTranscript = "";
+  /** Founder F27 (M): a muted mic sends nothing, in either mode. */
+  private muted = false;
   mode: VoiceMode = "ptt";
 
   constructor(private readonly on: VoiceHandlers) {}
@@ -115,7 +117,7 @@ export class VoiceClient {
     node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
       this.on.onLevel(e.data.level);
       const open = this.socket?.readyState === WebSocket.OPEN;
-      if (open && (this.mode === "duplex" || this.holding)) this.socket?.send(e.data.pcm);
+      if (open && !this.muted && (this.mode === "duplex" || this.holding)) this.socket?.send(e.data.pcm);
     };
     this.captureCtx.createMediaStreamSource(this.mic).connect(node);
     this.playCtx = new AudioContext({ sampleRate: OUT_RATE });
@@ -158,6 +160,20 @@ export class VoiceClient {
     if (!this.holding) return;
     this.holding = false;
     this.control({ type: "ptt_end" });
+  }
+
+  /**
+   * Founder F27: stop speaking now (the Stop button under the face, or Esc). Only the speech stops: the backend drops
+   * its queued lines and the audio being made; the team, its research and its numbers carry on.
+   */
+  hush(): void {
+    this.flush();
+    this.control({ type: "hush" });
+  }
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    if (muted && this.holding) this.pttEnd();
   }
 
   setQuiet(quiet: boolean): void {

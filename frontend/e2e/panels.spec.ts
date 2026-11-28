@@ -6,7 +6,7 @@ const shots = process.env.E2E_SHOTS;
 test("panels resize, fold and are remembered; the agent window moves and follows the team", async ({ page }) => {
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(e.message));
-  await page.goto("/");
+  await page.goto("/#/boardroom");
   await page.evaluate(() => window.localStorage.removeItem("founderos.layout.v1"));
   await page.reload();
 
@@ -24,9 +24,9 @@ test("panels resize, fold and are remembered; the agent window moves and follows
   await expect.poll(async () => Math.round((await advisor.boundingBox())?.width ?? 0)).toBeGreaterThan(470);
 
   // the right panel with the keyboard
-  const rail = page.getByRole("complementary", { name: "Agents" });
+  const rail = page.getByRole("complementary", { name: "Options so far", exact: true });
   const railBefore = Math.round((await rail.boundingBox())?.width ?? 0);
-  await page.getByRole("separator", { name: "Agents panel width" }).focus();
+  await page.getByRole("separator", { name: "Options panel width" }).focus();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(railBefore + 32);

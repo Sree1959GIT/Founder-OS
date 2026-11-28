@@ -529,6 +529,8 @@ class ConversationManager:
             return f"The Verifier sent {name} back to check a figure."
         if event.type == "agent.rerun":
             return f"{name} restarted with your edited brief."
+        if event.type == "agent.fallback":  # founder F19: a switch to Qwen is said, never silent
+            return str(data.get("text") or f"{name} finished on Qwen on our server.")
         return ""
 
     def _finished(self, session: Session, run_id: str, event: AgentEvent) -> None:

@@ -273,3 +273,125 @@ export function collapseVersions<
   const key = (v: T) => [v.table, v.rows, v.source_file ?? "", Boolean(v.clean_sample)].join("|");
   return versions.filter((v, i) => i === 0 || key(versions[i - 1] as T) !== key(v));
 }
+
+/** Founder F18: "26 Nov 2026, 10:42" for the memo's Latest badge and its earlier versions ("" when unknown). */
+export function memoWhen(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const compact = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/.exec(iso);
+  const text = compact ? `${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5]}` : iso;
+  const date = new Date(text.length === 10 ? `${text}T00:00` : text);
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  if (text.length === 10) return day;
+  return `${day}, ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** Founder F20: the size step for a figure by its length (it then wraps; it is never cut off). */
+export function figureSize(text: string, sizes: readonly [string, string, string] = ["text-[22px]", "text-[19px]", "text-[16px]"]): string {
+  const n = text.length;
+  return n <= 9 ? sizes[0] : n <= 12 ? sizes[1] : sizes[2];
+}
+
+
+const TOPIC_LEADS = [
+  /^(?:so|ok|okay|and|now|hey|please|right|alright)[,\s]+/i,
+  /^(?:what if we|what about|how about|tell me (?:more )?about|think about|let'?s (?:talk about|look at))\s+/i,
+  /^(?:how much (?:would|will|does|do) (?:it|we) (?:cost|spend|need) to|what (?:would|will|does) it cost to)\s+/i,
+  /^(?:what(?:'s| is| are)|how(?:'s| is)|show me)\s+/i,
+  /^(?:should|shall|can|could|would|do|does|is|are|will|must)\s+(?:we|i|you|it)\s+/i,
+  /^(?:open(?:ing)?|hire|hiring|launch(?:ing)?|start(?:ing)?|build(?:ing)?|buy(?:ing)?|raise|raising|cut(?:ting)?|increase|lower|expand(?:ing)? (?:in)?to|enter(?:ing)?|move (?:to|into)|set up|go (?:for|with)|add(?:ing)?|change|drop)\s+/i,
+  /^(?:a|an|the|our|my|your|some|another)\s+/i,
+];
+const CHANGE_VERB = /^(raise|raising|cut|cutting|increase|lower|drop|change)\s+/i;
+const GERUND: Record<string, string> = {
+  raise: "raising",
+  raising: "raising",
+  cut: "cutting",
+  cutting: "cutting",
+  increase: "increasing",
+  lower: "lowering",
+  drop: "dropping",
+  change: "changing",
+};
+const GENERIC_SUBJECT = /^(?:this|that|the)\s+(?:decision|change|hire|fundraise|price change|spending change)$/i;
+
+/**
+ * Founder F24: "On the table" names the topic of the question in a few words ("Should we open a Dubai office?" →
+ * "Dubai office"), never "This decision". Words only: nothing is computed here.
+ */
+export function topicOf(question: string, maxWords = 6): string {
+  let text = runTitle(question, 400).split(" · changed: ")[0]?.trim() ?? "";
+  text = text.replace(/[?!.。]+$/u, "").replace(/^["'“”]+|["'“”]+$/g, "").trim();
+  let gerund = "";
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const lead of TOPIC_LEADS) {
+      // A change verb is the topic itself: "raise our prices" → "Raising prices", never "Prices".
+      const change = lead === TOPIC_LEADS[5] ? CHANGE_VERB.exec(text) : null;
+      if (change && !gerund) gerund = GERUND[(change[1] ?? "").toLowerCase()] ?? "";
+      text = text.replace(lead, "");
+    }
+  }
+  if (gerund) text = `${gerund} ${text}`;
+  text = text.replace(/\s+(?:now|next year|this year|or not|at all|right now)$/i, "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return runTitle(question);
+  const short = words.length > maxWords ? `${words.slice(0, maxWords).join(" ")}…` : words.join(" ");
+  return short.charAt(0).toUpperCase() + short.slice(1);
+}
+
+/**
+ * The table's topic: the newest question's, or the open decision's own subject while the decision itself (or a step
+ * of it, like Accept writing its memo) is on the table. A generic subject ("This decision") gives way to the question.
+ */
+export function tableTopic(
+  decision: { message: string; subject?: string | null } | null,
+  current: { message: string; isDecision: boolean } | null,
+): string {
+  const ofDecision = (d: { message: string; subject?: string | null }) => {
+    const subject = (d.subject ?? "").trim();
+    return subject && !GENERIC_SUBJECT.test(subject) ? decisionTitle(subject, d.message) : topicOf(d.message);
+  };
+  const decisionStep = (m: string) => /^(?:go with|tell me more about)\s+["“]/i.test(m.trim());
+  if (current && !current.isDecision && !(decision && decisionStep(current.message))) return topicOf(current.message);
+  if (decision) return ofDecision(decision);
+  return current ? topicOf(current.message) : "Your question";
+}
+
+/** Markdown to plain sentences: headings, list marks, emphasis, links and tables go; the words stay. */
+function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*\|/.test(line) && !/^\s*#{1,6}\s/.test(line) && !/^\s*[-*_]{3,}\s*$/.test(line))
+    .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean)
+    .map((line) => (/[.!?:;]$/.test(line) ? line : `${line}.`))
+    .join(" ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/(^|\s)[*_](\S[^*_]*?)[*_](?=\s|[.,;:!?]|$)/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Founder F23: on screen the Advisor answers in 3 sentences or fewer; the rest stays one tap away and in the memo.
+ * A figure's decimal point ("$1.5M", "2.4 months") is not a sentence end. Returns the brief and whether it is shorter.
+ */
+export function briefAnswer(markdown: string, max = 3): { brief: string; more: boolean } {
+  // Only the prose before the first list, table, heading or bold-only line is the answer's lead; the rest is detail.
+  const lines = markdown.split(/\r?\n/);
+  const cut = lines.findIndex((l) => /^\s*(?:[-*+]\s|\d+[.)]\s|\||#{1,6}\s|\*\*[^*]+\*\*:?\s*$|__[^_]+__:?\s*$)/.test(l));
+  const lead = cut === -1 ? markdown : lines.slice(0, cut).join("\n");
+  const text = plainText(lead) || plainText(markdown);
+  // A sentence ends at . ! or ? followed by a space: "$1.5M" and "2.4 months" never split.
+  const sentences = text.split(/(?<=[.!?]["”')\]]*)\s+/).map((s) => s.trim()).filter(Boolean);
+  const merged: string[] = [];
+  for (const s of sentences) {
+    // "e.g." / "vs." / "approx." are not ends of a sentence.
+    const prev = merged[merged.length - 1];
+    if (prev && /\b(?:e\.g|i\.e|vs|approx|etc|Mr|Ms|Dr|No)\.$/i.test(prev)) merged[merged.length - 1] = `${prev} ${s}`;
+    else merged.push(s);
+  }
+  return { brief: merged.slice(0, max).join(" "), more: merged.length > max || cut > 0 };
+}

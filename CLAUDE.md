@@ -12,6 +12,7 @@
 ## Engineering rules
 - Python 3.11, FastAPI, asyncio, Pydantic v2, pydantic-settings, DuckDB, LangGraph, loguru. Lint with ruff; test with pytest (+ pytest-asyncio).
 - Frontend: Vite, React 18, TypeScript (strict), Tailwind, shadcn/ui, Recharts.
+- Read docs/design/DESIGN.md before any UI change.
 - **No LLM arithmetic on financial data.** Numbers come from DuckDB routines and carry a `Lineage`.
 - Every external service sits behind an interface with a fake, and tests never need GPU, Ollama, Docker, the network or Windows.
 - Use `pathlib` for paths and UTF-8 for I/O. Nothing may be Linux-only, because the target is native Windows 11.

@@ -1,6 +1,7 @@
 /**
- * Founder decision F (M6): the left (Advisor) and right (Agents) panels can be made wider or narrower, and the left one
- * can be folded away. Each viewer's sizes are kept in this browser's storage; missing or blocked storage just means the
+ * Founder decision F (M6), F26 (M7b gate): the left (Advisor) and right (Options) panels can be made wider or narrower
+ * and folded away; "Focus on the team" folds both. The centre keeps `CANVAS_MIN`; below `TABLE_MIN` the stage itself
+ * switches to the phone-style layout. Each viewer's sizes are kept in this browser's storage; missing or blocked storage just means the
  * default sizes.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -8,19 +9,20 @@ import { useCallback, useEffect, useState } from "react";
 export const LAYOUT_KEY = "founderos.layout.v1";
 
 export const LEFT = { min: 280, max: 720, initial: 380 } as const;
-export const RIGHT = { min: 240, max: 560, initial: 300 } as const;
+export const RIGHT = { min: 240, max: 560, initial: 320 } as const;
 /** The canvas between the panels never gets narrower than this when a panel is dragged wider. */
-export const CANVAS_MIN = 420;
-/** Width of the folded Advisor panel. */
+export const CANVAS_MIN = 560;
+/** Width of a folded side panel. */
 export const FOLDED_WIDTH = 44;
 
 export interface PanelLayout {
   left: number;
   right: number;
   leftCollapsed: boolean;
+  rightCollapsed: boolean;
 }
 
-export const DEFAULT_LAYOUT: PanelLayout = { left: LEFT.initial, right: RIGHT.initial, leftCollapsed: false };
+export const DEFAULT_LAYOUT: PanelLayout = { left: LEFT.initial, right: RIGHT.initial, leftCollapsed: false, rightCollapsed: false };
 
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -35,14 +37,22 @@ export function maxWidth(side: "left" | "right", layout: PanelLayout, viewport: 
   const limits = side === "left" ? LEFT : RIGHT;
   if (viewport <= 0) return limits.max;
   const other =
-    side === "left" ? (railShown(viewport) ? layout.right : 0) : layout.leftCollapsed ? FOLDED_WIDTH : layout.left;
+    side === "left"
+      ? railShown(viewport)
+        ? layout.rightCollapsed
+          ? FOLDED_WIDTH
+          : layout.right
+        : 0
+      : layout.leftCollapsed
+        ? FOLDED_WIDTH
+        : layout.left;
   return Math.max(limits.min, Math.min(limits.max, viewport - other - CANVAS_MIN));
 }
 
-/** The right (Agents) panel shows from Tailwind's `xl` breakpoint. */
-export const XL = 1280;
+/** The right (Options) panel shows beside the centre from Tailwind's `lg` breakpoint (F26: it is resizable there). */
+export const LG = 1024;
 export function railShown(viewport: number): boolean {
-  return viewport <= 0 || viewport >= XL;
+  return viewport <= 0 || viewport >= LG;
 }
 
 /**
@@ -58,7 +68,7 @@ export function shownWidths(layout: PanelLayout, viewport: number): { left: numb
 export function resize(layout: PanelLayout, side: "left" | "right", width: number, viewport: number): PanelLayout {
   const limits = side === "left" ? LEFT : RIGHT;
   const value = clamp(width, limits.min, maxWidth(side, layout, viewport));
-  return side === "left" ? { ...layout, left: value, leftCollapsed: false } : { ...layout, right: value };
+  return side === "left" ? { ...layout, left: value, leftCollapsed: false } : { ...layout, right: value, rightCollapsed: false };
 }
 
 /** Anything stored that is not a sensible layout falls back to the defaults, field by field. */
@@ -71,6 +81,7 @@ export function parseLayout(raw: string | null): PanelLayout {
       left: typeof saved.left === "number" ? clamp(saved.left, LEFT.min, LEFT.max) : LEFT.initial,
       right: typeof saved.right === "number" ? clamp(saved.right, RIGHT.min, RIGHT.max) : RIGHT.initial,
       leftCollapsed: saved.leftCollapsed === true,
+      rightCollapsed: saved.rightCollapsed === true,
     };
   } catch {
     return DEFAULT_LAYOUT;
@@ -121,6 +132,10 @@ export interface PanelLayoutApi {
   setWidth: (side: "left" | "right", width: number) => void;
   reset: (side: "left" | "right") => void;
   toggleLeft: () => void;
+  toggleRight: () => void;
+  /** "Focus on the team": both panels folded; pressed again, both open. */
+  focused: boolean;
+  toggleFocus: () => void;
 }
 
 export function usePanelLayout(): PanelLayoutApi {
@@ -136,7 +151,13 @@ export function usePanelLayout(): PanelLayoutApi {
     [],
   );
   const toggleLeft = useCallback(() => setLayout((l) => ({ ...l, leftCollapsed: !l.leftCollapsed })), []);
-  return { layout, setWidth, reset, toggleLeft };
+  const toggleRight = useCallback(() => setLayout((l) => ({ ...l, rightCollapsed: !l.rightCollapsed })), []);
+  const focused = layout.leftCollapsed && layout.rightCollapsed;
+  const toggleFocus = useCallback(
+    () => setLayout((l) => (l.leftCollapsed && l.rightCollapsed ? { ...l, leftCollapsed: false, rightCollapsed: false } : { ...l, leftCollapsed: true, rightCollapsed: true })),
+    [],
+  );
+  return { layout, setWidth, reset, toggleLeft, toggleRight, focused, toggleFocus };
 }
 
 /** A small stored value per viewer (the agent window's place and whether it is open). */
