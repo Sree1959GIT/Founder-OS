@@ -17,7 +17,7 @@ import { useHealth, type HealthState } from "@/hooks/useHealth";
 import { useRoute } from "@/hooks/useRoute";
 import { fetchSettings, putSettings } from "@/lib/api";
 import { browserCurrency, currencyMissing } from "@/lib/currency";
-import { LEFT, maxWidth, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
+import { LEFT, maxWidth, railShown, RIGHT, shownWidths, usePanelLayout, useViewportWidth } from "@/lib/layout";
 import { cn } from "@/lib/utils";
 import { VoiceProvider } from "@/lib/voiceContext";
 import { useWorkspace, WorkspaceProvider } from "@/lib/workspace";
@@ -25,7 +25,7 @@ import { useWorkspace, WorkspaceProvider } from "@/lib/workspace";
 /** The Boardroom (M7b): the Advisor on the left, the table and the decision's cards in the middle, the options on
  * the right. On a phone the table comes first, then the options, then the conversation. */
 function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAgents: () => void }) {
-  const { layout, setWidth, reset, toggleLeft } = usePanelLayout();
+  const { layout, setWidth, reset, toggleLeft, toggleRight, focused, toggleFocus } = usePanelLayout();
   const vw = useViewportWidth();
   const shown = shownWidths(layout, vw);
   return (
@@ -52,20 +52,22 @@ function Workspace({ agentsOpen, toggleAgents }: { agentsOpen: boolean; toggleAg
           onReset={() => reset("left")}
         />
       )}
-      <BoardroomStage>
+      <BoardroomStage focus={{ on: focused, toggle: toggleFocus }}>
         <CanvasCards />
       </BoardroomStage>
-      <ResizeHandle
-        side="right"
-        label="Options panel width"
-        width={shown.right}
-        min={RIGHT.min}
-        max={maxWidth("right", layout, vw)}
-        onResize={(w) => setWidth("right", w)}
-        onReset={() => reset("right")}
-        className="md:hidden xl:block"
-      />
-      <OptionsPanel width={vw >= 1280 ? shown.right : undefined} />
+      {layout.rightCollapsed ? null : (
+        <ResizeHandle
+          side="right"
+          label="Options panel width"
+          width={shown.right}
+          min={RIGHT.min}
+          max={maxWidth("right", layout, vw)}
+          onResize={(w) => setWidth("right", w)}
+          onReset={() => reset("right")}
+          className="md:hidden lg:block"
+        />
+      )}
+      <OptionsPanel width={railShown(vw) ? shown.right : undefined} collapsed={layout.rightCollapsed} onToggle={toggleRight} />
       <PhoneBar />
     </>
   );

@@ -58,18 +58,19 @@ test("at 125 % the panel edges drag, reset on double-click, and widths and the a
   await drag(left, 150);
   await expect.poll(async () => Math.round((await advisor.boundingBox())?.width ?? 0)).toBe(530);
   await drag(right, -100);
-  await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(400);
+  await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(420);
 
   // F5 keeps both
   await page.reload();
   await expect.poll(async () => Math.round((await advisor.boundingBox())?.width ?? 0)).toBe(530);
-  await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(400);
+  await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(420);
 
   // double-click: back to the default
   await left.dblclick();
   await expect.poll(async () => Math.round((await advisor.boundingBox())?.width ?? 0)).toBe(380);
   await right.dblclick();
-  await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(300);
+  // the Options panel's default is 320 px (founder F26, docs/design/DESIGN.md side-panel-default)
+  await expect.poll(async () => Math.round((await rail.boundingBox())?.width ?? 0)).toBe(320);
 
   // the agent window comes back where it was left, after F5 and reopening
   await page.getByRole("button", { name: /^Agents/ }).click();

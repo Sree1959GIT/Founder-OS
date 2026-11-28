@@ -38,6 +38,14 @@ export interface VoiceApi {
   pttStart: () => void;
   pttEnd: () => void;
   switchMode: (mode: VoiceMode) => void;
+  /** Founder F27: who the member is talking to (a face they tapped), or null. */
+  talkingTo: { id: string; name: string } | null;
+  /** Tap a face: voice on if needed, hands-free, talking to that agent. The same face again stops listening. */
+  talkTo: (id: string, name: string) => Promise<void>;
+  /** Stop the speech now (the Stop button under the speaking face, or Esc). Never stops the team. */
+  hush: () => void;
+  muted: boolean;
+  toggleMute: () => void;
 }
 
 const Context = createContext<VoiceApi | null>(null);
@@ -55,6 +63,13 @@ export function micProblem(message: string, secure: boolean = window.isSecureCon
   return message;
 }
 
+/** A key pressed in a text box, a list or a button that Space would press is the member typing, not talking. */
+export function typingIn(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A", "SUMMARY"].includes(target.tagName) || target.getAttribute("role") === "separator";
+}
+
 export function VoiceProvider({ children }: { children: ReactNode }) {
   const { state, spoken } = useWorkspace();
   const client = useRef<VoiceClient | null>(null);
@@ -68,6 +83,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [turn, setTurn] = useState<VoiceTurnMetric | null>(null);
   const [barge, setBarge] = useState<VoiceBargeIn | null>(null);
+  const [talkingTo, setTalkingTo] = useState<{ id: string; name: string } | null>(null);
+  const [muted, setMuted] = useState(false);
+  const talkingRef = useRef(talkingTo);
+  talkingRef.current = talkingTo;
   const spokenRef = useRef(spoken);
   spokenRef.current = spoken;
   const sessionRef = useRef(state.sessionId);
@@ -120,6 +139,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     client.current = null;
     setVoice("off");
     setSaying("");
+    setTalkingTo(null);
+    setMuted(false);
   }, []);
 
   useEffect(() => () => client.current?.stop(), []);
@@ -131,6 +152,72 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   }, []);
   const pttStart = useCallback(() => client.current?.pttStart(), []);
   const pttEnd = useCallback(() => client.current?.pttEnd(), []);
+  const hush = useCallback(() => {
+    client.current?.hush();
+    setSaying("");
+  }, []);
+  const toggleMute = useCallback(() => {
+    setMuted((m) => {
+      client.current?.setMuted(!m);
+      return !m;
+    });
+  }, []);
+  const talkTo = useCallback(
+    async (id: string, name: string) => {
+      if (talkingRef.current?.id === id && client.current) {
+        // The same face again: stop listening hands-free (voice stays on; Space still holds to talk).
+        setTalkingTo(null);
+        switchMode("ptt");
+        return;
+      }
+      setTalkingTo({ id, name });
+      if (client.current) {
+        switchMode("duplex");
+        return;
+      }
+      setMode("duplex");
+      modeRef.current = "duplex";
+      await connect();
+    },
+    [connect, switchMode],
+  );
+
+  // Founder F27 keys, anywhere but while typing: Space = hold to talk, Esc = stop speaking, M = mute the mic.
+  const held = useRef(false);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Escape" && client.current) {
+        hush(); // Esc stops the speech wherever the focus is
+        return;
+      }
+      if (typingIn(e.target)) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (e.repeat || held.current) return;
+        held.current = true;
+        void (async () => {
+          if (!client.current) await connect();
+          if (modeRef.current !== "ptt") switchMode("ptt");
+          if (held.current) client.current?.pttStart();
+        })();
+      } else if ((e.key === "m" || e.key === "M") && client.current) {
+        e.preventDefault();
+        toggleMute();
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || !held.current) return;
+      held.current = false;
+      client.current?.pttEnd();
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, [connect, hush, switchMode, toggleMute]);
 
   const value = useMemo<VoiceApi>(
     () => ({
@@ -150,8 +237,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       pttStart,
       pttEnd,
       switchMode,
+      talkingTo,
+      talkTo,
+      hush,
+      muted,
+      toggleMute,
     }),
-    [voice, mode, level, heard, saying, missed, unsure, error, turn, barge, connect, disconnect, pttStart, pttEnd, switchMode],
+    [voice, mode, level, heard, saying, missed, unsure, error, turn, barge, connect, disconnect, pttStart, pttEnd, switchMode, talkingTo, talkTo, hush, muted, toggleMute],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

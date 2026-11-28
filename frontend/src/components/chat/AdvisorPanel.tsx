@@ -2,7 +2,6 @@ import { BellOff, Bell, PanelLeftClose, PanelLeftOpen, SendHorizontal, Workflow 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
 import { AnswerCard } from "@/components/chat/AnswerCard";
-import { VoiceControls } from "@/components/chat/VoiceControls";
 import { ErrorNote } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { briefAnswer } from "@/lib/format";
@@ -300,7 +299,6 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
         <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()} className="h-11 w-11 rounded-lg">
           <SendHorizontal aria-hidden="true" />
         </Button>
-        <VoiceControls />
       </form>
     </aside>
     </>

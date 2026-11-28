@@ -1,14 +1,15 @@
-import { ArrowUpRight, Check, Radio, Undo2, X } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { ArrowUpRight, Check, Focus, Mic, MicOff, PanelRightClose, PanelRightOpen, PanelsLeftRight, Radio, Square, Undo2, X } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { Face, memberOf } from "@/components/boardroom/faces";
 import { MicButton } from "@/components/chat/VoiceControls";
 import { Pill } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import type { DecisionFrame } from "@/lib/api";
-import { caption, evidenceLine, seatStatus, speakingId, useBoardroomRun, type SeatTone } from "@/lib/boardroom";
+import { caption, evidenceLine, seatPositions, seatSize, seatStatus, speakingId, teamSeats, useBoardroomRun, type SeatTone } from "@/lib/boardroom";
 import { money, prefillAsk, signedMonths, tableTopic } from "@/lib/format";
 import { proposedFrame, runsAfter } from "@/lib/proposal";
+import { latencyLine } from "@/lib/voice";
 import { useVoice } from "@/lib/voiceContext";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,7 @@ function seatsOf(run: RunView | null, voiceSpeaking: boolean): { seats: Seat[]; 
       speaking,
       seats: [
         host,
-        ...agents.map((a) => ({
+        ...teamSeats(agents).map((a) => ({
           id: a.id,
           type: a.type,
           name: a.name,
@@ -56,7 +57,7 @@ function seatsOf(run: RunView | null, voiceSpeaking: boolean): { seats: Seat[]; 
     };
   }
   // Before the team starts (planning, or waiting for the member's OK): the proposed team takes its seats.
-  const proposed = (run?.proposedTeam ?? []).map((a) => ({
+  const proposed = teamSeats(run?.proposedTeam ?? []).map((a) => ({
     id: a.id,
     type: a.type,
     name: a.name,
@@ -65,39 +66,76 @@ function seatsOf(run: RunView | null, voiceSpeaking: boolean): { seats: Seat[]; 
   return { speaking, seats: [host, ...proposed] };
 }
 
-function SeatView({ seat, speaking, size = 56 }: { seat: Seat; speaking: boolean; size?: number }) {
+/**
+ * One seat (founder F25, F27): the face in its own colour is a button ("Talk to …"); under it a name tag filled with
+ * the agent's colour, its status, and while its voice speaks a "Speaking" tag with a Stop button.
+ */
+function SeatView({ seat, speaking, voiceSpeaking, size = 56 }: { seat: Seat; speaking: boolean; voiceSpeaking: boolean; size?: number }) {
+  const voice = useVoice();
+  const color = memberOf(seat.type).color;
+  const talking = voice.talkingTo?.id === seat.id;
   return (
-    <div className="flex w-[124px] flex-col items-center gap-1 text-center" data-testid="seat" title={seat.title}>
-      <Face type={seat.type} size={size} speaking={speaking} dim={seat.status.tone === "idle" && seat.type !== "advisor"} />
-      <span className="max-w-full truncate rounded-md bg-card/90 px-1.5 text-[12px] font-medium leading-5 text-foreground">{seat.name}</span>
-      <span className={cn("rounded-md bg-card/90 px-1.5 text-[11px] leading-4", TONE_CLASS[seat.status.tone])} data-testid="seat-status">
-        {seat.status.text}
+    <div className="flex w-[124px] flex-col items-center gap-1 text-center" data-testid="seat" data-type={seat.type} title={seat.title}>
+      <button
+        type="button"
+        aria-label={talking ? `Stop talking to ${seat.name}` : `Talk to ${seat.name}`}
+        aria-pressed={talking}
+        onClick={() => void voice.talkTo(seat.id, seat.name)}
+        className="rounded-full p-1 transition-shadow hover:shadow-[0_0_0_3px_var(--seat)]"
+        style={{ "--seat": color, boxShadow: talking ? `0 0 0 3px ${color}` : `0 0 0 2px ${color}66` } as CSSProperties}
+        data-testid="seat-face"
+      >
+        <Face type={seat.type} size={size} speaking={speaking} glow={`${color}99`} />
+      </button>
+      <span
+        className="max-w-full rounded-full px-2 text-[12px] font-semibold leading-5 text-ink [overflow-wrap:anywhere]"
+        style={{ backgroundColor: color }}
+        data-testid="seat-name"
+      >
+        {seat.name}
       </span>
+      {voiceSpeaking ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-signal py-0.5 pl-2 pr-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-on-signal" data-testid="speaking-tag">
+          Speaking
+          <button
+            type="button"
+            onClick={voice.hush}
+            aria-label={`Stop ${seat.name} speaking (Esc)`}
+            title="Stop speaking (Esc). The team keeps working."
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-ink text-paper"
+          >
+            <Square aria-hidden="true" className="h-3 w-3 fill-current" />
+          </button>
+        </span>
+      ) : (
+        <span className={cn("rounded-md bg-card/90 px-1.5 text-[11px] leading-4", TONE_CLASS[seat.status.tone])} data-testid="seat-status">
+          {seat.status.text}
+        </span>
+      )}
     </div>
   );
 }
 
-/** Desktop: the oval glass table with the question in the middle and the team around it. */
-function Table({ question, seats, speaking }: { question: string; seats: Seat[]; speaking: string | null }) {
-  const n = Math.max(seats.length, 1);
+/** Desktop: the oval glass table with the topic in the middle and one seat per agent around it (founder F25). */
+function Table({ question, seats, speaking, voiceSeat }: { question: string; seats: Seat[]; speaking: string | null; voiceSeat: string | null }) {
+  const places = seatPositions(seats.length);
+  const size = seatSize(seats.length);
   return (
-    <section aria-label="The boardroom table" className="relative hidden h-[400px] w-full md:block xl:h-[440px]" data-testid="boardroom-table">
-      <div className="glass absolute inset-x-[13%] inset-y-[21%] flex items-center justify-center rounded-[50%] px-[9%] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_30px_80px_-30px_rgba(0,0,0,0.8)]">
-        <div className="rounded-2xl bg-card/85 px-5 py-3 text-center">
+    <section aria-label="The boardroom table" className="relative h-[440px] w-full xl:h-[470px]" data-testid="boardroom-table" data-seats={seats.length}>
+      <div className="glass absolute inset-x-[17%] inset-y-[24%] flex items-center justify-center rounded-[50%] px-[7%] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_30px_80px_-30px_rgba(0,0,0,0.8)]">
+        <div className="max-w-full rounded-2xl bg-card/85 px-5 py-3 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">On the table</p>
-          <h1 className="display line-clamp-3 text-[26px] leading-tight text-foreground xl:text-[32px]">{question}</h1>
+          <h1 className="display line-clamp-2 text-[24px] leading-tight text-foreground xl:text-[30px]" data-testid="table-topic">
+            {question}
+          </h1>
         </div>
       </div>
       <ul className="contents" aria-label="Who is at the table">
         {seats.map((seat, i) => {
-          const angle = (-90 + (i * 360) / n) * (Math.PI / 180);
-          const style: CSSProperties = {
-            left: `${50 + 45 * Math.cos(angle)}%`,
-            top: `${50 + 41 * Math.sin(angle)}%`,
-          };
+          const place = places[i] ?? { left: 50, top: 50 };
           return (
-            <li key={seat.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={style}>
-              <SeatView seat={seat} speaking={speaking === seat.id} />
+            <li key={seat.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${place.left}%`, top: `${place.top}%` }}>
+              <SeatView seat={seat} speaking={speaking === seat.id} voiceSpeaking={voiceSeat === seat.id} size={size} />
             </li>
           );
         })}
@@ -106,16 +144,18 @@ function Table({ question, seats, speaking }: { question: string; seats: Seat[];
   );
 }
 
-/** Phone: the question, a "Speaking now" card and a strip of the other faces. */
-function PhoneStage({ question, seats, speaking, line }: { question: string; seats: Seat[]; speaking: string | null; line: string }) {
+/** Phone, or a narrow centre (founder F26): the topic, a "Speaking now" card and a strip of the other faces. */
+function PhoneStage({ question, seats, speaking, voiceSeat, line }: { question: string; seats: Seat[]; speaking: string | null; voiceSeat: string | null; line: string }) {
   const now = seats.find((s) => s.id === speaking) ?? seats[0];
   const others = seats.filter((s) => s !== now);
   return (
-    <section aria-label="The boardroom" className="flex flex-col gap-3 md:hidden" data-testid="phone-stage">
-      <h1 className="display rounded-2xl bg-card px-4 py-3 text-[26px] leading-tight">{question}</h1>
+    <section aria-label="The boardroom" className="flex flex-col gap-3" data-testid="phone-stage">
+      <h1 className="display rounded-2xl bg-card px-4 py-3 text-[26px] leading-tight" data-testid="table-topic">
+        {question}
+      </h1>
       {now ? (
         <div className="glass flex items-center gap-3 rounded-2xl p-3">
-          <Face type={now.type} size={60} speaking={speaking === now.id} />
+          <SeatView seat={now} speaking={speaking === now.id} voiceSpeaking={voiceSeat === now.id} size={56} />
           <div className="min-w-0 flex-1 rounded-xl bg-card px-3 py-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-signal-soft">{speaking ? "Speaking now" : "At the table"} · {now.name}</p>
             <p className="line-clamp-3 text-[14px] leading-snug text-foreground" aria-live="polite">
@@ -128,7 +168,7 @@ function PhoneStage({ question, seats, speaking, line }: { question: string; sea
         <ul className="-mx-4 flex snap-x gap-1 overflow-x-auto px-4 pb-1" aria-label="Who is at the table">
           {others.map((seat) => (
             <li key={seat.id} className="snap-start">
-              <SeatView seat={seat} speaking={speaking === seat.id} size={48} />
+              <SeatView seat={seat} speaking={speaking === seat.id} voiceSpeaking={voiceSeat === seat.id} size={48} />
             </li>
           ))}
         </ul>
@@ -137,35 +177,88 @@ function PhoneStage({ question, seats, speaking, line }: { question: string; sea
   );
 }
 
-/** The LIVE caption bar: what is being said, plus "Hold to talk" (desktop; the phone has its own bottom bar). */
+/**
+ * The LIVE caption bar (founder F27): what is being said and who the member is talking to. Voice starts on the faces
+ * (no "Start voice" button here); while voice is on, Mute (M) and Voice off. Neither stops the team.
+ */
 function CaptionBar({ line, who }: { line: string; who: "you" | "advisor" }) {
+  const voice = useVoice();
+  const notice = voice.error ?? (voice.missed && !voice.heard ? "Didn't catch that. Say it again." : voice.unsure && !voice.heard ? `Did you say “${voice.unsure}”? Say yes, or say it again.` : "");
+  const lead = voice.talkingTo ? `Talking to ${voice.talkingTo.name}` : voice.on ? (voice.mode === "ptt" ? "Hold Space to talk" : "Listening") : "Tap a face to talk";
   return (
-    <div className="sticky bottom-3 z-20 hidden items-center gap-3 rounded-2xl border border-border-strong bg-card px-4 py-2.5 shadow-xl md:flex" data-testid="caption-bar">
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-signal px-2 py-0.5 text-[11px] font-bold tracking-[0.1em] text-on-signal">
+    <div className="sticky bottom-3 z-20 hidden flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl border border-border-strong bg-card px-4 py-2.5 shadow-xl md:flex" data-testid="caption-bar">
+      <span
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-signal px-2 py-0.5 text-[11px] font-bold tracking-[0.1em] text-on-signal"
+        title={voice.turn || voice.barge ? `Last turn, measured on the backend: ${latencyLine(voice.turn, voice.barge)}` : undefined}
+        data-testid="live-pill"
+      >
         <Radio aria-hidden="true" className="h-3 w-3" />
         LIVE
       </span>
-      <p className="min-w-0 flex-1 truncate text-[14px] text-foreground" aria-live="polite" title={line}>
-        {line ? (
-          <>
+      <span className="shrink-0 text-[13px] font-semibold text-signal-soft" data-testid="talking-to">
+        {lead}
+      </span>
+      <p className="min-w-[12rem] flex-1 text-[14px] text-foreground" aria-live="polite" title={line}>
+        {notice ? (
+          <span role={voice.error ? "alert" : undefined} className={voice.error ? "text-danger" : "text-muted-foreground"}>
+            {notice}
+          </span>
+        ) : line ? (
+          <span className="line-clamp-2">
             <span className="text-muted-foreground">{who === "you" ? "You: " : "Advisor: "}</span>
             {line}
-          </>
+          </span>
         ) : (
           <span className="text-muted-foreground">The team's words appear here as they talk.</span>
         )}
       </p>
-      <MicButton big label="Hold to talk" />
+      {voice.on ? (
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 gap-1.5 rounded-full"
+            aria-pressed={voice.muted}
+            title="Mute the microphone (M)"
+            onClick={voice.toggleMute}
+          >
+            {voice.muted ? <MicOff aria-hidden="true" className="h-4 w-4" /> : <Mic aria-hidden="true" className="h-4 w-4" />}
+            {voice.muted ? "Muted" : "Mute"}
+          </Button>
+          <Button type="button" variant="ghost" className="h-11 rounded-full" title="End the voice. The team keeps working." onClick={voice.disconnect}>
+            Voice off
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-/** The centre of the Boardroom (table, or the phone stage) and its caption bar wrap the existing canvas cards. */
-export function BoardroomStage({ children }: { children: React.ReactNode }) {
+/** Below this width the centre shows the phone-style stage instead of the table (founder F26). */
+export const TABLE_MIN = 640;
+
+/** The centre's own width (ResizeObserver); 0 where it cannot be measured (tests), which counts as wide. */
+function useOwnWidth(): [React.RefObject<HTMLElement>, number] {
+  const ref = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => setWidth(entries[0]?.contentRect.width ?? 0));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+/** The centre of the Boardroom (table, or the phone-style stage) and its caption bar wrap the existing canvas cards. */
+export function BoardroomStage({ children, focus }: { children: React.ReactNode; focus?: { on: boolean; toggle: () => void } }) {
   const { state } = useWorkspace();
   const voice = useVoice();
   const { run, decision } = useBoardroomRun();
   const { seats, speaking } = seatsOf(run, voice.voice === "speaking");
+  // The voice speaks as the Advisor: its "Speaking" tag and Stop button sit under the Advisor's face.
+  const voiceSeat = voice.voice === "speaking" ? "advisor" : null;
   const shown = decision ?? run;
   // Founder F24: the current topic ("Dubai office"), updated with each new question; never "This decision".
   const question = tableTopic(
@@ -173,10 +266,31 @@ export function BoardroomStage({ children }: { children: React.ReactNode }) {
     run ? { message: run.message, isDecision: run === decision || Boolean(run.frame || run.decisionType) } : null,
   );
   const said = caption(state.turns, voice.saying, voice.heard);
+  const [ref, width] = useOwnWidth();
+  const compact = width > 0 && width < TABLE_MIN;
   return (
-    <main className="relative order-1 flex min-w-0 flex-[999_1_560px] flex-col gap-4 px-4 py-4 md:order-none md:px-6" data-testid="boardroom">
-      <Table question={question} seats={seats} speaking={speaking} />
-      <PhoneStage question={question} seats={seats} speaking={speaking} line={said?.text ?? ""} />
+    <main
+      ref={ref}
+      className="relative order-1 flex min-w-0 flex-[999_1_0%] flex-col gap-4 px-4 py-4 md:order-none md:px-6"
+      data-testid="boardroom"
+      data-compact={compact ? "true" : undefined}
+    >
+      {focus ? (
+        <div className="hidden justify-end md:flex">
+          <Button type="button" variant="outline" size="sm" className="min-h-[44px] gap-1.5 rounded-full" aria-pressed={focus.on} onClick={focus.toggle} data-testid="focus-team">
+            {focus.on ? <PanelsLeftRight aria-hidden="true" className="h-4 w-4" /> : <Focus aria-hidden="true" className="h-4 w-4" />}
+            {focus.on ? "Show panels" : "Focus on the team"}
+          </Button>
+        </div>
+      ) : null}
+      {compact ? null : (
+        <div className="hidden md:block">
+          <Table question={question} seats={seats} speaking={speaking} voiceSeat={voiceSeat} />
+        </div>
+      )}
+      <div className={compact ? "" : "md:hidden"}>
+        <PhoneStage question={question} seats={seats} speaking={speaking} voiceSeat={voiceSeat} line={said?.text ?? ""} />
+      </div>
       <OptionsPanel phone />
       {shown?.reversibility || shown?.result?.memo?.review_date ? (
         <div className="flex flex-wrap gap-2">
@@ -210,13 +324,34 @@ function useSetAside(): [Set<string>, (name: string) => void] {
 /** "Go with X": the Advisor has the Memo Writer write it up (the member still decides in the memo). */
 const acceptText = (option: string) => `Go with "${option}": write the decision memo.`;
 
-export function OptionsPanel({ width, phone = false }: { width?: number; phone?: boolean }) {
+export function OptionsPanel({
+  width,
+  phone = false,
+  collapsed = false,
+  onToggle,
+}: {
+  width?: number;
+  phone?: boolean;
+  /** Founder F26: the right panel folds to a narrow strip, like the Advisor panel. */
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
   const { state, send } = useWorkspace();
   const { decision } = useBoardroomRun();
   const [aside, toggleAside] = useSetAside();
   const frame: DecisionFrame | null = decision?.frame ? proposedFrame(decision.frame, runsAfter(decision, Object.values(state.runs))) : null;
   const currency = frame?.currency || frame?.cost_model?.currency || "USD";
   const evidence = evidenceLine(decision);
+  if (!phone && collapsed) {
+    return (
+      <aside aria-label="Options so far (folded)" className="hidden w-11 shrink-0 flex-col items-center gap-2 bg-card py-3 lg:sticky lg:top-0 lg:flex lg:h-[calc(100vh-61px)]" data-testid="options-folded">
+        <Button type="button" variant="ghost" size="icon" className="h-11 w-11" aria-label="Show the options panel" title="Show the options" onClick={onToggle}>
+          <PanelRightOpen aria-hidden="true" className="h-4 w-4" />
+        </Button>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]">Options</span>
+      </aside>
+    );
+  }
   return (
     <aside
       aria-label={phone ? "Options so far (phone)" : "Options so far"}
@@ -230,11 +365,17 @@ export function OptionsPanel({ width, phone = false }: { width?: number; phone?:
     >
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Options so far</h2>
+        <span className="flex-1" />
         {evidence ? (
           <a href="#/activity" className="inline-flex items-center gap-1 text-xs" data-testid="evidence-link">
             {evidence}
             <ArrowUpRight aria-hidden="true" className="h-3 w-3" />
           </a>
+        ) : null}
+        {!phone && onToggle ? (
+          <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0" aria-label="Fold the options panel" title="Fold the options" onClick={onToggle}>
+            <PanelRightClose aria-hidden="true" className="h-4 w-4" />
+          </Button>
         ) : null}
       </div>
       {decision?.awaitingApproval ? (

@@ -47,7 +47,7 @@ for (const [name, width, height] of [
     } else {
       await expect(page.getByTestId("phone-stage")).toContainText("Dubai office");
       await expect(page.getByTestId("phone-bar")).toContainText("Accept");
-      await expect(page.getByTestId("phone-bar").getByRole("button", { name: /Hold to talk|Start voice/ })).toBeVisible();
+      await expect(page.getByTestId("phone-bar").getByRole("button", { name: /Hold to talk|Talk/ })).toBeVisible();
     }
     await page.waitForTimeout(600);
     await noSideScroll(page);

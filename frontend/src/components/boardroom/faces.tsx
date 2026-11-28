@@ -67,12 +67,15 @@ export function Face({
   size = 56,
   speaking = false,
   dim = false,
+  glow,
   className,
 }: {
   type: string;
   size?: number;
   speaking?: boolean;
   dim?: boolean;
+  /** Founder F25: the speaking glow is warmer, in tomato with the agent's own colour around it. */
+  glow?: string;
   className?: string;
 }) {
   const m = memberOf(type);
@@ -84,7 +87,7 @@ export function Face({
         dim && "opacity-55",
         className,
       )}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, ...(glow ? { "--seat-glow": glow } : {}) } as React.CSSProperties}
       data-speaking={speaking ? "true" : undefined}
     >
       <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" focusable="false">

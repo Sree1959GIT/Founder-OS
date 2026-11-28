@@ -66,3 +66,35 @@ export function useBoardroomRun(): { run: RunView | null; decision: RunView | nu
   const { currentRun, decisionRun } = useWorkspace();
   return { run: currentRun ?? decisionRun, decision: decisionRun };
 }
+
+/** Founder F25: the planner chooses 2 to 8 agents; the table never shows more seats than that. */
+export const MAX_TEAM_SEATS = 8;
+
+/**
+ * Founder F25: one seat per agent the planner chose. A re-run (a second card of the same agent type) keeps one seat,
+ * the newest; the order is the planner's.
+ */
+export function teamSeats<T extends { type: string }>(agents: T[]): T[] {
+  const newest = new Map<string, T>();
+  for (const a of agents) newest.set(a.type, a);
+  const order: string[] = [];
+  for (const a of agents) if (!order.includes(a.type)) order.push(a.type);
+  return order.flatMap((t) => newest.get(t) ?? []).slice(0, MAX_TEAM_SEATS);
+}
+
+/**
+ * Where each seat sits on the oval, in % of the table's box: the host at the top, the team evenly spaced around the
+ * rest of the ellipse (never on the topic in the middle).
+ */
+export function seatPositions(n: number): { left: number; top: number }[] {
+  const count = Math.max(1, n);
+  return Array.from({ length: count }, (_, i) => {
+    const angle = ((-90 + (i * 360) / count) * Math.PI) / 180;
+    return { left: Math.round((50 + 45 * Math.cos(angle)) * 10) / 10, top: Math.round((50 + 41 * Math.sin(angle)) * 10) / 10 };
+  });
+}
+
+/** A face's size for the number of seats: a step smaller for a big team, so 8 faces fit without overlapping. */
+export function seatSize(n: number): number {
+  return n <= 6 ? 60 : n <= 8 ? 52 : 46;
+}
