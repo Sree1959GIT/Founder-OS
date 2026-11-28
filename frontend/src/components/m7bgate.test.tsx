@@ -35,7 +35,7 @@ describe("F24 the table shows the current topic", () => {
     const dubai = { message: "Should we open a Dubai office?", subject: "This decision" };
     expect(tableTopic(dubai, { message: dubai.message, isDecision: true })).toBe("Dubai office");
     expect(tableTopic({ ...dubai, subject: "A full Dubai office" }, null)).toBe("Dubai office");
-    expect(tableTopic(dubai, { message: "Should we raise prices by 10%?", isDecision: false })).toBe("Prices by 10%");
+    expect(tableTopic(dubai, { message: "Should we raise our prices by 10%?", isDecision: false })).toBe("Raising prices by 10%");
     // Accept and Ask more are steps of the open decision: the topic stays.
     expect(tableTopic(dubai, { message: 'Go with "Partner or distributor": write the decision memo.', isDecision: false })).toBe("Dubai office");
   });
@@ -93,6 +93,9 @@ describe("F23 the Advisor answers in 3 sentences or fewer", () => {
     expect(brief).toBe("Open through a partner first. It keeps the runway above 14 months. A full office costs $1.5M more a year.");
     expect(more).toBe(true);
     expect(briefAnswer("Runway is 14.2 months.").more).toBe(false);
+    // a short answer followed by lists: the lists never reach the brief
+    const short = briefAnswer("Go partner-first.\n\n**Kill criteria**\n- Revenue under $40k\n- Churn over 10 %");
+    expect(short).toEqual({ brief: "Go partner-first.", more: true });
   });
 
   it("folds the rest under Full answer", () => {

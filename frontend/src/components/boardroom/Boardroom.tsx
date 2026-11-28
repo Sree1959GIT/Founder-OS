@@ -73,16 +73,20 @@ function seatsOf(run: RunView | null, voiceSpeaking: boolean): { seats: Seat[]; 
 function SeatView({ seat, speaking, voiceSpeaking, size = 56 }: { seat: Seat; speaking: boolean; voiceSpeaking: boolean; size?: number }) {
   const voice = useVoice();
   const color = memberOf(seat.type).color;
-  const talking = voice.talkingTo?.id === seat.id;
+  // Talked to by agent type: a proposed seat and the working agent that replaces it are the same face.
+  const talking = voice.talkingTo?.id === seat.type;
   return (
     <div className="flex w-[124px] flex-col items-center gap-1 text-center" data-testid="seat" data-type={seat.type} title={seat.title}>
       <button
         type="button"
         aria-label={talking ? `Stop talking to ${seat.name}` : `Talk to ${seat.name}`}
         aria-pressed={talking}
-        onClick={() => void voice.talkTo(seat.id, seat.name)}
-        className="rounded-full p-1 transition-shadow hover:shadow-[0_0_0_3px_var(--seat)]"
-        style={{ "--seat": color, boxShadow: talking ? `0 0 0 3px ${color}` : `0 0 0 2px ${color}66` } as CSSProperties}
+        onClick={() => void voice.talkTo(seat.type, seat.name)}
+        className={cn(
+          "rounded-full p-1 transition-shadow",
+          talking ? "shadow-[0_0_0_3px_var(--seat)]" : "shadow-[0_0_0_2px_var(--seat-soft)] hover:shadow-[0_0_0_3px_var(--seat)]",
+        )}
+        style={{ "--seat": color, "--seat-soft": `${color}66` } as CSSProperties}
         data-testid="seat-face"
       >
         <Face type={seat.type} size={size} speaking={speaking} glow={`${color}99`} />
@@ -164,6 +168,7 @@ function PhoneStage({ question, seats, speaking, voiceSeat, line }: { question: 
           </div>
         </div>
       ) : null}
+      <PhoneVoiceNotice />
       {others.length ? (
         <ul className="-mx-4 flex snap-x gap-1 overflow-x-auto px-4 pb-1" aria-label="Who is at the table">
           {others.map((seat) => (
@@ -177,13 +182,32 @@ function PhoneStage({ question, seats, speaking, voiceSeat, line }: { question: 
   );
 }
 
+/** The voice's own message (a blocked mic, "Didn't catch that", "Did you say…?"), on desktop and on the phone. */
+function voiceNotice(voice: ReturnType<typeof useVoice>): string {
+  if (voice.error) return voice.error;
+  if (voice.missed && !voice.heard) return "Didn't catch that. Say it again.";
+  if (voice.unsure && !voice.heard) return `Did you say “${voice.unsure}”? Say yes, or say it again.`;
+  return "";
+}
+
+function PhoneVoiceNotice() {
+  const voice = useVoice();
+  const notice = voiceNotice(voice);
+  if (!notice && !voice.talkingTo) return null;
+  return (
+    <p role={voice.error ? "alert" : "status"} className={cn("rounded-xl bg-card px-3 py-2 text-[13px]", voice.error ? "text-danger" : "text-foreground")} data-testid="phone-voice-notice">
+      {notice || `Talking to ${voice.talkingTo?.name ?? "the team"}`}
+    </p>
+  );
+}
+
 /**
  * The LIVE caption bar (founder F27): what is being said and who the member is talking to. Voice starts on the faces
  * (no "Start voice" button here); while voice is on, Mute (M) and Voice off. Neither stops the team.
  */
 function CaptionBar({ line, who }: { line: string; who: "you" | "advisor" }) {
   const voice = useVoice();
-  const notice = voice.error ?? (voice.missed && !voice.heard ? "Didn't catch that. Say it again." : voice.unsure && !voice.heard ? `Did you say “${voice.unsure}”? Say yes, or say it again.` : "");
+  const notice = voiceNotice(voice);
   const lead = voice.talkingTo ? `Talking to ${voice.talkingTo.name}` : voice.on ? (voice.mode === "ptt" ? "Hold Space to talk" : "Listening") : "Tap a face to talk";
   return (
     <div className="sticky bottom-3 z-20 hidden flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl border border-border-strong bg-card px-4 py-2.5 shadow-xl md:flex" data-testid="caption-bar">
@@ -273,6 +297,7 @@ export function BoardroomStage({ children, focus }: { children: React.ReactNode;
       ref={ref}
       className="relative order-1 flex min-w-0 flex-[999_1_0%] flex-col gap-4 px-4 py-4 md:order-none md:px-6"
       data-testid="boardroom"
+      data-voice-keys=""
       data-compact={compact ? "true" : undefined}
     >
       {focus ? (

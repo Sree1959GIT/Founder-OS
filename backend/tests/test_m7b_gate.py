@@ -46,9 +46,11 @@ async def _working_team(finance: Any) -> tuple[Any, Any, Any, Any, str]:
 async def test_hush_stops_the_speech_and_never_the_team(finance: Any) -> None:
     provider, session, wire, manager, run_id = await _working_team(finance)
     run = manager.orchestrator.runs[run_id]
+    session.speaking_until = 0.0  # nothing is being said right now
+    before = len(wire.of("state"))
     await session.control({"type": "hush"})
     await wait_for(lambda: any(m.get("reason") == "hush" for m in wire.of("interrupt")))
-    assert wire.of("state")[-1]["state"] == "idle"  # push-to-talk: back to waiting for the member
+    assert len(wire.of("state")) == before  # nothing was being said: the state (e.g. "thinking") is left alone
     assert not run.task.done() and not run.cancel_requested
     assert not any(m["text"] == "That run was cancelled." for m in wire.of("say"))
     provider.release.set()
@@ -65,3 +67,25 @@ async def test_ending_the_voice_never_cancels_a_running_team(finance: Any) -> No
     provider.release.set()
     result = await run.task
     assert result.status == "done"
+
+
+async def test_hush_while_speaking_returns_to_waiting_for_the_member(finance: Any) -> None:
+    provider, session, wire, _manager, _run_id = await _working_team(finance)
+    session.speaking_until = session.clock() + 5.0  # the voice is mid-sentence
+    session._audio_end = session.speaking_until
+    await session.control({"type": "hush"})
+    await wait_for(lambda: bool(wire.of("state")) and wire.of("state")[-1]["state"] == "idle")
+    assert not session.speaking()
+    provider.release.set()
+    await session.close()
+
+
+async def test_hush_leaves_a_held_push_to_talk_listening(finance: Any) -> None:
+    provider, session, wire, _manager, _run_id = await _working_team(finance)
+    await session.control({"type": "ptt_start"})
+    session.speaking_until = session.clock() + 5.0
+    await session.control({"type": "hush"})
+    assert wire.of("state")[-1]["state"] in ("listening", "interrupted")
+    assert session.ptt_active
+    provider.release.set()
+    await session.close()

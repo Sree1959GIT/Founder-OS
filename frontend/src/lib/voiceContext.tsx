@@ -178,6 +178,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       setMode("duplex");
       modeRef.current = "duplex";
       await connect();
+      if (!client.current) setTalkingTo(null); // the mic or the socket failed: nobody is being talked to
     },
     [connect, switchMode],
   );
@@ -193,12 +194,17 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       }
       if (typingIn(e.target)) return;
       if (e.code === "Space") {
+        // Voice off: Space starts it only in the Boardroom (it never asks for the mic while reading a page).
+        if (!client.current && !document.querySelector("[data-voice-keys]")) return;
         e.preventDefault();
         if (e.repeat || held.current) return;
         held.current = true;
         void (async () => {
           if (!client.current) await connect();
-          if (modeRef.current !== "ptt") switchMode("ptt");
+          if (modeRef.current !== "ptt") {
+            switchMode("ptt");
+            setTalkingTo(null); // holding to talk ends hands-free talking to a face
+          }
           if (held.current) client.current?.pttStart();
         })();
       } else if ((e.key === "m" || e.key === "M") && client.current) {

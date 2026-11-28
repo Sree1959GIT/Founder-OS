@@ -134,7 +134,10 @@ function AgentsButton({ onAgents, agentsOpen, compact }: { onAgents: () => void;
 }
 
 export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, agentsOpen = false }: PanelProps = {}) {
-  const { state, send, toggleQuiet, restoredTurns } = useWorkspace();
+  const { state, send, toggleQuiet, restoredTurnIds } = useWorkspace();
+  // Founder F22: folded by id, so a restored card the reducer moves to the end stays folded and a new turn never folds.
+  const earlier = state.turns.filter((t) => restoredTurnIds.has(t.id));
+  const now = earlier.length ? state.turns.filter((t) => !restoredTurnIds.has(t.id)) : state.turns;
   const renderTurn = (turn: Turn) => {
     if (turn.role === "you") {
       return (
@@ -260,14 +263,14 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
             </div>
           </div>
         ) : null}
-        {restoredTurns > 0 ? (
+        {earlier.length > 0 ? (
           // Founder F22: what was said in an earlier visit stays folded; the Advisor never recites it unasked.
           <details className="rounded-xl border border-border bg-card px-3 py-2 text-[13px]" data-testid="earlier-turns">
-            <summary className="cursor-pointer text-muted-foreground">Earlier in this conversation ({restoredTurns})</summary>
-            <div className="mt-2 flex flex-col gap-3">{state.turns.slice(0, restoredTurns).map(renderTurn)}</div>
+            <summary className="cursor-pointer text-muted-foreground">Earlier in this conversation ({earlier.length})</summary>
+            <div className="mt-2 flex flex-col gap-3">{earlier.map(renderTurn)}</div>
           </details>
         ) : null}
-        {state.turns.slice(restoredTurns).map(renderTurn)}
+        {now.map(renderTurn)}
         {progress ? (
           <p className="text-xs text-muted-foreground" data-testid="run-progress" aria-live="polite">
             {progress}

@@ -516,8 +516,8 @@ interface WorkspaceApi {
    */
   entered: boolean;
   enter: () => void;
-  /** Founder F22: how many turns were restored from an earlier visit (shown folded, never recited). */
-  restoredTurns: number;
+  /** Founder F22: the turns restored from an earlier visit, by id (shown folded, never recited). */
+  restoredTurnIds: ReadonlySet<string>;
 }
 
 const Context = createContext<WorkspaceApi | null>(null);
@@ -575,7 +575,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const followed = useRef(new Set<string>());
   const [entered, setEntered] = useState(false);
   const enter = useCallback(() => setEntered(true), []);
-  const restoredTurns = useRef(state.turns.length).current;
+  const restoredTurnIds = useRef<ReadonlySet<string>>(new Set(state.turns.map((t) => t.id))).current;
 
   // A reload keeps the conversation and the open decision (founder review 17). Streaming text saves at most twice a second.
   useEffect(() => {
@@ -797,9 +797,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null,
       entered,
       enter,
-      restoredTurns,
+      restoredTurnIds,
     }),
-    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken, entered, enter, restoredTurns],
+    [state, send, follow, toggleQuiet, amendment, queued, slow, spoken, entered, enter, restoredTurnIds],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

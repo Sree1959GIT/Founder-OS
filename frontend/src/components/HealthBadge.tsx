@@ -21,14 +21,13 @@ export function SystemStatus({ health }: { health: HealthState }) {
   return (
     <a
       href="#/settings"
-      role="status"
       title="Details in Settings → System"
       className="inline-flex h-9 items-center gap-2 rounded-full border border-border-strong bg-card px-3 text-xs text-foreground hover:bg-accent hover:no-underline"
       data-testid="system-status"
       data-state={word}
     >
       <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", SYSTEM_DOT[word])} />
-      {SYSTEM_TEXT[word]}
+      <span aria-live="polite">{SYSTEM_TEXT[word]}</span>
     </a>
   );
 }

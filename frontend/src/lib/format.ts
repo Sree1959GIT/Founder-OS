@@ -302,6 +302,17 @@ const TOPIC_LEADS = [
   /^(?:open(?:ing)?|hire|hiring|launch(?:ing)?|start(?:ing)?|build(?:ing)?|buy(?:ing)?|raise|raising|cut(?:ting)?|increase|lower|expand(?:ing)? (?:in)?to|enter(?:ing)?|move (?:to|into)|set up|go (?:for|with)|add(?:ing)?|change|drop)\s+/i,
   /^(?:a|an|the|our|my|your|some|another)\s+/i,
 ];
+const CHANGE_VERB = /^(raise|raising|cut|cutting|increase|lower|drop|change)\s+/i;
+const GERUND: Record<string, string> = {
+  raise: "raising",
+  raising: "raising",
+  cut: "cutting",
+  cutting: "cutting",
+  increase: "increasing",
+  lower: "lowering",
+  drop: "dropping",
+  change: "changing",
+};
 const GENERIC_SUBJECT = /^(?:this|that|the)\s+(?:decision|change|hire|fundraise|price change|spending change)$/i;
 
 /**
@@ -311,9 +322,16 @@ const GENERIC_SUBJECT = /^(?:this|that|the)\s+(?:decision|change|hire|fundraise|
 export function topicOf(question: string, maxWords = 6): string {
   let text = runTitle(question, 400).split(" · changed: ")[0]?.trim() ?? "";
   text = text.replace(/[?!.。]+$/u, "").replace(/^["'“”]+|["'“”]+$/g, "").trim();
+  let gerund = "";
   for (let pass = 0; pass < 3; pass += 1) {
-    for (const lead of TOPIC_LEADS) text = text.replace(lead, "");
+    for (const lead of TOPIC_LEADS) {
+      // A change verb is the topic itself: "raise our prices" → "Raising prices", never "Prices".
+      const change = lead === TOPIC_LEADS[5] ? CHANGE_VERB.exec(text) : null;
+      if (change && !gerund) gerund = GERUND[(change[1] ?? "").toLowerCase()] ?? "";
+      text = text.replace(lead, "");
+    }
   }
+  if (gerund) text = `${gerund} ${text}`;
   text = text.replace(/\s+(?:now|next year|this year|or not|at all|right now)$/i, "").trim();
   const words = text.split(/\s+/).filter(Boolean);
   if (!words.length) return runTitle(question);
@@ -361,7 +379,11 @@ function plainText(markdown: string): string {
  * A figure's decimal point ("$1.5M", "2.4 months") is not a sentence end. Returns the brief and whether it is shorter.
  */
 export function briefAnswer(markdown: string, max = 3): { brief: string; more: boolean } {
-  const text = plainText(markdown);
+  // Only the prose before the first list, table, heading or bold-only line is the answer's lead; the rest is detail.
+  const lines = markdown.split(/\r?\n/);
+  const cut = lines.findIndex((l) => /^\s*(?:[-*+]\s|\d+[.)]\s|\||#{1,6}\s|\*\*[^*]+\*\*:?\s*$|__[^_]+__:?\s*$)/.test(l));
+  const lead = cut === -1 ? markdown : lines.slice(0, cut).join("\n");
+  const text = plainText(lead) || plainText(markdown);
   // A sentence ends at . ! or ? followed by a space: "$1.5M" and "2.4 months" never split.
   const sentences = text.split(/(?<=[.!?]["”')\]]*)\s+/).map((s) => s.trim()).filter(Boolean);
   const merged: string[] = [];
@@ -371,6 +393,5 @@ export function briefAnswer(markdown: string, max = 3): { brief: string; more: b
     if (prev && /\b(?:e\.g|i\.e|vs|approx|etc|Mr|Ms|Dr|No)\.$/i.test(prev)) merged[merged.length - 1] = `${prev} ${s}`;
     else merged.push(s);
   }
-  const structured = /(?:^|\n)\s*(?:[-*+]\s|\d+[.)]\s|\||#{1,6}\s)/.test(markdown);
-  return { brief: merged.slice(0, max).join(" "), more: merged.length > max || structured };
+  return { brief: merged.slice(0, max).join(" "), more: merged.length > max || cut > 0 };
 }

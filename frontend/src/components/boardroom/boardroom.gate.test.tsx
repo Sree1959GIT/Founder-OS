@@ -31,7 +31,7 @@ const voice = {
   voice: "speaking",
   on: true,
   mode: "duplex",
-  talkingTo: { id: "a1", name: "Market Scout" } as { id: string; name: string } | null,
+  talkingTo: { id: "market_scout", name: "Market Scout" } as { id: string; name: string } | null,
   talkTo: vi.fn(),
   hush: vi.fn(),
   muted: false,
@@ -98,7 +98,7 @@ describe("F27 voice lives on the faces", () => {
     render(<BoardroomStage>{null}</BoardroomStage>);
     const table = screen.getByTestId("boardroom-table");
     fireEvent.click(within(table).getByRole("button", { name: "Talk to Librarian" }));
-    expect(voice.talkTo).toHaveBeenCalledWith("a2", "Librarian");
+    expect(voice.talkTo).toHaveBeenCalledWith("librarian", "Librarian");
     expect(within(table).getByRole("button", { name: "Stop talking to Market Scout" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("talking-to")).toHaveTextContent("Talking to Market Scout");
     expect(screen.queryByText("Start voice")).not.toBeInTheDocument();
@@ -121,6 +121,13 @@ describe("F27 voice lives on the faces", () => {
     expect(typingIn(input)).toBe(true);
     expect(typingIn(button)).toBe(true);
     expect(typingIn(div)).toBe(false);
+  });
+});
+
+describe("F27 the voice's messages on the phone", () => {
+  it("shows who the member talks to, and a blocked mic, in the phone stage", () => {
+    render(<BoardroomStage>{null}</BoardroomStage>);
+    expect(screen.getAllByTestId("phone-voice-notice")[0]).toHaveTextContent("Talking to Market Scout");
   });
 });
 
