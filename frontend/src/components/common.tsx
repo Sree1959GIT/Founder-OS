@@ -2,7 +2,7 @@ import { CheckCircle2, CircleAlert, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Citation, Lineage, VerificationView } from "@/lib/api";
-import { lineageLabel, prefillAsk, withPeriod } from "@/lib/format";
+import { figureSize, lineageLabel, prefillAsk, withPeriod } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Tone = "amber" | "ok" | "info" | "neutral" | "danger";
@@ -390,11 +390,6 @@ export function EmptyNote({ children }: { children: ReactNode }) {
  * Founder F20: a figure is never cut off. A long one steps down a size, and if it still does not fit it wraps onto a
  * second line (`overflow-wrap: anywhere`): never an ellipsis.
  */
-export function figureSize(text: string, sizes: readonly [string, string, string] = ["text-[22px]", "text-[19px]", "text-[16px]"]): string {
-  const n = text.length;
-  return n <= 9 ? sizes[0] : n <= 12 ? sizes[1] : sizes[2];
-}
-
 export function Figure({ value, className, sizes }: { value: string; className?: string; sizes?: readonly [string, string, string] }) {
   return (
     <p className={cn("num min-w-0 font-semibold leading-tight [overflow-wrap:anywhere]", figureSize(value, sizes), className)} data-testid="figure" title={value}>

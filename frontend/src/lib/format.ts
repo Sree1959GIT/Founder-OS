@@ -285,3 +285,10 @@ export function memoWhen(iso: string | null | undefined): string {
   if (text.length === 10) return day;
   return `${day}, ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
 }
+
+/** Founder F20: the size step for a figure by its length (it then wraps; it is never cut off). */
+export function figureSize(text: string, sizes: readonly [string, string, string] = ["text-[22px]", "text-[19px]", "text-[16px]"]): string {
+  const n = text.length;
+  return n <= 9 ? sizes[0] : n <= 12 ? sizes[1] : sizes[2];
+}
+

@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { Figure, figureSize } from "@/components/common";
+import { Figure } from "@/components/common";
+import { figureSize } from "@/lib/format";
 
 /** M7b founder gate (2026-11-26/27): regression tests for F20–F27. Fakes only. */
 
