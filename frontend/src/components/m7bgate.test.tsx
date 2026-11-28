@@ -68,6 +68,8 @@ describe("F22 the app always opens on Welcome", () => {
     fireEvent.click(screen.getByRole("link", { name: /Continue it/ }));
     expect(await screen.findByTestId("boardroom")).toBeInTheDocument();
     // What was said before stays folded: the Advisor does not recite it.
-    expect(screen.queryByTestId("earlier-turns")).not.toBeInTheDocument();
+    const earlier = screen.getAllByTestId("earlier-turns")[0];
+    expect(earlier).toHaveTextContent("Earlier in this conversation (2)");
+    expect(earlier).not.toHaveAttribute("open");
   });
 });

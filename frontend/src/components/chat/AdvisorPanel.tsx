@@ -252,14 +252,14 @@ export function AdvisorPanel({ width, collapsed = false, onToggle, onAgents, age
             </div>
           </div>
         ) : null}
-        {restoredTurns > 0 && state.turns.length > restoredTurns ? (
+        {restoredTurns > 0 ? (
           // Founder F22: what was said in an earlier visit stays folded; the Advisor never recites it unasked.
           <details className="rounded-xl border border-border bg-card px-3 py-2 text-[13px]" data-testid="earlier-turns">
             <summary className="cursor-pointer text-muted-foreground">Earlier in this conversation ({restoredTurns})</summary>
             <div className="mt-2 flex flex-col gap-3">{state.turns.slice(0, restoredTurns).map(renderTurn)}</div>
           </details>
         ) : null}
-        {(restoredTurns > 0 && state.turns.length > restoredTurns ? state.turns.slice(restoredTurns) : state.turns).map(renderTurn)}
+        {state.turns.slice(restoredTurns).map(renderTurn)}
         {progress ? (
           <p className="text-xs text-muted-foreground" data-testid="run-progress" aria-live="polite">
             {progress}
