@@ -292,3 +292,49 @@ export function figureSize(text: string, sizes: readonly [string, string, string
   return n <= 9 ? sizes[0] : n <= 12 ? sizes[1] : sizes[2];
 }
 
+
+const TOPIC_LEADS = [
+  /^(?:so|ok|okay|and|now|hey|please|right|alright)[,\s]+/i,
+  /^(?:what if we|what about|how about|tell me (?:more )?about|think about|let'?s (?:talk about|look at))\s+/i,
+  /^(?:how much (?:would|will|does|do) (?:it|we) (?:cost|spend|need) to|what (?:would|will|does) it cost to)\s+/i,
+  /^(?:what(?:'s| is| are)|how(?:'s| is)|show me)\s+/i,
+  /^(?:should|shall|can|could|would|do|does|is|are|will|must)\s+(?:we|i|you|it)\s+/i,
+  /^(?:open(?:ing)?|hire|hiring|launch(?:ing)?|start(?:ing)?|build(?:ing)?|buy(?:ing)?|raise|raising|cut(?:ting)?|increase|lower|expand(?:ing)? (?:in)?to|enter(?:ing)?|move (?:to|into)|set up|go (?:for|with)|add(?:ing)?|change|drop)\s+/i,
+  /^(?:a|an|the|our|my|your|some|another)\s+/i,
+];
+const GENERIC_SUBJECT = /^(?:this|that|the)\s+(?:decision|change|hire|fundraise|price change|spending change)$/i;
+
+/**
+ * Founder F24: "On the table" names the topic of the question in a few words ("Should we open a Dubai office?" →
+ * "Dubai office"), never "This decision". Words only: nothing is computed here.
+ */
+export function topicOf(question: string, maxWords = 6): string {
+  let text = runTitle(question, 400).split(" · changed: ")[0]?.trim() ?? "";
+  text = text.replace(/[?!.。]+$/u, "").replace(/^["'“”]+|["'“”]+$/g, "").trim();
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const lead of TOPIC_LEADS) text = text.replace(lead, "");
+  }
+  text = text.replace(/\s+(?:now|next year|this year|or not|at all|right now)$/i, "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return runTitle(question);
+  const short = words.length > maxWords ? `${words.slice(0, maxWords).join(" ")}…` : words.join(" ");
+  return short.charAt(0).toUpperCase() + short.slice(1);
+}
+
+/**
+ * The table's topic: the newest question's, or the open decision's own subject while the decision itself (or a step
+ * of it, like Accept writing its memo) is on the table. A generic subject ("This decision") gives way to the question.
+ */
+export function tableTopic(
+  decision: { message: string; subject?: string | null } | null,
+  current: { message: string; isDecision: boolean } | null,
+): string {
+  const ofDecision = (d: { message: string; subject?: string | null }) => {
+    const subject = (d.subject ?? "").trim();
+    return subject && !GENERIC_SUBJECT.test(subject) ? decisionTitle(subject, d.message) : topicOf(d.message);
+  };
+  const decisionStep = (m: string) => /^(?:go with|tell me more about)\s+["“]/i.test(m.trim());
+  if (current && !current.isDecision && !(decision && decisionStep(current.message))) return topicOf(current.message);
+  if (decision) return ofDecision(decision);
+  return current ? topicOf(current.message) : "Your question";
+}

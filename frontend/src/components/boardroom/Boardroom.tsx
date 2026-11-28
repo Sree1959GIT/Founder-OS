@@ -7,7 +7,7 @@ import { Pill } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import type { DecisionFrame } from "@/lib/api";
 import { caption, evidenceLine, seatStatus, speakingId, useBoardroomRun, type SeatTone } from "@/lib/boardroom";
-import { decisionTitle, money, prefillAsk, runTitle, signedMonths } from "@/lib/format";
+import { money, prefillAsk, signedMonths, tableTopic } from "@/lib/format";
 import { proposedFrame, runsAfter } from "@/lib/proposal";
 import { useVoice } from "@/lib/voiceContext";
 import { teamOf, useWorkspace, type AgentView, type RunView } from "@/lib/workspace";
@@ -167,7 +167,11 @@ export function BoardroomStage({ children }: { children: React.ReactNode }) {
   const { run, decision } = useBoardroomRun();
   const { seats, speaking } = seatsOf(run, voice.voice === "speaking");
   const shown = decision ?? run;
-  const question = decision ? decisionTitle(decision.frame?.subject, runTitle(decision.message)) : runTitle(run?.message ?? "Your question");
+  // Founder F24: the current topic ("Dubai office"), updated with each new question; never "This decision".
+  const question = tableTopic(
+    decision ? { message: decision.message, subject: decision.frame?.subject } : null,
+    run ? { message: run.message, isDecision: run === decision || Boolean(run.frame || run.decisionType) } : null,
+  );
   const said = caption(state.turns, voice.saying, voice.heard);
   return (
     <main className="relative order-1 flex min-w-0 flex-[999_1_560px] flex-col gap-4 px-4 py-4 md:order-none md:px-6" data-testid="boardroom">
