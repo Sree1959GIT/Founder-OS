@@ -2,6 +2,8 @@ import { ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ErrorNote, Pill, Section } from "@/components/common";
+import { HealthBadge } from "@/components/HealthBadge";
+import { useHealth } from "@/hooks/useHealth";
 import { AIModelCard } from "@/components/panels/AIModelCard";
 import { Button } from "@/components/ui/button";
 import { leaveTo, setNavigationGuard } from "@/hooks/useRoute";
@@ -433,6 +435,8 @@ export function SettingsPanel() {
         </ul>
       </Section>
 
+      <SystemSection />
+
       <LiteSection />
 
       <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground" data-testid="settings-footer">
@@ -464,6 +468,21 @@ function LiteSection() {
         </div>
         <p className="text-xs text-muted-foreground">{active ? "Lite mode is on." : "Lite mode is off."}</p>
       </fieldset>
+    </Section>
+  );
+}
+
+/** Founder F21: the services behind the top bar's one status line, for whoever looks after this PC. */
+function SystemSection() {
+  const health = useHealth();
+  return (
+    <Section title="System">
+      <div className="flex flex-col gap-2" data-testid="system-details">
+        <p className="text-[13px] text-muted-foreground">
+          The top bar shows one line for members. These are the services behind it.
+        </p>
+        <HealthBadge health={health} />
+      </div>
     </Section>
   );
 }

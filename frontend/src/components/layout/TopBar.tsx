@@ -1,6 +1,6 @@
 import { Database, Settings } from "lucide-react";
 
-import { HealthBadge } from "@/components/HealthBadge";
+import { SystemStatus } from "@/components/HealthBadge";
 import { Logo } from "@/components/Logo";
 import { PrivacyBadge } from "@/components/PrivacyBadge";
 import type { HealthState } from "@/hooks/useHealth";
@@ -43,7 +43,7 @@ export function TopBar({ health, view }: { health: HealthState; view: View }) {
       <div className="flex-1" />
       <PrivacyBadge health={health} />
       <div className="hidden md:contents">
-        <HealthBadge health={health} />
+        <SystemStatus health={health} />
       </div>
       <a
         href="#/settings"

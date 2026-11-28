@@ -48,7 +48,10 @@ describe("App", () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(healthy), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await waitFor(() => expect(screen.getByText("Ollama")).toBeInTheDocument());
+    // Founder F21: one plain status for members (Qdrant is optional, so it is not a problem); details in Settings.
+    await waitFor(() => expect(screen.getByText("All systems OK")).toBeInTheDocument());
+    expect(screen.queryByText("Ollama")).not.toBeInTheDocument();
+    expect(screen.queryByText("(down)")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/health", expect.anything());
     expect(screen.getByText("Local only")).toBeInTheDocument();
   });
@@ -56,7 +59,7 @@ describe("App", () => {
   it("survives the backend being down", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     render(<App />);
-    await waitFor(() => expect(screen.getByText("Backend offline")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Can't reach FounderOS")).toBeInTheDocument());
   });
 });
 
@@ -66,5 +69,15 @@ describe("PrivacyBadge", () => {
     render(<PrivacyBadge health={{ kind: "offline", message: "down" }} />);
     expect(screen.getByText("Privacy status unknown")).toBeInTheDocument();
     expect(screen.queryByText("Local only")).not.toBeInTheDocument();
+  });
+});
+
+describe("F21 systemWord", () => {
+  it("says Slow right now when a required service is down or anything is degraded", async () => {
+    const { systemWord } = await import("@/hooks/useHealth");
+    const down = { ...healthy, dependencies: healthy.dependencies.map((d) => (d.name === "ollama" ? { ...d, state: "unavailable" as const } : d)) };
+    expect(systemWord({ kind: "ready", data: healthy })).toBe("ok");
+    expect(systemWord({ kind: "ready", data: down })).toBe("slow");
+    expect(systemWord({ kind: "offline", message: "x" })).toBe("offline");
   });
 });
