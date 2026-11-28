@@ -5,6 +5,7 @@ import { AnswerCard } from "@/components/chat/AnswerCard";
 import { VoiceControls } from "@/components/chat/VoiceControls";
 import { ErrorNote } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { briefAnswer } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { teamOf, useWorkspace, type Turn } from "@/lib/workspace";
 
@@ -29,10 +30,18 @@ function Chip({ children, onClick, primary }: { children: string; onClick: () =>
 function LaneTurn({ turn }: { turn: Exclude<Turn, { role: "you" } | { role: "advisor" }> }) {
   const { amendment, queued, slow } = useWorkspace();
   if (turn.role === "lane") {
+    // Founder F23: a lane line is 3 sentences or fewer too; a longer one folds the rest.
+    const { brief, more } = briefAnswer(turn.text);
     return (
-      <p className="border-l-2 border-border-strong pl-2.5 text-[13px] leading-relaxed text-muted-foreground" data-testid="narration">
-        {turn.text}
-      </p>
+      <div className="border-l-2 border-border-strong pl-2.5 text-[13px] leading-relaxed text-muted-foreground" data-testid="narration">
+        <p>{more ? brief : turn.text}</p>
+        {more ? (
+          <details>
+            <summary className="cursor-pointer">More</summary>
+            <p className="mt-1 whitespace-pre-line">{turn.text}</p>
+          </details>
+        ) : null}
+      </div>
     );
   }
   if (turn.role === "slow") {
