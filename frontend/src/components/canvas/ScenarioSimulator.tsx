@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { AssumptionTag, ErrorNote, LineageChip, Section } from "@/components/common";
+import { AssumptionTag, ErrorNote, Figure, LineageChip, Section } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import {
   postMonteCarlo,
@@ -197,7 +197,7 @@ function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="num truncate text-[15px] font-semibold">{value}</p>
+      <Figure value={value} sizes={["text-[15px]", "text-[14px]", "text-[13px]"]} />
     </div>
   );
 }

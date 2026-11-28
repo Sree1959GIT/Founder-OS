@@ -241,11 +241,11 @@ export function MemoView({ path: wanted }: { path?: string }) {
               ) : null}
             </div>
             {keyNumbers.length ? (
-              <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2">
                 {keyNumbers.map((m, i) => (
                   <div key={`${m.metric}-${i}`} className="min-w-0 rounded-lg border border-[#D9D5C8] p-2.5">
                     <p className="font-sans text-xs text-[#6A6E76]">{m.label}</p>
-                    <p className="num text-[15px] font-semibold">{metricValue(m.value, m.unit, m.metric)}</p>
+                    <p className="num text-[15px] font-semibold [overflow-wrap:anywhere]">{metricValue(m.value, m.unit, m.metric)}</p>
                     <span className="print-hide">
                       <LineageChip lineage={m.lineage} label="lineage" />
                     </span>

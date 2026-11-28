@@ -266,15 +266,15 @@ export function OptionsPanel({ width, phone = false }: { width?: number; phone?:
                   <dl className="grid grid-cols-3 gap-1 text-[11px] text-muted-foreground">
                     <div>
                       <dt>One-off</dt>
-                      <dd className="num text-[13px] text-foreground">{money(option.one_off, currency, 0)}</dd>
+                      <dd className="num text-[13px] text-foreground [overflow-wrap:anywhere]">{money(option.one_off, currency, 0)}</dd>
                     </div>
                     <div>
                       <dt>A month</dt>
-                      <dd className="num text-[13px] text-foreground">{money(option.monthly, currency, 0)}</dd>
+                      <dd className="num text-[13px] text-foreground [overflow-wrap:anywhere]">{money(option.monthly, currency, 0)}</dd>
                     </div>
                     <div>
                       <dt>Runway</dt>
-                      <dd className="num text-[13px] text-foreground">{signedMonths(option.runway_change_months)}</dd>
+                      <dd className="num text-[13px] text-foreground [overflow-wrap:anywhere]">{signedMonths(option.runway_change_months)}</dd>
                     </div>
                   </dl>
                 ) : (

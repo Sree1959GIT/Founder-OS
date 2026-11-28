@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { AnswerText } from "@/components/chat/AnswerCard";
 import { DecisionFrameCard } from "@/components/canvas/DecisionFrameCard";
 import { ScenarioSimulator } from "@/components/canvas/ScenarioSimulator";
-import { CitationChips, EmptyNote, LineageChip, Pill, Section, VerifiedBadge } from "@/components/common";
+import { CitationChips, EmptyNote, Figure, LineageChip, Pill, Section, VerifiedBadge } from "@/components/common";
 import { fetchSummary, type AgentResult, type Artifact, type MetricResult } from "@/lib/api";
 import { decisionTitle, metricValue, monthLabel, runTitle } from "@/lib/format";
 import { proposedFrame, runsAfter } from "@/lib/proposal";
@@ -43,13 +43,13 @@ export function KpiRow({ refreshKey }: { refreshKey: string }) {
     );
   }
   return (
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" data-testid="kpi-row">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-3" data-testid="kpi-row">
       {metrics.map((m) => {
         const zero = m.metric === "runway" ? (m.detail?.zero_cash_month as string | undefined) : undefined;
         return (
           <article key={m.metric} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border bg-card p-3.5" data-testid={`kpi-${m.metric}`}>
             <p className="text-xs text-muted-foreground">{KPI_TITLES[m.metric] ?? m.label}</p>
-            <p className="num truncate text-[22px] font-semibold leading-tight">{metricValue(m.value, m.unit, m.metric)}</p>
+            <Figure value={metricValue(m.value, m.unit, m.metric)} />
             <p className="min-h-4 text-xs text-muted-foreground">
               {zero ? <>Zero cash {monthLabel(zero.slice(0, 7))}</> : <>As of {monthLabel(m.as_of)}</>}
             </p>
